@@ -1,3 +1,4 @@
+
 import React, { useRef } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -108,6 +109,11 @@ export default function FileUploadZone({ onFileUpload, isUploading }) {
               </>
             )}
           </Button>
+
+          <p className="text-xs text-slate-500 pt-4 elegant-text">
+            Рекомендуемый размер файла: до 25 МБ. <br/> Для больших файлов рекомендуется предварительная обработка или семплирование.
+          </p>
+
         </div>
       </CardContent>
     </Card>

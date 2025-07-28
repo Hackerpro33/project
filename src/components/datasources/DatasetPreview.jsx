@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from "react-router-dom";
+import { createPageUrl } from "@/utils";
 import {
   Dialog,
   DialogContent,
@@ -25,12 +27,12 @@ export default function DatasetPreview({ dataset, onClose }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate loading sample data
+    // Симуляция загрузки образца данных
     setTimeout(() => {
       const mockData = [
-        { id: 1, name: "Sample Row 1", value: 100, date: "2024-01-01", category: "A" },
-        { id: 2, name: "Sample Row 2", value: 150, date: "2024-01-02", category: "B" },
-        { id: 3, name: "Sample Row 3", value: 200, date: "2024-01-03", category: "A" },
+        { id: 1, name: "Образец строки 1", value: 100, date: "2024-01-01", category: "A" },
+        { id: 2, name: "Образец строки 2", value: 150, date: "2024-01-02", category: "B" },
+        { id: 3, name: "Образец строки 3", value: 200, date: "2024-01-03", category: "A" },
       ];
       setSampleData(mockData);
       setIsLoading(false);
@@ -86,30 +88,30 @@ export default function DatasetPreview({ dataset, onClose }) {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-100">
               <div className="text-2xl font-bold text-blue-600">{dataset.row_count || 0}</div>
-              <div className="text-sm text-blue-700">Total Rows</div>
+              <div className="text-sm text-blue-700">Всего строк</div>
             </div>
             <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-100">
               <div className="text-2xl font-bold text-emerald-600">{dataset.columns?.length || 0}</div>
-              <div className="text-sm text-emerald-700">Columns</div>
+              <div className="text-sm text-emerald-700">Столбцов</div>
             </div>
             <div className="p-4 rounded-xl bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-100">
               <div className="text-2xl font-bold text-purple-600">
-                {format(new Date(dataset.created_date), "MMM d")}
+                {format(new Date(dataset.created_date), "d MMM")}
               </div>
-              <div className="text-sm text-purple-700">Created</div>
+              <div className="text-sm text-purple-700">Создан</div>
             </div>
             <div className="p-4 rounded-xl bg-gradient-to-r from-orange-50 to-red-50 border border-orange-100">
               <div className="text-2xl font-bold text-orange-600">
-                {((dataset.file_url?.length || 0) / 1024).toFixed(1)}KB
+                {((dataset.file_url?.length || 0) / 1024).toFixed(1)}КБ
               </div>
-              <div className="text-sm text-orange-700">File Size</div>
+              <div className="text-sm text-orange-700">Размер файла</div>
             </div>
           </div>
 
           {/* Column Information */}
           {dataset.columns && dataset.columns.length > 0 && (
             <div className="space-y-3">
-              <h3 className="text-lg font-semibold text-slate-900">Column Schema</h3>
+              <h3 className="text-lg font-semibold text-slate-900">Схема столбцов</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {dataset.columns.map((column, index) => {
                   const Icon = getColumnIcon(column.type);
@@ -131,7 +133,7 @@ export default function DatasetPreview({ dataset, onClose }) {
 
           {/* Sample Data */}
           <div className="space-y-3">
-            <h3 className="text-lg font-semibold text-slate-900">Sample Data</h3>
+            <h3 className="text-lg font-semibold text-slate-900">Образец данных</h3>
             {isLoading ? (
               <div className="flex items-center justify-center h-32 bg-slate-50 rounded-lg">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
@@ -176,12 +178,14 @@ export default function DatasetPreview({ dataset, onClose }) {
           <div className="flex gap-3">
             <Button variant="outline" className="gap-2">
               <Download className="w-4 h-4" />
-              Export
+              Экспорт
             </Button>
-            <Button className="gap-2 bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700">
-              <BarChart3 className="w-4 h-4" />
-              Create Visualization
-            </Button>
+            <Link to={createPageUrl("Charts")}>
+              <Button className="gap-2 bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700">
+                <BarChart3 className="w-4 h-4" />
+                Создать визуализацию
+              </Button>
+            </Link>
           </div>
         </div>
       </DialogContent>

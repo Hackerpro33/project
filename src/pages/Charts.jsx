@@ -14,6 +14,7 @@ import {
 import ChartBuilder from "../components/charts/ChartBuilder";
 import ChartGallery from "../components/charts/ChartGallery";
 import ChartTypeSelector from "../components/charts/ChartTypeSelector";
+import ChartViewer from "../components/charts/ChartViewer";
 
 export default function Charts() {
   const [datasets, setDatasets] = useState([]);
@@ -21,6 +22,8 @@ export default function Charts() {
   const [isLoading, setIsLoading] = useState(true);
   const [showBuilder, setShowBuilder] = useState(false);
   const [selectedChartType, setSelectedChartType] = useState('line');
+  const [editingViz, setEditingViz] = useState(null);
+  const [viewingViz, setViewingViz] =useState(null);
 
   useEffect(() => {
     loadData();
@@ -31,7 +34,7 @@ export default function Charts() {
     try {
       const [datasetsData, visualizationsData] = await Promise.all([
         Dataset.list('-created_date'),
-        Visualization.filter({ type: ['line', 'bar', 'scatter', 'area'] }, '-created_date')
+        Visualization.list('-created_date')
       ]);
       setDatasets(datasetsData);
       setVisualizations(visualizationsData);
@@ -42,9 +45,21 @@ export default function Charts() {
   };
 
   const handleCreateChart = (chartType) => {
+    setEditingViz(null);
     setSelectedChartType(chartType);
     setShowBuilder(true);
   };
+  
+  const handleEditChart = (viz) => {
+    setEditingViz(viz);
+    setSelectedChartType(viz.type);
+    setShowBuilder(true);
+  }
+
+  const handleCloseBuilder = () => {
+    setShowBuilder(false);
+    setEditingViz(null);
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
@@ -72,8 +87,9 @@ export default function Charts() {
           <ChartBuilder 
             chartType={selectedChartType}
             datasets={datasets}
-            onClose={() => setShowBuilder(false)}
+            onClose={handleCloseBuilder}
             onSave={loadData}
+            existingViz={editingViz}
           />
         )}
 
@@ -81,12 +97,20 @@ export default function Charts() {
         {!showBuilder && (
           <ChartGallery 
             visualizations={visualizations}
+            datasets={datasets}
             isLoading={isLoading}
-            onEdit={(viz) => {
-              setSelectedChartType(viz.type);
-              setShowBuilder(true);
-            }}
+            onEdit={handleEditChart}
+            onView={(viz) => setViewingViz(viz)}
           />
+        )}
+        
+        {/* Chart Viewer Modal */}
+        {viewingViz && (
+            <ChartViewer
+                visualization={viewingViz}
+                datasets={datasets}
+                onClose={() => setViewingViz(null)}
+            />
         )}
       </div>
     </div>

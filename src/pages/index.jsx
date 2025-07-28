@@ -12,6 +12,10 @@ import Forecasting from "./Forecasting";
 
 import NetworkGraphs from "./NetworkGraphs";
 
+import Constructor from "./Constructor";
+
+import Settings from "./Settings";
+
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 
 const PAGES = {
@@ -27,6 +31,10 @@ const PAGES = {
     Forecasting: Forecasting,
     
     NetworkGraphs: NetworkGraphs,
+    
+    Constructor: Constructor,
+    
+    Settings: Settings,
     
 }
 
@@ -66,6 +74,10 @@ function PagesContent() {
                 <Route path="/Forecasting" element={<Forecasting />} />
                 
                 <Route path="/NetworkGraphs" element={<NetworkGraphs />} />
+                
+                <Route path="/Constructor" element={<Constructor />} />
+                
+                <Route path="/Settings" element={<Settings />} />
                 
             </Routes>
         </Layout>

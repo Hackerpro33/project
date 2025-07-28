@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,7 +37,7 @@ export default function DatasetCard({ dataset, onPreview }) {
               </CardTitle>
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <Calendar className="w-3 h-3" />
-                {format(new Date(dataset.created_date), "MMM d, yyyy")}
+                {format(new Date(dataset.created_date), "d MMM yyyy")}
               </div>
             </div>
           </div>
@@ -47,18 +46,18 @@ export default function DatasetCard({ dataset, onPreview }) {
       
       <CardContent className="space-y-4">
         <p className="text-sm text-slate-600 line-clamp-2">
-          {dataset.description || "No description available"}
+          {dataset.description || "Описание отсутствует"}
         </p>
 
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1">
               <BarChart className="w-4 h-4 text-slate-400" />
-              <span className="text-slate-600">{dataset.row_count || 0} rows</span>
+              <span className="text-slate-600">{dataset.row_count || 0} строк</span>
             </div>
             <div className="flex items-center gap-1">
               <Database className="w-4 h-4 text-slate-400" />
-              <span className="text-slate-600">{dataset.columns?.length || 0} cols</span>
+              <span className="text-slate-600">{dataset.columns?.length || 0} колонок</span>
             </div>
           </div>
         </div>
@@ -66,7 +65,7 @@ export default function DatasetCard({ dataset, onPreview }) {
         {dataset.columns && dataset.columns.length > 0 && (
           <div className="space-y-2">
             <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-              Column Types
+              Типы столбцов
             </div>
             <div className="flex flex-wrap gap-1">
               {dataset.columns.slice(0, 3).map((column, index) => (
@@ -80,7 +79,7 @@ export default function DatasetCard({ dataset, onPreview }) {
               ))}
               {dataset.columns.length > 3 && (
                 <Badge variant="secondary" className="text-xs bg-slate-100 text-slate-600">
-                  +{dataset.columns.length - 3} more
+                  +{dataset.columns.length - 3} ещё
                 </Badge>
               )}
             </div>
@@ -106,7 +105,7 @@ export default function DatasetCard({ dataset, onPreview }) {
             className="flex-1 gap-2 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600"
           >
             <Eye className="w-4 h-4" />
-            Preview
+            Просмотр
           </Button>
           <Button
             variant="outline"
@@ -114,7 +113,7 @@ export default function DatasetCard({ dataset, onPreview }) {
             className="gap-2 hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-600"
           >
             <Download className="w-4 h-4" />
-            Export
+            Экспорт
           </Button>
         </div>
       </CardContent>

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,10 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { 
   BarChart3, 
   LineChart, 
-  ScatterChart, // Changed from Scatter3D to ScatterChart
+  ScatterChart,
   TrendingUp,
   Plus,
-  Sparkles
+  Sparkles,
+  Box
 } from "lucide-react";
 
 export default function ChartTypeSelector({ onSelectType, datasets }) {
@@ -45,6 +45,14 @@ export default function ChartTypeSelector({ onSelectType, datasets }) {
       icon: TrendingUp,
       gradient: 'from-orange-500 to-red-600',
       example: 'Многослойные данные, кумулятивный рост'
+    },
+    {
+      id: '3d',
+      name: '3D Визуализация',
+      description: 'Трехмерное отображение данных',
+      icon: Box,
+      gradient: 'from-pink-500 to-rose-600',
+      example: 'Объемные данные, пространственный анализ'
     }
   ];
 
@@ -58,7 +66,7 @@ export default function ChartTypeSelector({ onSelectType, datasets }) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {chartTypes.map((type) => (
               <Card 
                 key={type.id}

@@ -1,4 +1,5 @@
 
+
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -10,7 +11,9 @@ import {
   Home,
   Sparkles,
   Activity,
-  Network
+  Network,
+  Component, // Added Component icon
+  Settings as SettingsIcon // Imported SettingsIcon
 } from "lucide-react";
 import {
   Sidebar,
@@ -62,6 +65,18 @@ const navigationItems = [
     url: createPageUrl("NetworkGraphs"),
     icon: Network,
     gradient: "from-cyan-500 to-blue-600"
+  },
+  {
+    title: "Конструктор",
+    url: createPageUrl("Constructor"),
+    icon: Component,
+    gradient: "from-slate-500 to-slate-600"
+  },
+  {
+    title: "Настройки",
+    url: createPageUrl("Settings"),
+    icon: SettingsIcon,
+    gradient: "from-gray-500 to-slate-600"
   }
 ];
 
@@ -205,3 +220,4 @@ export default function Layout({ children, currentPageName }) {
     </SidebarProvider>
   );
 }
+
