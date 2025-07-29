@@ -15,7 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { FileCheck2, X } from 'lucide-react';
+import { FileCheck2, X, AlertTriangle } from 'lucide-react';
 
 export default function DataImportPreview({ datasetInfo, onConfirmImport, onCancel }) {
   const [name, setName] = useState(datasetInfo.name);
@@ -55,9 +55,18 @@ export default function DataImportPreview({ datasetInfo, onConfirmImport, onCanc
     });
   };
 
+  const hasRealData = datasetInfo.sample_data && datasetInfo.sample_data.length > 0 && 
+                     !datasetInfo.sample_data.every(row => 
+                       Object.values(row).some(val => 
+                         String(val).includes('Пример') || 
+                         String(val).includes('Example') ||
+                         String(val).includes('column')
+                       )
+                     );
+
   return (
     <Dialog open={true} onOpenChange={onCancel}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="max-w-6xl h-[85vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-2xl heading-text">
             <FileCheck2 className="w-6 h-6 text-blue-500" />
@@ -68,7 +77,7 @@ export default function DataImportPreview({ datasetInfo, onConfirmImport, onCanc
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4 flex-1 overflow-hidden">
           {/* Left Panel: Configuration */}
           <div className="space-y-4">
             <div>
@@ -98,7 +107,7 @@ export default function DataImportPreview({ datasetInfo, onConfirmImport, onCanc
                 </div>
               </ScrollArea>
             </div>
-             <div>
+            <div>
               <Label htmlFor="tags" className="elegant-text">Теги</Label>
               <div className="flex flex-wrap gap-2 p-2 border rounded-md">
                 {tags.map(tag => (
@@ -122,9 +131,28 @@ export default function DataImportPreview({ datasetInfo, onConfirmImport, onCanc
           </div>
           
           {/* Right Panel: Data Sample */}
-          <div className="space-y-4">
-            <Label className="elegant-text">Образец данных (первые 10 строк)</Label>
-            <div className="border rounded-md overflow-hidden">
+          <div className="space-y-4 flex flex-col">
+            <Label className="elegant-text">
+              Образец данных 
+              {!hasRealData && (
+                <Badge variant="destructive" className="ml-2">
+                  <AlertTriangle className="w-3 h-3 mr-1" />
+                  Примеры данных
+                </Badge>
+              )}
+            </Label>
+            
+            {!hasRealData && (
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  <strong>Внимание:</strong> Не удалось автоматически извлечь данные из файла. 
+                  Показаны примеры на основе структуры. Проверьте корректность столбцов перед импортом.
+                </p>
+              </div>
+            )}
+            
+            <div className="border rounded-md overflow-hidden flex-1">
+              <ScrollArea className="h-full">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -132,7 +160,7 @@ export default function DataImportPreview({ datasetInfo, onConfirmImport, onCanc
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {datasetInfo.sample_data?.slice(0, 10).map((row, rowIndex) => (
+                    {(datasetInfo.sample_data?.slice(0, 10) || []).map((row, rowIndex) => (
                       <TableRow key={rowIndex}>
                         {selectedColumns.map(col => (
                           <TableCell key={col.name} className="text-xs">
@@ -141,8 +169,16 @@ export default function DataImportPreview({ datasetInfo, onConfirmImport, onCanc
                         ))}
                       </TableRow>
                     ))}
+                    {(!datasetInfo.sample_data || datasetInfo.sample_data.length === 0) && (
+                      <TableRow>
+                        <TableCell colSpan={selectedColumns.length} className="text-center text-slate-500 py-8">
+                          Нет данных для предпросмотра
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
+              </ScrollArea>
             </div>
           </div>
         </div>

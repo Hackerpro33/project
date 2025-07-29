@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,29 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Network, Save, ArrowLeft, Sparkles } from "lucide-react";
 import NetworkVisualization from "./NetworkVisualization";
+import { InvokeLLM } from "@/api/integrations";
+
+const networkGraphSchema = {
+    type: "object",
+    properties: {
+        nodes: {
+            type: "array",
+            items: {
+                type: "object",
+                properties: { id: { type: "string" }, group: { type: "string" } }
+            }
+        },
+        links: {
+            type: "array",
+            items: {
+                type: "object",
+                properties: { source: { type: "string" }, target: { type: "string" }, value: { type: "number" } }
+            }
+        },
+        insights: { type: "array", items: { type: "string" } }
+    },
+    required: ["nodes", "links"]
+};
 
 export default function NetworkBuilder({ datasets, onSave, onCancel }) {
   const [config, setConfig] = useState({
@@ -15,9 +39,12 @@ export default function NetworkBuilder({ datasets, onSave, onCancel }) {
     selectedColumns: [],
     nodeSize: 'medium',
     layout: 'force',
-    showLabels: true
+    showLabels: true,
+    graphType: 'general' // New: general, social, geo
   });
   const [selectedDataset, setSelectedDataset] = useState(null);
+  const [generatedGraph, setGeneratedGraph] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const handleDatasetChange = (datasetId) => {
     const dataset = datasets.find(d => d.id === datasetId);
@@ -38,12 +65,46 @@ export default function NetworkBuilder({ datasets, onSave, onCancel }) {
     }));
   };
 
-  const handleSave = () => {
-    if (!config.title || !config.dataset_id || config.selectedColumns.length < 2) {
-      alert("Пожалуйста, заполните все обязательные поля и выберите минимум 2 столбца");
+  const handleGenerateGraph = async () => {
+    if (!config.dataset_id || config.selectedColumns.length < 2) {
+      alert("Выберите набор данных и минимум 2 столбца.");
       return;
     }
-    onSave(config);
+    setIsGenerating(true);
+    setGeneratedGraph(null);
+
+    const prompts = {
+        general: `Постройте общий граф связей для столбцов: ${config.selectedColumns.join(', ')}. Проанализируйте корреляции и создайте узлы и связи.`,
+        social: `Проанализируйте данные как социальную сеть. Идентифицируйте ключевых акторов (узлы) и их взаимодействия (связи) на основе столбцов: ${config.selectedColumns.join(', ')}. Рассчитайте центральность узлов.`,
+        geo: `Создайте граф пространственных связей. Узлы - это локации, ребра - сила связи между ними (например, корреляция событий). Используйте столбцы: ${config.selectedColumns.join(', ')}.`
+    };
+    
+    // In a real application, you'd pass the actual dataset data here to the LLM.
+    // For this example, we'll simulate it by only passing the column names.
+    // Assuming `InvokeLLM` somehow gets access to the current dataset rows.
+    const prompt = `
+        Вы — эксперт по графовому анализу. На основе предоставленных данных и задачи, сгенерируйте структуру графа.
+        Задача: ${prompts[config.graphType]}
+        Предоставьте результат в формате JSON, соответствующем схеме.
+    `;
+
+    try {
+        const result = await InvokeLLM({ prompt, response_json_schema: networkGraphSchema });
+        setGeneratedGraph(result);
+    } catch(e) {
+        console.error("Ошибка генерации графа", e);
+        alert("Ошибка при генерации графа. Пожалуйста, попробуйте еще раз.");
+    }
+    setIsGenerating(false);
+  };
+
+  const handleSave = () => {
+    if (!config.title || !config.dataset_id) {
+      alert("Пожалуйста, заполните название и выберите набор данных");
+      return;
+    }
+    // Передаем и сгенерированные данные для сохранения
+    onSave({ ...config, graphData: generatedGraph });
   };
 
   const numericColumns = selectedDataset?.columns?.filter(c => c.type === 'number') || [];
@@ -93,6 +154,23 @@ export default function NetworkBuilder({ datasets, onSave, onCancel }) {
 
           {selectedDataset && (
             <>
+              <div className="space-y-2">
+                <Label className="elegant-text">Тип графа</Label>
+                <Select
+                  value={config.graphType}
+                  onValueChange={(value) => setConfig(prev => ({ ...prev, graphType: value }))}
+                >
+                  <SelectTrigger className="elegant-text">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="general" className="elegant-text">Общий анализ связей</SelectItem>
+                    <SelectItem value="social" className="elegant-text">Социальный граф</SelectItem>
+                    <SelectItem value="geo" className="elegant-text">Географические корреляции</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label className="elegant-text">Числовые столбцы для анализа связей</Label>
                 <div className="space-y-2 p-3 border rounded-lg max-h-48 overflow-y-auto bg-slate-50/50">
@@ -158,12 +236,30 @@ export default function NetworkBuilder({ datasets, onSave, onCancel }) {
               </div>
             </>
           )}
+          
+          <Button 
+            onClick={handleGenerateGraph} 
+            disabled={isGenerating || !selectedDataset || config.selectedColumns.length < 2} 
+            className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 gap-2 elegant-text"
+          >
+            {isGenerating ? (
+                <>
+                    <Sparkles className="w-4 h-4 animate-pulse" />
+                    Генерация...
+                </>
+            ) : (
+                <>
+                    <Sparkles className="w-4 h-4" />
+                    Сгенерировать граф
+                </>
+            )}
+          </Button>
 
           <div className="flex gap-3 pt-6">
             <Button variant="outline" onClick={onCancel} className="flex-1 elegant-text">
               Отмена
             </Button>
-            <Button onClick={handleSave} className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 gap-2 elegant-text">
+            <Button onClick={handleSave} disabled={!generatedGraph || !config.title} className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 gap-2 elegant-text">
               <Save className="w-4 h-4" />
               Сохранить граф
             </Button>
@@ -180,13 +276,20 @@ export default function NetworkBuilder({ datasets, onSave, onCancel }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-6">
-          {config.selectedColumns.length >= 2 ? (
-            <NetworkVisualization config={config} />
+          {generatedGraph ? (
+            <NetworkVisualization config={config} graphData={generatedGraph} />
+          ) : isGenerating ? (
+            <div className="h-96 flex items-center justify-center text-slate-500 elegant-text">
+                <div className="text-center">
+                    <Sparkles className="w-16 h-16 mx-auto mb-4 opacity-50 animate-bounce" />
+                    <p>Генерация графа, пожалуйста подождите...</p>
+                </div>
+            </div>
           ) : (
             <div className="h-96 flex items-center justify-center text-slate-500 elegant-text">
               <div className="text-center">
                 <Network className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                <p>Выберите набор данных и столбцы для предварительного просмотра</p>
+                <p>Выберите данные и сгенерируйте граф</p>
               </div>
             </div>
           )}

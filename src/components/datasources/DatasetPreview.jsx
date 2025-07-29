@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -27,16 +28,13 @@ export default function DatasetPreview({ dataset, onClose }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Симуляция загрузки образца данных
-    setTimeout(() => {
-      const mockData = [
-        { id: 1, name: "Образец строки 1", value: 100, date: "2024-01-01", category: "A" },
-        { id: 2, name: "Образец строки 2", value: 150, date: "2024-01-02", category: "B" },
-        { id: 3, name: "Образец строки 3", value: 200, date: "2024-01-03", category: "A" },
-      ];
-      setSampleData(mockData);
-      setIsLoading(false);
-    }, 1000);
+    // Используем реальные данные из датасета или оставляем пустым, если их нет
+    if (dataset.sample_data && Array.isArray(dataset.sample_data) && dataset.sample_data.length > 0) {
+      setSampleData(dataset.sample_data);
+    } else {
+      setSampleData([]); // Не генерируем ложные данные, просто показываем пустую таблицу
+    }
+    setIsLoading(false);
   }, [dataset]);
 
   const getColumnIcon = (type) => {
@@ -57,6 +55,28 @@ export default function DatasetPreview({ dataset, onClose }) {
       boolean: "text-orange-600 bg-orange-50"
     };
     return colors[type] || "text-gray-600 bg-gray-50";
+  };
+
+  const formatCellValue = (value, columnType) => {
+    if (value === null || value === undefined) return '';
+    
+    if (columnType === 'date' && value) {
+      try {
+        return new Date(value).toLocaleDateString();
+      } catch (e) {
+        return String(value);
+      }
+    }
+    
+    if (columnType === 'number' && typeof value === 'number') {
+      return value.toLocaleString();
+    }
+    
+    if (columnType === 'boolean') {
+      return value ? 'Да' : 'Нет';
+    }
+    
+    return String(value);
   };
 
   return (
@@ -102,9 +122,9 @@ export default function DatasetPreview({ dataset, onClose }) {
             </div>
             <div className="p-4 rounded-xl bg-gradient-to-r from-orange-50 to-red-50 border border-orange-100">
               <div className="text-2xl font-bold text-orange-600">
-                {((dataset.file_url?.length || 0) / 1024).toFixed(1)}КБ
+                {dataset.tags?.length || 0}
               </div>
-              <div className="text-sm text-orange-700">Размер файла</div>
+              <div className="text-sm text-orange-700">Тегов</div>
             </div>
           </div>
 
@@ -133,12 +153,14 @@ export default function DatasetPreview({ dataset, onClose }) {
 
           {/* Sample Data */}
           <div className="space-y-3">
-            <h3 className="text-lg font-semibold text-slate-900">Образец данных</h3>
+            <h3 className="text-lg font-semibold text-slate-900">
+              Образец данных {sampleData.length > 0 && `(${sampleData.length} строк)`}
+            </h3>
             {isLoading ? (
               <div className="flex items-center justify-center h-32 bg-slate-50 rounded-lg">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
               </div>
-            ) : (
+            ) : sampleData.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse border border-slate-200 rounded-lg overflow-hidden">
                   <thead className="bg-slate-50">
@@ -153,15 +175,24 @@ export default function DatasetPreview({ dataset, onClose }) {
                   <tbody>
                     {sampleData.map((row, index) => (
                       <tr key={index} className="hover:bg-slate-50">
-                        {Object.values(row).map((value, i) => (
-                          <td key={i} className="border border-slate-200 px-4 py-2 text-slate-600">
-                            {String(value)}
-                          </td>
-                        ))}
+                        {Object.entries(row).map(([key, value], i) => {
+                          const column = dataset.columns?.find(c => c.name === key);
+                          const columnType = column?.type || 'string';
+                          return (
+                            <td key={i} className="border border-slate-200 px-4 py-2 text-slate-600">
+                              {formatCellValue(value, columnType)}
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+            ) : (
+              <div className="text-center py-8 bg-slate-50 rounded-lg">
+                <Database className="w-12 h-12 mx-auto text-slate-400 mb-2" />
+                <p className="text-slate-500">Нет данных для отображения</p>
               </div>
             )}
           </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Dataset, Visualization } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Map as MapIcon, Globe, Compass, Save } from "lucide-react";
+import { Map as MapIcon, Globe, Compass, Save, Settings, Plus } from "lucide-react";
 
 import MapConfigurator from "../components/maps/MapConfigurator";
 import MapView from "../components/maps/MapView";
@@ -12,8 +12,15 @@ export default function Maps() {
   const [datasets, setDatasets] = useState([]);
   const [visualizations, setVisualizations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [showBuilder, setShowBuilder] = useState(false);
-  const [currentMapConfig, setCurrentMapConfig] = useState(null);
+  const [showConfigurator, setShowConfigurator] = useState(false);
+  const [currentMapConfig, setCurrentMapConfig] = useState({
+    title: 'Образец данных на карте',
+    dataset_id: 'sample',
+    lat_column: 'latitude',
+    lon_column: 'longitude',
+    value_column: 'value',
+    overlay_type: 'none'
+  });
 
   useEffect(() => {
     loadData();
@@ -43,8 +50,8 @@ export default function Maps() {
         config: config
       });
       await loadData();
-      setShowBuilder(false);
-      setCurrentMapConfig(null);
+      setShowConfigurator(false);
+      setCurrentMapConfig(config);
     } catch (error) {
       console.error("Ошибка сохранения карты:", error);
     }
@@ -52,7 +59,19 @@ export default function Maps() {
 
   const handleEditMap = (viz) => {
     setCurrentMapConfig(viz.config);
-    setShowBuilder(true);
+    setShowConfigurator(true);
+  };
+
+  const handleCreateNewMap = () => {
+    setCurrentMapConfig({
+      title: '',
+      dataset_id: '',
+      lat_column: '',
+      lon_column: '',
+      value_column: '',
+      overlay_type: 'none'
+    });
+    setShowConfigurator(true);
   };
 
   return (
@@ -68,31 +87,122 @@ export default function Maps() {
           </p>
         </div>
 
-        {showBuilder ? (
+        {/* Main Content */}
+        {showConfigurator ? (
           <div className="grid lg:grid-cols-3 gap-8">
             <div className="lg:col-span-1">
               <MapConfigurator 
                 datasets={datasets}
                 onSave={handleSaveMap}
-                onCancel={() => setShowBuilder(false)}
+                onCancel={() => setShowConfigurator(false)}
                 initialConfig={currentMapConfig}
               />
             </div>
             <div className="lg:col-span-2">
-              <MapView />
+              <MapView config={currentMapConfig} />
             </div>
           </div>
         ) : (
           <>
-            <div className="text-center">
+            {/* Action Buttons */}
+            <div className="flex justify-center gap-4 flex-wrap">
               <Button 
-                onClick={() => setShowBuilder(true)}
-                className="bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white px-8 py-3 text-lg font-medium shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 gap-2"
+                onClick={handleCreateNewMap}
+                className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white px-6 py-3 text-base font-medium shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 gap-2"
               >
-                <MapIcon className="w-5 h-5" />
+                <Plus className="w-5 h-5" />
                 Создать новую карту
               </Button>
+              <Button 
+                onClick={() => setShowConfigurator(true)}
+                variant="outline"
+                className="px-6 py-3 text-base font-medium border-2 hover:bg-slate-50 gap-2"
+              >
+                <Settings className="w-5 h-5" />
+                Настроить карту
+              </Button>
             </div>
+
+            {/* Interactive Map Display */}
+            <div className="grid lg:grid-cols-4 gap-8">
+              <div className="lg:col-span-3">
+                <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-2xl">
+                  <CardHeader className="border-b border-slate-200">
+                    <CardTitle className="flex items-center gap-2 text-slate-900 heading-text">
+                      <Globe className="w-5 h-5 text-purple-500" />
+                      Интерактивная карта
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <MapView config={currentMapConfig} />
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Map Info Panel */}
+              <div className="lg:col-span-1 space-y-6">
+                <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-xl">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-slate-900 heading-text">
+                      <MapIcon className="w-5 h-5 text-blue-500" />
+                      Информация о карте
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <h4 className="font-semibold text-slate-800 mb-2">Текущая конфигурация:</h4>
+                      <div className="space-y-2 text-sm text-slate-600">
+                        <div className="flex justify-between">
+                          <span>Источник данных:</span>
+                          <span className="font-medium">
+                            {currentMapConfig.dataset_id === 'sample' ? 'Образцы' : datasets.find(d => d.id === currentMapConfig.dataset_id)?.name || 'Не выбран'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Широта:</span>
+                          <span className="font-medium">{currentMapConfig.lat_column || 'latitude'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Долгота:</span>
+                          <span className="font-medium">{currentMapConfig.lon_column || 'longitude'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Значения:</span>
+                          <span className="font-medium">{currentMapConfig.value_column || 'value'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-200">
+                      <h4 className="font-semibold text-slate-800 mb-2">Возможности карты:</h4>
+                      <ul className="text-sm text-slate-600 space-y-1">
+                        <li>• Интерактивное масштабирование</li>
+                        <li>• Детальная информация о точках</li>
+                        <li>• Цветовое кодирование значений</li>
+                        <li>• Наложение прогнозных данных</li>
+                        <li>• Корреляционный анализ</li>
+                      </ul>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-0 bg-gradient-to-r from-purple-50 to-indigo-50 shadow-lg border border-purple-200">
+                  <CardContent className="p-4">
+                    <div className="text-center">
+                      <div className="w-12 h-12 mx-auto mb-3 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center">
+                        <Compass className="w-6 h-6 text-white" />
+                      </div>
+                      <h4 className="font-semibold text-purple-800 mb-2">Исследуйте данные</h4>
+                      <p className="text-sm text-purple-700">
+                        Нажмите на точки карты, чтобы увидеть детальную информацию и скрытые паттерны в ваших данных.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+
+            {/* Saved Maps Gallery */}
             <MapGallery 
               visualizations={visualizations}
               isLoading={isLoading}

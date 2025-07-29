@@ -16,6 +16,8 @@ import Constructor from "./Constructor";
 
 import Settings from "./Settings";
 
+import DataTransformation from "./DataTransformation";
+
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 
 const PAGES = {
@@ -35,6 +37,8 @@ const PAGES = {
     Constructor: Constructor,
     
     Settings: Settings,
+    
+    DataTransformation: DataTransformation,
     
 }
 
@@ -78,6 +82,8 @@ function PagesContent() {
                 <Route path="/Constructor" element={<Constructor />} />
                 
                 <Route path="/Settings" element={<Settings />} />
+                
+                <Route path="/DataTransformation" element={<DataTransformation />} />
                 
             </Routes>
         </Layout>

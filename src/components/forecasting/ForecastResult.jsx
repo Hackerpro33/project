@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,16 +7,23 @@ import { LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Re
 import { ArrowUp, ArrowDown, List, RefreshCw, BarChart, Mail, TrendingUp, AlertTriangle, CheckCircle } from "lucide-react";
 
 export default function ForecastResult({ result, historicalData, onReset, onSendSummary }) {
-  const combinedData = [
-    ...historicalData.map(d => ({ date: d.date, value: d.value, type: 'historical' })),
-    ...result.forecast_data.map(d => ({ 
-      date: d.date, 
-      value: d.predicted_value, 
-      range: [d.confidence_lower, d.confidence_upper], 
-      type: 'forecast' 
-    }))
-  ];
-  
+  const combinedData = historicalData.map((d) => ({
+    date: d.date,
+    'Исторические данные': d.value,
+  }));
+
+  if (result && result.forecast_data) {
+    result.forecast_data.forEach((d, i) => {
+      combinedData.push({
+        date: d.date,
+        'Прогноз': d.predicted_value,
+        'Доверит. интервал': [d.confidence_lower, d.confidence_upper],
+        'Оптимистичный': result.scenarios?.optimistic?.[i],
+        'Пессимистичный': result.scenarios?.pessimistic?.[i]
+      });
+    });
+  }
+
   const growth = result.summary.predicted_growth_percentage;
   const GrowthIcon = growth > 0 ? ArrowUp : ArrowDown;
   const growthColor = growth > 0 ? "text-emerald-500" : "text-red-500";
@@ -64,13 +72,19 @@ export default function ForecastResult({ result, historicalData, onReset, onSend
                   labelFormatter={(value) => new Date(value).toLocaleDateString('ru-RU')}
                   formatter={(value, name) => [
                     typeof value === 'number' ? value.toFixed(2) : value,
-                    name === 'value' ? 'Значение' : name
+                    name
                   ]}
                 />
                 <Legend />
-                <Line dataKey="value" name="Исторические данные" stroke="#64748B" strokeWidth={2} dot={false} />
-                <Line dataKey="value" name="Прогноз" type="monotone" stroke="#F97316" strokeWidth={3} strokeDasharray="5 5" dot={false} />
-                <Area dataKey="range" name="Доверительный интервал" fill="#FDBA74" stroke={false} fillOpacity={0.3} />
+                <Line dataKey="Исторические данные" stroke="#64748B" strokeWidth={2} dot={false} />
+                <Line dataKey="Прогноз" type="monotone" stroke="#F97316" strokeWidth={3} strokeDasharray="5 5" dot={false} />
+                <Area dataKey="Доверит. интервал" name="Доверит. интервал" fill="#FDBA74" stroke={false} fillOpacity={0.3} />
+                {result.scenarios?.optimistic && (
+                  <Line dataKey="Оптимистичный" stroke="#10B981" strokeWidth={2} strokeDasharray="3 3" dot={false} />
+                )}
+                {result.scenarios?.pessimistic && (
+                  <Line dataKey="Пессимистичный" stroke="#EF4444" strokeWidth={2} strokeDasharray="3 3" dot={false} />
+                )}
               </ComposedChart>
             </ResponsiveContainer>
           </div>

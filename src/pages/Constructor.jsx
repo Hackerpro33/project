@@ -5,12 +5,14 @@ import { Component, BrainCircuit, Sparkles, Plus, Layout, Save, Eye } from "luci
 import { Dataset, Visualization } from "@/api/entities";
 import GlobalForceGraph from "../components/constructor/GlobalForceGraph";
 import DashboardBuilder from "../components/constructor/DashboardBuilder";
+import AutomatedReportGenerator from "../components/constructor/AutomatedReportGenerator"; // Import new component
 
 export default function Constructor() {
   const [activeMode, setActiveMode] = useState('dashboard');
   const [datasets, setDatasets] = useState([]);
   const [visualizations, setVisualizations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showReportGenerator, setShowReportGenerator] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -31,6 +33,14 @@ export default function Constructor() {
     setIsLoading(false);
   };
 
+  if (showReportGenerator) {
+    return <AutomatedReportGenerator 
+              datasets={datasets} 
+              visualizations={visualizations}
+              onClose={() => setShowReportGenerator(false)} 
+            />;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -39,7 +49,7 @@ export default function Constructor() {
             Конструктор отчетов и связей
           </h1>
           <p className="text-slate-600 text-lg max-w-2xl mx-auto elegant-text">
-            Создавайте интерактивные дашборды, объединяйте визуализации и анализируйте глобальные взаимосвязи.
+            Создавайте интерактивные дашборды, анализируйте глобальные взаимосвязи или сгенерируйте автоматический AI-отчет.
           </p>
         </div>
 
@@ -63,6 +73,14 @@ export default function Constructor() {
                 <BrainCircuit className="w-4 h-4" />
                 Анализ связей
               </Button>
+               <Button 
+                onClick={() => setShowReportGenerator(true)} 
+                variant={'ghost'} 
+                className="gap-2 text-purple-600 hover:bg-purple-100 hover:text-purple-700"
+              >
+                <Sparkles className="w-4 h-4" />
+                Сводный AI-отчет
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -77,33 +95,7 @@ export default function Constructor() {
         )}
 
         {activeMode === 'connections' && (
-          <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-xl">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-slate-900 heading-text">
-                <BrainCircuit className="w-5 h-5 text-purple-500" />
-                Глобальный анализ связей
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                <p className="text-slate-600 elegant-text max-w-2xl">
-                  Нажмите кнопку, чтобы сгенерировать комплексный граф, который покажет все взаимосвязи между вашими наборами данных, графиками, картами и прогнозами. Искусственный интеллект проанализирует структуру вашего проекта и предоставит ключевые выводы.
-                </p>
-                <Button 
-                  size="lg"
-                  onClick={() => setActiveMode('graph')}
-                  className="bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white px-8 py-4 text-lg font-medium shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 gap-2 elegant-text"
-                >
-                  <Sparkles className="w-5 h-5" />
-                  Проанализировать связи
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {activeMode === 'graph' && (
-          <GlobalForceGraph onClose={() => setActiveMode('connections')} />
+          <GlobalForceGraph onClose={() => setActiveMode('dashboard')} />
         )}
       </div>
     </div>

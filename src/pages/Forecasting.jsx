@@ -27,6 +27,14 @@ const forecastSchema = {
         required: ["date", "predicted_value"]
       }
     },
+    scenarios: {
+        type: "object",
+        properties: {
+            optimistic: { type: "array", items: { "type": "number" } },
+            pessimistic: { type: "array", items: { "type": "number" } }
+        },
+        description: "Прогнозы для оптимистичного и пессимистичного сценариев."
+    },
     summary: {
       type: "object",
       properties: {
@@ -53,6 +61,8 @@ export default function Forecasting() {
   const [historicalData, setHistoricalData] = useState([]);
   const [correlationResult, setCorrelationResult] = useState(null);
   const [activeTab, setActiveTab] = useState('forecast');
+  const [mapConfig, setMapConfig] = useState(null);
+  const [mapData, setMapData] = useState(null);
 
   useEffect(() => {
     loadDatasets();
@@ -143,36 +153,31 @@ export default function Forecasting() {
 
     try {
       const externalFactorsPrompt = config.external_factors?.length > 0 
-        ? `Учтите следующие внешние факторы (экзогенные переменные) при построении прогноза: ${config.external_factors.join(', ')}.`
+        ? `Учтите следующие внешние факторы (экзогенные переменные) при построении прогноза: ${config.external_factors.join(', ')}. Данные из корреляционного и графового анализа можно использовать как основу для этих факторов.`
         : '';
         
       const prompt = `
-        Вы — эксперт по анализу временных рядов и машинному обучению с глубокими знаниями в области прогнозирования.
+        Вы — эксперт по анализу временных рядов и машинному обучению.
         
-        Проанализируйте предоставленные исторические данные за ${mockHistorical.length} дней и создайте детальный прогноз на ${config.horizon} дней вперед.
+        Проанализируйте предоставленные исторические данные и создайте детальный прогноз на ${config.horizon} дней вперед.
         
         ДАННЫЕ ДЛЯ АНАЛИЗА:
-        - Основной временной ряд: '${config.value_column}' из набора данных с ID ${config.dataset_id}
-        - Столбец даты: '${config.date_column}'
+        - Основной временной ряд: '${config.value_column}' из набора данных ID ${config.dataset_id}
         - Последние 30 точек данных: ${JSON.stringify(mockHistorical.slice(-30))}
-        - Статистика: мин=${Math.min(...mockHistorical.map(d => d.value)).toFixed(2)}, макс=${Math.max(...mockHistorical.map(d => d.value)).toFixed(2)}, среднее=${(mockHistorical.reduce((a,b) => a + b.value, 0) / mockHistorical.length).toFixed(2)}
         
         ${externalFactorsPrompt}
         
-        ТРЕБОВАНИЯ К АНАЛИЗУ:
-        1. Определите наличие сезонности (годовая, недельная, месячная)
-        2. Выявите основной тренд (возрастающий/убывающий/стабильный)
-        3. Оцените уровень волатильности и его влияние на прогноз.
-        4. Рассчитайте доверительные интервалы для прогноза с вероятностью 95%.
-        5. Определите ключевые факторы риска и дайте практические рекомендации по их митигации.
-        6. Проанализируйте влияние указанных внешних факторов на прогнозируемый показатель.
+        ТРЕБОВАНИЯ К ПРОГНОЗУ:
+        1.  Постройте базовый прогноз ('predicted_value') с 95% доверительным интервалом ('confidence_lower', 'confidence_upper').
+        2.  Сгенерируйте два дополнительных сценария: 'optimistic' и 'pessimistic'. Оптимистичный сценарий должен отражать наилучшее возможное развитие событий с учетом позитивных факторов, а пессимистичный — наихудшее.
+        3.  Проведите глубокий анализ данных, включая тренды, сезонность, волатильность.
+        4.  Сформируйте ключевые выводы, факторы риска и практические рекомендации.
         
         МЕТОДОЛОГИЯ:
-        - Используйте ансамбль моделей, включая SARIMAX (для учета внешних факторов), Prophet и градиентный бустинг (например, LightGBM).
-        - Примените кросс-валидацию на временных рядах для оценки качества и устойчивости модели.
-        - Учтите возможные структурные сдвиги, аномалии и выбросы в данных.
+        - Используйте ансамбль моделей (SARIMAX, Prophet, градиентный бустинг) для повышения точности.
+        - Учтите влияние внешних факторов при построении всех сценариев.
         
-        Предоставьте результат в указанном JSON формате с подробным анализом.
+        Предоставьте результат в указанном JSON формате.
       `;
 
       const result = await InvokeLLM({
@@ -202,6 +207,20 @@ export default function Forecasting() {
     setCorrelationResult(result);
   };
 
+  const handleMapConfigApply = (newConfig) => {
+    setMapConfig(newConfig);
+    if (newConfig.dataset_id) {
+        const selectedDs = datasets.find(d => d.id === newConfig.dataset_id);
+        if (selectedDs) {
+            setMapData(selectedDs.sample_data || []);
+        } else {
+            setMapData(null); // Clear data if dataset not found
+        }
+    } else {
+        setMapData(null); // Clear data if no dataset selected
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -229,7 +248,6 @@ export default function Forecasting() {
                 onClick={() => setActiveTab('map')} 
                 variant={activeTab === 'map' ? 'default' : 'ghost'} 
                 className="gap-2"
-                disabled={!forecastResult && !correlationResult}
               >
                 <Map className="w-4 h-4" />
                 Анализ на карте
@@ -269,15 +287,23 @@ export default function Forecasting() {
             <div className="lg:col-span-1">
               <MapConfigurator 
                 datasets={datasets}
-                onSave={() => alert("Сохранение карты из этого режима не поддерживается. Настройте и сохраните карту во вкладке 'Карты'.")}
-                onCancel={() => {}}
-                initialConfig={{}}
+                onSave={handleMapConfigApply}
+                onCancel={() => {}} // This can be empty as it's not saving to backend here
+                initialConfig={{
+                    title: 'Анализ на карте',
+                    dataset_id: '',
+                    lat_column: '',
+                    lon_column: '',
+                    value_column: '',
+                    overlay_type: 'none'
+                }}
                 forecastData={forecastResult}
                 correlationData={correlationResult}
+                isEmbedded={true} // Indicate that this is used within another view, not a standalone map creator
               />
             </div>
             <div className="lg:col-span-2">
-              <MapView />
+              <MapView data={mapData} config={mapConfig}/>
             </div>
           </div>
         )}

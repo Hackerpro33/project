@@ -13,7 +13,8 @@ import {
   Activity,
   Network,
   Component, // Added Component icon
-  Settings as SettingsIcon // Imported SettingsIcon
+  Settings as SettingsIcon, // Imported SettingsIcon
+  RefreshCw // Added RefreshCw icon for Data Transformation
 } from "lucide-react";
 import {
   Sidebar,
@@ -41,6 +42,12 @@ const navigationItems = [
     url: createPageUrl("DataSources"),
     icon: Database,
     gradient: "from-blue-500 to-cyan-600"
+  },
+  {
+    title: "Преобразование данных",
+    url: createPageUrl("DataTransformation"),
+    icon: RefreshCw,
+    gradient: "from-green-500 to-emerald-600"
   },
   {
     title: "Карты",

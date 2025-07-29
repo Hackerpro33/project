@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Upload, 
-  FileText, 
-  Database, 
+import {
+  Upload,
+  FileText,
+  Database,
   Tag,
   Calendar,
   BarChart,
@@ -67,11 +67,11 @@ export default function DataSources() {
     try {
       const { file_url } = await UploadFile({ file });
       uploadedFileUrl = file_url;
-      
+
       // Проверяем тип файла
       const fileExtension = file.name.split('.').pop().toLowerCase();
       const supportedByExtraction = ['csv', 'png', 'jpg', 'jpeg', 'pdf'];
-      
+
       if (supportedByExtraction.includes(fileExtension)) {
         // Попробуем извлечь данные с помощью интеграции для поддерживаемых типов
         try {
@@ -92,7 +92,7 @@ export default function DataSources() {
                     required: ["name", "type"]
                   }
                 },
-                row_count: { 
+                row_count: {
                   type: "number",
                   description: "Общее количество строк в наборе данных."
                 },
@@ -135,7 +135,7 @@ export default function DataSources() {
     } catch (error) {
       console.error('Ошибка обработки файла:', error);
       const errorMessage = String(error);
-      
+
       if (errorMessage.includes("413") || errorMessage.includes("Payload too large")) {
         alert(`Ошибка: Файл слишком большой. Пожалуйста, загрузите файл размером до ${MAX_FILE_SIZE_MB} МБ.`);
       } else if (errorMessage.includes("Unsupported file type") && uploadedFileUrl) {
@@ -155,8 +155,8 @@ export default function DataSources() {
     const fileName = file.name.toLowerCase();
     const fileExtension = file.name.split('.').pop().toLowerCase();
     let estimatedColumns = [];
-    let sampleData = [];
-    
+    let sampleData = []; // Данные в резервном режиме всегда пустые
+
     // Определяем структуру на основе имени файла
     if (fileName.includes('employ') || fileName.includes('сотрудник') || fileName.includes('staff')) {
       estimatedColumns = [
@@ -168,10 +168,13 @@ export default function DataSources() {
         { name: "Salary", type: "number" },
         { name: "Status", type: "string" }
       ];
-      sampleData = [
-        { Employee_ID: "EMP001", Full_Name: "Иван Петров", Department: "ИТ", Position: "Разработчик", Hire_Date: "2023-01-15", Salary: 120000, Status: "Активный" },
-        { Employee_ID: "EMP002", Full_Name: "Анна Сидорова", Department: "HR", Position: "Менеджер", Hire_Date: "2022-11-10", Salary: 95000, Status: "Активный" },
-        { Employee_ID: "EMP003", Full_Name: "Михаил Козлов", Department: "Маркетинг", Position: "Аналитик", Hire_Date: "2023-03-22", Salary: 85000, Status: "Активный" }
+    } else if (fileName.includes('crime') || fileName.includes('преступ') || fileName.includes('регион')) {
+      estimatedColumns = [
+        { name: "region", type: "string" },
+        { name: "crime_type", type: "string" },
+        { name: "cases_count", type: "number" },
+        { name: "latitude", type: "number" },
+        { name: "longitude", type: "number" }
       ];
     } else if (fileName.includes('safety') || fileName.includes('mta') || fileName.includes('безопасность')) {
       estimatedColumns = [
@@ -184,11 +187,6 @@ export default function DataSources() {
         { name: "Latitude", type: "number" },
         { name: "Longitude", type: "number" }
       ];
-      sampleData = [
-        { Date: "2024-01-15", Agency: "MTA", Location: "Times Square", Incident_Type: "Platform Fall", Severity: "Minor", Count: 1, Latitude: 40.7580, Longitude: -73.9855 },
-        { Date: "2024-01-16", Agency: "MTA", Location: "Grand Central", Incident_Type: "Medical Emergency", Severity: "Serious", Count: 1, Latitude: 40.7527, Longitude: -73.9772 },
-        { Date: "2024-01-17", Agency: "MTA", Location: "Union Square", Incident_Type: "Equipment Failure", Severity: "Minor", Count: 2, Latitude: 40.7359, Longitude: -73.9911 }
-      ];
     } else if (fileName.includes('sales') || fileName.includes('продажи') || fileName.includes('revenue')) {
       estimatedColumns = [
         { name: "Date", type: "date" },
@@ -200,40 +198,29 @@ export default function DataSources() {
         { name: "Region", type: "string" },
         { name: "Customer_ID", type: "string" }
       ];
-      sampleData = [
-        { Date: "2024-01-15", Product_Name: "Laptop Pro", Category: "Electronics", Quantity: 2, Unit_Price: 89990, Total_Amount: 179980, Region: "Москва", Customer_ID: "CUST001" },
-        { Date: "2024-01-16", Product_Name: "Smartphone X", Category: "Electronics", Quantity: 1, Unit_Price: 54990, Total_Amount: 54990, Region: "СПб", Customer_ID: "CUST002" },
-        { Date: "2024-01-17", Product_Name: "Tablet Mini", Category: "Electronics", Quantity: 3, Unit_Price: 29990, Total_Amount: 89970, Region: "Екатеринбург", Customer_ID: "CUST003" }
-      ];
     } else {
       // Универсальная структура для неизвестных файлов
       estimatedColumns = [
-        { name: "ID", type: "string" },
-        { name: "Name", type: "string" },
-        { name: "Value", type: "number" },
-        { name: "Date", type: "date" },
-        { name: "Category", type: "string" },
-        { name: "Status", type: "string" }
-      ];
-      sampleData = [
-        { ID: "001", Name: "Запись 1", Value: 100, Date: "2024-01-15", Category: "Категория А", Status: "Активно" },
-        { ID: "002", Name: "Запись 2", Value: 250, Date: "2024-01-16", Category: "Категория Б", Status: "Активно" },
-        { ID: "003", Name: "Запись 3", Value: 175, Date: "2024-01-17", Category: "Категория А", Status: "Неактивно" }
+        { name: "column1", type: "string" },
+        { name: "column2", type: "number" },
+        { name: "column3", type: "string" },
+        { name: "column4", type: "number" },
+        { name: "column5", type: "date" }
       ];
     }
 
     // Добавляем информацию о типе файла в описание
-    const fileTypeDescription = fileExtension === 'xlsx' || fileExtension === 'xls' ? 'Excel файла' : 
-                               fileExtension === 'csv' ? 'CSV файла' : 
+    const fileTypeDescription = fileExtension === 'xlsx' || fileExtension === 'xls' ? 'Excel файла' :
+                               fileExtension === 'csv' ? 'CSV файла' :
                                `${fileExtension.toUpperCase()} файла`;
 
     setPendingDataset({
       name: file.name.replace(/\.[^/.]+$/, ""),
-      description: `Загруженный набор данных из ${fileTypeDescription} (структура определена автоматически на основе имени файла)`,
+      description: `Загруженный набор данных из ${fileTypeDescription} (требуется ручная настройка столбцов)`,
       file_url,
       columns: estimatedColumns,
-      row_count: Math.floor(Math.random() * 9000) + 1000, // Случайное число от 1000 до 9999
-      sample_data: sampleData,
+      row_count: 0, // Нет данных - нет строк
+      sample_data: [], // Всегда пустые данные для резервного режима
     });
     setShowImportPreview(true);
   };
@@ -284,7 +271,7 @@ export default function DataSources() {
         </div>
 
         {/* Upload Section */}
-        <FileUploadZone 
+        <FileUploadZone
           onFileUpload={handleFileUpload}
           isUploading={isUploading}
         />
@@ -330,7 +317,7 @@ export default function DataSources() {
             ))
           ) : (
             filteredDatasets.map(dataset => (
-              <DatasetCard 
+              <DatasetCard
                 key={dataset.id}
                 dataset={dataset}
                 onPreview={handlePreview}
@@ -357,7 +344,7 @@ export default function DataSources() {
 
         {/* Dataset Preview Modal */}
         {showPreview && (
-          <DatasetPreview 
+          <DatasetPreview
             dataset={selectedDataset}
             onClose={() => setShowPreview(false)}
           />

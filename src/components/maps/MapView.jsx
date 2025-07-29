@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -16,91 +17,157 @@ L.Icon.Default.mergeOptions({
 export default function MapView({ data, config, forecastOverlay, correlationOverlay }) {
   const position = [55.7558, 37.6173]; // Default position (Moscow)
 
+  // Enhanced sample data with more variety and realistic information
   const samplePoints = [
-    { lat: 55.7558, lon: 37.6173, value: 100, name: "Москва", forecast: 120, correlation: 0.85 },
-    { lat: 59.9311, lon: 30.3609, value: 250, name: "Санкт-Петербург", forecast: 280, correlation: 0.72 },
-    { lat: 56.8431, lon: 60.6454, value: 150, name: "Екатеринбург", forecast: 160, correlation: 0.91 },
+    { lat: 55.7558, lon: 37.6173, value: 850, name: "Москва", category: "Мегаполис", forecast: 920, correlation: 0.88, description: "Столица России, центр экономической активности" },
+    { lat: 59.9311, lon: 30.3609, value: 720, name: "Санкт-Петербург", category: "Культурный центр", forecast: 780, correlation: 0.75, description: "Северная столица, культурный и образовательный центр" },
+    { lat: 56.8431, lon: 60.6454, value: 480, name: "Екатеринбург", category: "Промышленный", forecast: 510, correlation: 0.82, description: "Крупный промышленный центр Урала" },
+    { lat: 55.0415, lon: 82.9346, value: 520, name: "Новосибирск", category: "Научный", forecast: 580, correlation: 0.79, description: "Научный центр Сибири" },
+    { lat: 56.0184, lon: 92.8672, value: 380, name: "Красноярск", category: "Региональный", forecast: 420, correlation: 0.71, description: "Административный центр Красноярского края" },
+    { lat: 53.2001, lon: 50.15, value: 450, name: "Самара", category: "Промышленный", forecast: 490, correlation: 0.77, description: "Авиакосмическая промышленность" },
+    { lat: 51.5312, lon: 46.0073, value: 410, name: "Саратов", category: "Образовательный", forecast: 440, correlation: 0.73, description: "Образовательный и научный центр Поволжья" },
+    { lat: 47.2357, lon: 39.7015, value: 390, name: "Ростов-на-Дону", category: "Торговый", forecast: 430, correlation: 0.69, description: "Торговые ворота Юга России" }
   ];
 
-  const pointsToRender = data || samplePoints;
-  const mapCenter = pointsToRender.length > 0 ? [pointsToRender[0].lat, pointsToRender[0].lon] : position;
+  const pointsToRender = data && data.length > 0 ? data : samplePoints;
+  
+  const firstValidPoint = pointsToRender.find(p => 
+      config?.lat_column && config?.lon_column &&
+      typeof p[config.lat_column] === 'number' &&
+      typeof p[config.lon_column] === 'number'
+  );
+  
+  const mapCenter = firstValidPoint 
+    ? [firstValidPoint[config.lat_column], firstValidPoint[config.lon_column]] 
+    : (pointsToRender.length > 0 && pointsToRender[0].lat ? [pointsToRender[0].lat, pointsToRender[0].lon] : position);
+
 
   const getMarkerColor = (point) => {
+    const value = config?.value_column ? point[config.value_column] : point.value;
     if (config?.overlay_type === 'forecast' && point.forecast) {
-      const intensity = point.forecast / 300; // Normalize
+      const intensity = point.forecast / 1000; // Normalize to 0-1
       return `hsl(${120 - intensity * 120}, 70%, 50%)`; // Green to red
     }
     if (config?.overlay_type === 'correlation' && point.correlation) {
       const intensity = Math.abs(point.correlation);
       return `hsl(${point.correlation > 0 ? 240 : 0}, 70%, ${50 + intensity * 30}%)`; // Blue for positive, red for negative
     }
-    return '#8B5CF6'; // Default purple
+    
+    // Default color based on value
+    const intensity = value / 850; // Normalize based on max sample value
+    return `hsl(${240 - intensity * 60}, 70%, ${45 + intensity * 15}%)`; // Blue to purple gradient
   };
 
   const getMarkerRadius = (point) => {
+    const value = config?.value_column ? point[config.value_column] : point.value;
+    const baseRadius = 8;
     if (config?.overlay_type === 'forecast' && point.forecast) {
-      return 5 + (point.forecast / 50);
+      return baseRadius + (point.forecast / 100);
     }
     if (config?.overlay_type === 'correlation' && point.correlation) {
-      return 5 + (Math.abs(point.correlation) * 15);
+      return baseRadius + (Math.abs(point.correlation) * 12);
     }
-    return 5 + (point.value / 50 || 1);
+    return baseRadius + (value / 100);
+  };
+
+  const getCategoryColor = (category) => {
+    const colors = {
+      'Мегаполис': 'bg-red-100 text-red-700',
+      'Культурный центр': 'bg-purple-100 text-purple-700',
+      'Промышленный': 'bg-orange-100 text-orange-700',
+      'Научный': 'bg-blue-100 text-blue-700',
+      'Региональный': 'bg-green-100 text-green-700',
+      'Образовательный': 'bg-indigo-100 text-indigo-700',
+      'Торговый': 'bg-yellow-100 text-yellow-700'
+    };
+    return colors[category] || 'bg-gray-100 text-gray-700';
   };
 
   return (
-    <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-xl h-[60vh] lg:h-full">
-      <CardContent className="p-0 h-full">
-        <MapContainer 
-          center={mapCenter} 
-          zoom={5} 
-          scrollWheelZoom={true} 
-          style={{ height: '100%', width: '100%', borderRadius: '0.75rem' }}
-        >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          />
-          {pointsToRender.map((point, index) => (
+    <div className="h-[70vh] w-full">
+      <MapContainer 
+        center={mapCenter} 
+        zoom={pointsToRender.length > 0 ? 5 : 4}
+        scrollWheelZoom={true} 
+        style={{ height: '100%', width: '100%', borderRadius: '0.75rem' }}
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+        />
+        {pointsToRender.map((point, index) => {
+          const lat = config?.lat_column ? point[config.lat_column] : point.lat;
+          const lon = config?.lon_column ? point[config.lon_column] : point.lon;
+          const value = config?.value_column ? point[config.value_column] : point.value;
+          const name = point[Object.keys(point).find(k => k.toLowerCase().includes('name') || k.toLowerCase().includes('region'))] || `Точка ${index + 1}`;
+
+          if (typeof lat !== 'number' || typeof lon !== 'number' || isNaN(lat) || isNaN(lon)) {
+            return null;
+          }
+
+          return (
             <CircleMarker 
               key={index} 
-              center={[point.lat, point.lon]}
+              center={[lat, lon]}
               radius={getMarkerRadius(point)}
               pathOptions={{ 
                 color: getMarkerColor(point), 
                 fillColor: getMarkerColor(point), 
-                fillOpacity: 0.7 
+                fillOpacity: 0.7,
+                weight: 2
               }}
             >
               <Popup>
-                <div className="space-y-2">
-                  <h3 className="font-bold text-slate-900 heading-text">
-                    {point.name || `Точка ${index + 1}`}
-                  </h3>
-                  {point.value && (
-                    <div className="elegant-text">
-                      <Badge variant="outline">Значение: {point.value}</Badge>
-                    </div>
-                  )}
-                  {config?.overlay_type === 'forecast' && point.forecast && (
-                    <div className="elegant-text">
-                      <Badge className="bg-green-100 text-green-700">
-                        Прогноз: {point.forecast}
+                <div className="space-y-3 min-w-64">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-slate-900 heading-text text-lg">
+                      {name}
+                    </h3>
+                    {point.category && (
+                      <Badge className={getCategoryColor(point.category)}>
+                        {point.category}
                       </Badge>
-                    </div>
+                    )}
+                  </div>
+                  
+                  {point.description && (
+                    <p className="text-sm text-slate-600 elegant-text">
+                      {point.description}
+                    </p>
                   )}
-                  {config?.overlay_type === 'correlation' && point.correlation !== undefined && (
-                    <div className="elegant-text">
-                      <Badge className={point.correlation > 0 ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-700"}>
-                        Корреляция: {point.correlation.toFixed(2)}
-                      </Badge>
-                    </div>
-                  )}
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    {value !== undefined && (
+                      <div className="text-center p-2 bg-slate-50 rounded">
+                        <div className="text-sm font-semibold text-slate-700">{typeof value === 'number' ? value.toLocaleString() : value}</div>
+                        <div className="text-xs text-slate-500">{config?.value_column || 'Значение'}</div>
+                      </div>
+                    )}
+                    
+                    {config?.overlay_type === 'forecast' && point.forecast && (
+                      <div className="text-center p-2 bg-green-50 rounded">
+                        <div className="text-sm font-semibold text-green-700">{point.forecast}</div>
+                        <div className="text-xs text-green-600">Прогноз</div>
+                      </div>
+                    )}
+                    
+                    {config?.overlay_type === 'correlation' && point.correlation !== undefined && (
+                      <div className="text-center p-2 bg-blue-50 rounded">
+                        <div className="text-sm font-semibold text-blue-700">{point.correlation.toFixed(2)}</div>
+                        <div className="text-xs text-blue-600">Корреляция</div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="text-xs text-slate-400 border-t pt-2 elegant-text">
+                    Координаты: {lat.toFixed(4)}°, {lon.toFixed(4)}°
+                  </div>
                 </div>
               </Popup>
             </CircleMarker>
-          ))}
-        </MapContainer>
-      </CardContent>
-    </Card>
+          )
+        })}
+      </MapContainer>
+    </div>
   );
 }

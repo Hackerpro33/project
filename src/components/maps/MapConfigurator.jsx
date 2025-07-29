@@ -1,12 +1,13 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Compass, Save, X, MapPin } from "lucide-react";
+import { Compass, Save, X, MapPin, RefreshCw } from "lucide-react";
 
-export default function MapConfigurator({ datasets, onSave, onCancel, initialConfig, forecastData, correlationData }) {
+export default function MapConfigurator({ datasets, onSave, onCancel, initialConfig, forecastData, correlationData, isEmbedded }) {
   const [config, setConfig] = useState(initialConfig || {
     title: '',
     dataset_id: '',
@@ -62,8 +63,8 @@ export default function MapConfigurator({ datasets, onSave, onCancel, initialCon
   };
 
   const handleSubmit = () => {
-    if (!config.title || !config.dataset_id || !config.lat_column || !config.lon_column) {
-      alert("Пожалуйста, заполните все обязательные поля.");
+    if (!config.dataset_id || !config.lat_column || !config.lon_column) {
+      alert("Пожалуйста, выберите набор данных и столбцы широты/долготы.");
       return;
     }
     onSave(config);
@@ -180,12 +181,20 @@ export default function MapConfigurator({ datasets, onSave, onCancel, initialCon
         )}
 
         <div className="flex gap-3 pt-6">
-          <Button variant="outline" onClick={onCancel} className="flex-1 gap-2 elegant-text">
-            <X className="w-4 h-4" /> Отмена
-          </Button>
-          <Button onClick={handleSubmit} className="flex-1 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 gap-2 elegant-text">
-            <Save className="w-4 h-4" /> Сохранить карту
-          </Button>
+          {isEmbedded ? (
+            <Button onClick={handleSubmit} className="flex-1 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 gap-2 elegant-text">
+              <RefreshCw className="w-4 h-4" /> Обновить карту
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={onCancel} className="flex-1 gap-2 elegant-text">
+                <X className="w-4 h-4" /> Отмена
+              </Button>
+              <Button onClick={handleSubmit} className="flex-1 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 gap-2 elegant-text">
+                <Save className="w-4 h-4" /> Сохранить карту
+              </Button>
+            </>
+          )}
         </div>
       </CardContent>
     </Card>
