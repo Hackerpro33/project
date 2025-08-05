@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User } from "@/api/entities";
+// import { User } from "@/api/entities";   // УДАЛЁН! Не нужен.
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,8 +34,12 @@ export default function UserManagement() {
 
   const loadCurrentUser = async () => {
     try {
-      const user = await User.me();
-      setCurrentUser(user);
+      // Временно используем тестового пользователя
+      setCurrentUser({
+        full_name: "Demo User",
+        email: "demo@localhost",
+        role: "admin"
+      });
     } catch (error) {
       console.error('Ошибка загрузки текущего пользователя:', error);
     }
@@ -44,8 +48,7 @@ export default function UserManagement() {
   const loadUsers = async () => {
     setIsLoading(true);
     try {
-      // В реальном приложении здесь был бы вызов User.list()
-      // Пока используем моковые данные
+      // В будущем замени на API-запрос к своему backend
       const mockUsers = [
         {
           id: '1',
@@ -278,3 +281,4 @@ export default function UserManagement() {
     </div>
   );
 }
+
