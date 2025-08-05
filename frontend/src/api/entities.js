@@ -1,11 +1,16 @@
-import { base44 } from './base44Client';
+// Новый entities.js — только обращения к твоему FastAPI backend
 
+// Получить список датасетов
+export async function getDatasets() {
+  const res = await fetch('/api/dataset/list');
+  return res.json();
+}
 
-export const Dataset = base44.entities.Dataset;
+// Получить визуализации (заглушка, до внедрения)
+export async function getVisualizations() {
+  // Здесь будет реальный API позже
+  return [];
+}
 
-export const Visualization = base44.entities.Visualization;
+// Пользовательские функции — позже реализуем через backend
 
-
-
-// auth sdk:
-export const User = base44.auth;

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from "react";
-import { Dataset, Visualization } from "@/api/entities";
+import { getDatasets, getVisualizations } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -33,19 +33,18 @@ export default function Dashboard() {
   }, []);
 
   const loadData = async () => {
-    setIsLoading(true);
-    try {
-      const [datasetsData, visualizationsData] = await Promise.all([
-        Dataset.list('-created_date', 10),
-        Visualization.list('-created_date', 10)
-      ]);
-      setDatasets(datasetsData);
-      setVisualizations(visualizationsData);
-    } catch (error) {
-      console.error('Ошибка загрузки данных:', error);
-    }
-    setIsLoading(false);
-  };
+   setIsLoading(true);
+   try {
+    const datasetsData = await getDatasets();
+    // const visualizationsData = await getVisualizations(); // если реализуешь
+    setDatasets(datasetsData);
+    // setVisualizations(visualizationsData);
+  } catch (error) {
+    console.error('Ошибка загрузки данных:', error);
+  }
+   setIsLoading(false);
+};
+     
 
   const sampleTrendData = [
     { name: 'Jan', value: 400, growth: 240 },
