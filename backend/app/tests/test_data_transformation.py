@@ -77,6 +77,14 @@ def clear_file_registry():
 
 
 @pytest.fixture(autouse=True)
+def isolate_upload_dir(tmp_path, monkeypatch):
+    upload_dir = tmp_path / "uploads"
+    upload_dir.mkdir()
+    monkeypatch.setattr(main, "UPLOAD_DIR", str(upload_dir))
+    yield
+
+
+@pytest.fixture(autouse=True)
 def isolate_email_log(tmp_path, monkeypatch):
     log_path = tmp_path / "email_log.jsonl"
     monkeypatch.setattr(main, "EMAIL_LOG_PATH", log_path)
@@ -392,6 +400,96 @@ def test_dataset_delete_missing_raises():
     assert excinfo.value.status_code == 404
 
 
+def _set_upload_limit(monkeypatch, size_bytes):
+    monkeypatch.setattr(main, "MAX_UPLOAD_SIZE", size_bytes)
+    if size_bytes < 1024 * 1024:
+        monkeypatch.setattr(main, "MAX_UPLOAD_SIZE_MB", 1)
+    else:
+        monkeypatch.setattr(main, "MAX_UPLOAD_SIZE_MB", size_bytes // (1024 * 1024))
+
+
+def _make_wide_csv(rows: int, columns: int) -> bytes:
+    headers = [f"col{i}" for i in range(columns)]
+    lines = [",".join(headers)]
+    for r in range(rows):
+        lines.append(",".join(f"{r}_{c}" for c in range(columns)))
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def test_upload_multiple_tables_near_limit(monkeypatch, client):
+    limit = 5 * 1024  # 5 KB per file
+    _set_upload_limit(monkeypatch, limit)
+
+    created_datasets = []
+    for idx in range(3):
+        csv_bytes = _make_wide_csv(rows=50, columns=3)
+        assert len(csv_bytes) < limit
+
+        upload_response = client.post(
+            "/api/upload",
+            files={"file": (f"table_{idx}.csv", csv_bytes, "text/csv")},
+            headers=HEADERS,
+        )
+        assert upload_response.status_code == 200
+        uploaded = upload_response.json()
+        assert uploaded["status"] == "success"
+        assert uploaded["quick_extraction"]["row_count"] == 50
+
+        extract_response = client.post(
+            "/api/extract",
+            json={"file_url": uploaded["file_url"]},
+            headers=HEADERS,
+        )
+        assert extract_response.status_code == 200
+        extracted = extract_response.json()
+        assert extracted["output"]["row_count"] == 50
+
+        dataset_payload = {
+            "name": f"Batch {idx}",
+            "description": "Loaded for integration test",
+            "tags": [f"batch-{idx}"],
+            "columns": uploaded["quick_extraction"]["columns"],
+            "row_count": uploaded["quick_extraction"]["row_count"],
+            "sample_data": uploaded["quick_extraction"]["sample_data"],
+        }
+
+        dataset_response = client.post(
+            "/api/dataset/create",
+            data=json.dumps(dataset_payload),
+            headers={"Content-Type": "application/json", **HEADERS},
+        )
+        assert dataset_response.status_code == 200
+        created_datasets.append(dataset_response.json()["id"])
+
+    list_response = client.get(
+        "/api/dataset/list",
+        headers=HEADERS,
+    )
+    assert list_response.status_code == 200
+    listed = list_response.json()
+    assert len(listed) == len(created_datasets)
+    names = {item["name"] for item in listed}
+    assert names == {"Batch 0", "Batch 1", "Batch 2"}
+
+
+def test_upload_rejects_files_over_limit(monkeypatch, client):
+    limit = 1024  # 1 KB
+    _set_upload_limit(monkeypatch, limit)
+
+    csv_bytes = _make_wide_csv(rows=80, columns=5)
+    assert len(csv_bytes) > limit
+
+    response = client.post(
+        "/api/upload",
+        files={"file": ("too_big.csv", csv_bytes, "text/csv")},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 413
+    payload = response.json()
+    assert "File too large" in payload["detail"]
+
+
 def test_visualization_ensure_dates_populates_fields(monkeypatch):
     timestamp = int(datetime(2023, 12, 31, 23, 59, 59).timestamp())
     monkeypatch.setattr(visualizations_api.time, "time", lambda: timestamp)
@@ -513,6 +611,30 @@ def test_api_llm_parses_json_response(monkeypatch):
     assert result == {"answer": 42}
     assert captured["url"].endswith("/api/generate")
     assert "Hello" in captured["json"]["prompt"]
+
+
+def test_api_llm_returns_plain_text_when_json_missing(monkeypatch):
+    _mock_llm(monkeypatch, "Answer: 42")
+    result = asyncio.run(
+        main.api_llm(
+            main.LLMReq(prompt="Hi", response_json_schema={"type": "object"})
+        )
+    )
+    assert result == {"response": "Answer: 42"}
+
+
+def test_api_llm_returns_json_when_prompted_via_client(monkeypatch, client):
+    _mock_llm(monkeypatch, '{"summary": {"rows": 10}}')
+    response = client.post(
+        "/api/llm",
+        json={
+            "prompt": "Summarize",
+            "response_json_schema": {"type": "object"},
+        },
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.json() == {"summary": {"rows": 10}}
 
 
 def test_api_send_email_logs_errors(monkeypatch):
