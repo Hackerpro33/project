@@ -75,8 +75,8 @@ class ColumnInfo(BaseModel):
     selected: Optional[bool] = True
 
 
-class DatasetCreate(BaseModel):
-    name: str = Field(..., description="Название набора")
+class DatasetBase(BaseModel):
+    name: Optional[str] = Field(None, description="Название набора")
     description: Optional[str] = ""
     tags: List[str] = Field(default_factory=list)
     columns: List[ColumnInfo] = Field(default_factory=list)
@@ -85,7 +85,11 @@ class DatasetCreate(BaseModel):
     sample_data: Optional[List[Dict[str, Any]]] = None
 
 
-class DatasetUpdate(DatasetCreate):
+class DatasetCreate(DatasetBase):
+    name: str = Field(..., description="Название набора")
+
+
+class DatasetUpdate(DatasetBase):
     pass
 
 
