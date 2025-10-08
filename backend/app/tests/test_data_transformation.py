@@ -16,6 +16,35 @@ from .. import main
 HEADERS = {"host": "localhost"}
 
 
+class DummyLLMResponse:
+    def __init__(self, text: str):
+        self._text = text
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"response": self._text}
+
+
+class DummyLLMClient:
+    def __init__(self, text: str):
+        self._text = text
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, *args, **kwargs):
+        return DummyLLMResponse(self._text)
+
+
+def _mock_llm(monkeypatch, text: str):
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *args, **kwargs: DummyLLMClient(text))
+
+
 @pytest.fixture(autouse=True)
 def isolate_dataset_store(tmp_path, monkeypatch):
     store_dir = tmp_path / "datasets"

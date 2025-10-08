@@ -98,6 +98,60 @@ def build_extraction(df: pd.DataFrame, sample_rows: int = 100) -> Dict[str, Any]
         "sample_data": sample
     }
 
+
+def _extract_json_snippet(text: str) -> Optional[str]:
+    """Attempt to pull a JSON object or array out of an arbitrary string."""
+
+    stripped = text.strip()
+    if not stripped:
+        return None
+
+    # Try direct load first – maybe the model returned pristine JSON.
+    try:
+        json.loads(stripped)
+        return stripped
+    except json.JSONDecodeError:
+        pass
+
+    candidates: List[tuple[int, str]] = []
+    for token in ("{", "["):
+        pos = stripped.find(token)
+        if pos != -1:
+            candidates.append((pos, token))
+    if not candidates:
+        return None
+
+    start, opening = min(candidates, key=lambda x: x[0])
+    closing = "}" if opening == "{" else "]"
+
+    depth = 0
+    in_string = False
+    escape = False
+    for index, char in enumerate(stripped[start:], start=start):
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char == opening:
+            depth += 1
+        elif char == closing:
+            depth -= 1
+            if depth == 0:
+                snippet = stripped[start:index + 1]
+                try:
+                    json.loads(snippet)
+                    return snippet
+                except json.JSONDecodeError:
+                    return None
+    return None
+
 # simple in-memory registry file_id -> path
 FILE_REGISTRY: Dict[str, str] = {}
 
@@ -197,15 +251,12 @@ async def api_llm(req: LLMReq):
 
     text = data.get("response", "")
     if req.response_json_schema:
-        # Попробуем вырезать и распарсить JSON
-        try:
-            start = text.find("{")
-            end = text.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                obj = json.loads(text[start:end+1])
-                return obj
-        except Exception:
-            pass
+        snippet = _extract_json_snippet(text)
+        if snippet is not None:
+            try:
+                return json.loads(snippet)
+            except json.JSONDecodeError:
+                pass
     return {"response": text}
 
 class EmailRequest(BaseModel):
