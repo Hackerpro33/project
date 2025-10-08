@@ -1,65 +1,225 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Compass, Save, X, MapPin, RefreshCw } from "lucide-react";
+import { Compass, Save, X, RefreshCw } from "lucide-react";
 
-export default function MapConfigurator({ datasets, onSave, onCancel, initialConfig, forecastData, correlationData, isEmbedded }) {
-  const [config, setConfig] = useState(initialConfig || {
-    title: '',
-    dataset_id: '',
-    lat_column: '',
-    lon_column: '',
-    value_column: '',
-    overlay_type: 'none' // 'forecast', 'correlation', 'none'
-  });
+const LAT_KEYWORDS = ['lat', 'latitude', 'широт', 'широта', 'y_coord', 'y coordinate'];
+const LON_KEYWORDS = ['lon', 'lng', 'longitude', 'долгот', 'долгота', 'x_coord', 'x coordinate'];
+
+const DEFAULT_CONFIG = {
+  title: '',
+  dataset_id: '',
+  lat_column: '',
+  lon_column: '',
+  value_column: '',
+  overlay_type: 'none',
+};
+
+const parseNumber = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.replace(',', '.').trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const isNumericType = (type) => {
+  const normalized = (type || '').toLowerCase();
+  return ['number', 'float', 'double', 'decimal', 'integer', 'int', 'long'].includes(normalized);
+};
+
+export default function MapConfigurator({
+  datasets = [],
+  onSave,
+  onCancel,
+  initialConfig,
+  forecastData,
+  correlationData,
+  isEmbedded,
+  onConfigChange,
+}) {
+  const [config, setConfig] = useState(initialConfig || DEFAULT_CONFIG);
   const [selectedDataset, setSelectedDataset] = useState(null);
 
+  const datasetSamples = useMemo(() => selectedDataset?.sample_data || [], [selectedDataset]);
+
+  const numericColumns = useMemo(() => {
+    if (!selectedDataset) return [];
+    const rows = datasetSamples;
+    return (selectedDataset.columns || []).filter((col) => {
+      if (isNumericType(col.type)) {
+        return true;
+      }
+      if (!rows.length) {
+        return false;
+      }
+      const numericValues = rows
+        .map((row) => parseNumber(row[col.name]))
+        .filter((value) => value !== null);
+      if (!numericValues.length) {
+        return false;
+      }
+      return numericValues.length / rows.length >= 0.5;
+    });
+  }, [selectedDataset, datasetSamples]);
+
   useEffect(() => {
-    if (initialConfig && initialConfig.dataset_id) {
-      handleDatasetChange(initialConfig.dataset_id);
+    const incomingConfig = initialConfig || DEFAULT_CONFIG;
+    setConfig((prev) => ({ ...prev, ...incomingConfig }));
+
+    if (incomingConfig.dataset_id) {
+      handleDatasetChange(incomingConfig.dataset_id, incomingConfig);
+    } else {
+      setSelectedDataset(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConfig, datasets]);
 
-  const handleDatasetChange = (datasetId) => {
-    const dataset = datasets.find(d => d.id === datasetId);
-    setSelectedDataset(dataset);
-    
-    // Автоматическое определение координатных столбцов
-    const autoDetectCoords = (columns) => {
-      const latColumns = columns.filter(c => 
-        c.name.toLowerCase().includes('lat') || 
-        c.name.toLowerCase().includes('широта') ||
-        c.name.toLowerCase().includes('ш')
-      );
-      const lonColumns = columns.filter(c => 
-        c.name.toLowerCase().includes('lon') || 
-        c.name.toLowerCase().includes('lng') ||
-        c.name.toLowerCase().includes('долгота') ||
-        c.name.toLowerCase().includes('д')
-      );
-      
-      return {
-        lat: latColumns.length > 0 ? latColumns[0].name : '',
-        lon: lonColumns.length > 0 ? lonColumns[0].name : ''
-      };
+  const emitConfig = (nextConfig) => {
+    setConfig((prev) => {
+      const prevString = JSON.stringify(prev);
+      const nextString = JSON.stringify(nextConfig);
+      if (onConfigChange && prevString !== nextString) {
+        onConfigChange(nextConfig);
+      }
+      return nextConfig;
+    });
+  };
+
+  const detectCoordinateColumns = (dataset, currentConfig = {}) => {
+    if (!dataset) {
+      return { lat: '', lon: '', value: '' };
+    }
+
+    const rows = dataset.sample_data || [];
+    const columns = dataset.columns || [];
+
+    const numericCols = columns.filter((col) =>
+      isNumericType(col.type) ||
+      (rows.length > 0 && rows.some((row) => parseNumber(row[col.name]) !== null))
+    );
+
+    const evaluateColumn = (colName, type) => {
+      const keywords = type === 'lat' ? LAT_KEYWORDS : LON_KEYWORDS;
+      const lowerName = colName.toLowerCase();
+      const hasKeyword = keywords.some((kw) => lowerName.includes(kw));
+      const rangeCheck = type === 'lat'
+        ? (value) => value >= -90 && value <= 90
+        : (value) => value >= -180 && value <= 180;
+
+      const values = rows
+        .map((row) => parseNumber(row[colName]))
+        .filter((value) => value !== null);
+
+      const rangeScore = values.length
+        ? values.filter(rangeCheck).length / values.length
+        : 0;
+
+      let score = rangeScore;
+      if (hasKeyword) {
+        score += 1.5;
+      }
+      if (rangeScore >= 0.9) {
+        score += 0.5;
+      }
+      return score;
     };
 
-    const coords = autoDetectCoords(dataset.columns || []);
-    setConfig(prev => ({ 
-      ...prev, 
-      dataset_id: datasetId, 
-      lat_column: coords.lat, 
-      lon_column: coords.lon, 
-      value_column: '' 
-    }));
+    const resolveCoordinate = (type, excludeColumn) => {
+      const existing = type === 'lat' ? currentConfig.lat_column : currentConfig.lon_column;
+      if (existing) {
+        return existing;
+      }
+
+      let bestCandidate = '';
+      let bestScore = 0;
+      numericCols.forEach((col) => {
+        if (col.name === excludeColumn) return;
+        const score = evaluateColumn(col.name, type);
+        if (score > bestScore) {
+          bestScore = score;
+          bestCandidate = col.name;
+        }
+      });
+
+      if (!bestCandidate && numericCols.length) {
+        const fallback = numericCols.find((col) => col.name !== excludeColumn);
+        return fallback ? fallback.name : '';
+      }
+
+      return bestCandidate;
+    };
+
+    const lat = resolveCoordinate('lat');
+    const lon = resolveCoordinate('lon', lat);
+
+    const valueColumn = currentConfig.value_column
+      ? currentConfig.value_column
+      : (() => {
+          const candidate = numericCols.find(
+            (col) => col.name !== lat && col.name !== lon,
+          );
+          return candidate ? candidate.name : '';
+        })();
+
+    return {
+      lat,
+      lon,
+      value: valueColumn,
+    };
+  };
+
+  const handleDatasetChange = (datasetId, incomingConfig) => {
+    const dataset = datasets.find((d) => d.id === datasetId);
+    setSelectedDataset(dataset || null);
+
+    if (!dataset) {
+      const resetConfig = {
+        ...(incomingConfig || config),
+        dataset_id: datasetId,
+        lat_column: '',
+        lon_column: '',
+        value_column: '',
+      };
+      emitConfig(resetConfig);
+      return;
+    }
+
+    const nextConfig = {
+      ...(incomingConfig || config),
+      dataset_id: datasetId,
+    };
+
+    if (!nextConfig.title && dataset.name) {
+      nextConfig.title = dataset.name;
+    }
+
+    const detected = detectCoordinateColumns(dataset, nextConfig);
+    const mergedConfig = {
+      ...nextConfig,
+      lat_column: detected.lat,
+      lon_column: detected.lon,
+      value_column: detected.value,
+    };
+
+    emitConfig(mergedConfig);
   };
 
   const handleInputChange = (field, value) => {
-    setConfig(prev => ({ ...prev, [field]: value }));
+    const normalizedValue = value === '__none__' ? '' : value;
+    const updatedConfig = {
+      ...config,
+      [field]: normalizedValue,
+    };
+    emitConfig(updatedConfig);
   };
 
   const handleSubmit = () => {
@@ -81,18 +241,18 @@ export default function MapConfigurator({ datasets, onSave, onCancel, initialCon
       <CardContent className="space-y-6 p-6">
         <div className="space-y-2">
           <Label htmlFor="map-title" className="elegant-text">Название карты</Label>
-          <Input 
-            id="map-title" 
-            placeholder="например, Расположение магазинов" 
-            value={config.title} 
+          <Input
+            id="map-title"
+            placeholder="например, Расположение магазинов"
+            value={config.title}
             onChange={(e) => handleInputChange('title', e.target.value)}
-            className="elegant-text" 
+            className="elegant-text"
           />
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="map-dataset" className="elegant-text">Набор данных</Label>
-          <Select onValueChange={handleDatasetChange} value={config.dataset_id}>
+          <Select onValueChange={(value) => handleDatasetChange(value)} value={config.dataset_id || undefined}>
             <SelectTrigger>
               <SelectValue placeholder="Выберите набор данных" />
             </SelectTrigger>
@@ -111,12 +271,12 @@ export default function MapConfigurator({ datasets, onSave, onCancel, initialCon
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="lat-column" className="elegant-text">Столбец широты</Label>
-                <Select onValueChange={(value) => handleInputChange('lat_column', value)} value={config.lat_column}>
+                <Select onValueChange={(value) => handleInputChange('lat_column', value)} value={config.lat_column || undefined}>
                   <SelectTrigger>
                     <SelectValue placeholder="Широта" />
                   </SelectTrigger>
                   <SelectContent>
-                    {selectedDataset.columns?.filter(c => c.type === 'number').map(col => (
+                    {numericColumns.map(col => (
                       <SelectItem key={col.name} value={col.name} className="elegant-text">
                         {col.name}
                       </SelectItem>
@@ -126,12 +286,12 @@ export default function MapConfigurator({ datasets, onSave, onCancel, initialCon
               </div>
               <div className="space-y-2">
                 <Label htmlFor="lon-column" className="elegant-text">Столбец долготы</Label>
-                <Select onValueChange={(value) => handleInputChange('lon_column', value)} value={config.lon_column}>
+                <Select onValueChange={(value) => handleInputChange('lon_column', value)} value={config.lon_column || undefined}>
                   <SelectTrigger>
                     <SelectValue placeholder="Долгота" />
                   </SelectTrigger>
                   <SelectContent>
-                    {selectedDataset.columns?.filter(c => c.type === 'number').map(col => (
+                    {numericColumns.map(col => (
                       <SelectItem key={col.name} value={col.name} className="elegant-text">
                         {col.name}
                       </SelectItem>
@@ -143,13 +303,13 @@ export default function MapConfigurator({ datasets, onSave, onCancel, initialCon
 
             <div className="space-y-2">
               <Label htmlFor="value-column" className="elegant-text">Столбец значений для маркеров (опционально)</Label>
-              <Select onValueChange={(value) => handleInputChange('value_column', value)} value={config.value_column}>
+              <Select onValueChange={(value) => handleInputChange('value_column', value)} value={config.value_column || undefined}>
                 <SelectTrigger>
                   <SelectValue placeholder="Выберите столбец значений" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={null} className="elegant-text">Без значений</SelectItem>
-                  {selectedDataset.columns?.filter(c => c.type === 'number').map(col => (
+                  <SelectItem value="__none__" className="elegant-text">Без значений</SelectItem>
+                  {numericColumns.map(col => (
                     <SelectItem key={col.name} value={col.name} className="elegant-text">
                       {col.name}
                     </SelectItem>
@@ -167,12 +327,12 @@ export default function MapConfigurator({ datasets, onSave, onCancel, initialCon
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none" className="elegant-text">Без наложения</SelectItem>
-                    {forecastData && (
-                      <SelectItem value="forecast" className="elegant-text">Данные прогноза</SelectItem>
-                    )}
-                    {correlationData && (
-                      <SelectItem value="correlation" className="elegant-text">Корреляционные данные</SelectItem>
-                    )}
+                      {forecastData && (
+                        <SelectItem value="forecast" className="elegant-text">Данные прогноза</SelectItem>
+                      )}
+                      {correlationData && (
+                        <SelectItem value="correlation" className="elegant-text">Корреляционные данные</SelectItem>
+                      )}
                   </SelectContent>
                 </Select>
               </div>

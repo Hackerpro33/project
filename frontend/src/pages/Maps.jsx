@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Dataset, Visualization } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Map as MapIcon, Globe, Compass, Save, Settings, Plus } from "lucide-react";
+import { Map as MapIcon, Globe, Compass, Settings, Plus } from "lucide-react";
 
 import MapConfigurator from "../components/maps/MapConfigurator";
 import MapView from "../components/maps/MapView";
@@ -13,6 +13,7 @@ export default function Maps() {
   const [visualizations, setVisualizations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showConfigurator, setShowConfigurator] = useState(false);
+  const [mapData, setMapData] = useState([]);
   const [currentMapConfig, setCurrentMapConfig] = useState({
     title: 'Образец данных на карте',
     dataset_id: 'sample',
@@ -21,6 +22,7 @@ export default function Maps() {
     value_column: 'value',
     overlay_type: 'none'
   });
+  const [isDatasetLoading, setIsDatasetLoading] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -41,6 +43,48 @@ export default function Maps() {
     setIsLoading(false);
   };
 
+  useEffect(() => {
+    const datasetId = currentMapConfig?.dataset_id;
+    if (!datasetId || datasetId === 'sample') {
+      setMapData([]);
+      return;
+    }
+
+    const datasetFromState = datasets.find((dataset) => dataset.id === datasetId);
+    if (datasetFromState && Array.isArray(datasetFromState.sample_data) && datasetFromState.sample_data.length > 0) {
+      setMapData(datasetFromState.sample_data);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const fetchDataset = async () => {
+      setIsDatasetLoading(true);
+      try {
+        const dataset = await Dataset.get(datasetId);
+        if (!isCancelled) {
+          setMapData(dataset.sample_data || []);
+          setDatasets((prev) => prev.map((item) => (item.id === datasetId ? { ...item, ...dataset } : item)));
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          console.error('Не удалось загрузить данные набора для карты:', error);
+          setMapData([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsDatasetLoading(false);
+        }
+      }
+    };
+
+    fetchDataset();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentMapConfig?.dataset_id, datasets]);
+
   const handleSaveMap = async (config) => {
     try {
       await Visualization.create({
@@ -52,6 +96,9 @@ export default function Maps() {
       await loadData();
       setShowConfigurator(false);
       setCurrentMapConfig(config);
+      if (config.dataset_id) {
+        setMapData([]);
+      }
     } catch (error) {
       console.error("Ошибка сохранения карты:", error);
     }
@@ -59,6 +106,7 @@ export default function Maps() {
 
   const handleEditMap = (viz) => {
     setCurrentMapConfig(viz.config);
+    setMapData([]);
     setShowConfigurator(true);
   };
 
@@ -71,7 +119,12 @@ export default function Maps() {
       value_column: '',
       overlay_type: 'none'
     });
+    setMapData([]);
     setShowConfigurator(true);
+  };
+
+  const handleConfigChange = (nextConfig) => {
+    setCurrentMapConfig(nextConfig);
   };
 
   return (
@@ -91,15 +144,23 @@ export default function Maps() {
         {showConfigurator ? (
           <div className="grid lg:grid-cols-3 gap-8">
             <div className="lg:col-span-1">
-              <MapConfigurator 
+              <MapConfigurator
                 datasets={datasets}
                 onSave={handleSaveMap}
                 onCancel={() => setShowConfigurator(false)}
                 initialConfig={currentMapConfig}
+                onConfigChange={handleConfigChange}
               />
             </div>
             <div className="lg:col-span-2">
-              <MapView config={currentMapConfig} />
+              <div className="relative">
+                {isDatasetLoading && (
+                  <div className="absolute top-4 left-4 z-[1000] rounded-lg bg-white/80 px-3 py-1 text-sm text-slate-600 shadow-sm">
+                    Загрузка данных набора...
+                  </div>
+                )}
+                <MapView config={currentMapConfig} data={mapData} />
+              </div>
             </div>
           </div>
         ) : (
@@ -133,8 +194,13 @@ export default function Maps() {
                       Интерактивная карта
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="p-0">
-                    <MapView config={currentMapConfig} />
+                  <CardContent className="p-0 relative">
+                    {isDatasetLoading && (
+                      <div className="absolute top-4 left-4 z-[1000] rounded-lg bg-white/80 px-3 py-1 text-sm text-slate-600 shadow-sm">
+                        Загрузка данных набора...
+                      </div>
+                    )}
+                    <MapView config={currentMapConfig} data={mapData} />
                   </CardContent>
                 </Card>
               </div>

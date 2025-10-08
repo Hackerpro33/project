@@ -61,12 +61,30 @@ export default function Forecasting() {
   const [historicalData, setHistoricalData] = useState([]);
   const [correlationResult, setCorrelationResult] = useState(null);
   const [activeTab, setActiveTab] = useState('forecast');
-  const [mapConfig, setMapConfig] = useState(null);
-  const [mapData, setMapData] = useState(null);
+  const defaultMapConfig = {
+    title: 'Анализ на карте',
+    dataset_id: '',
+    lat_column: '',
+    lon_column: '',
+    value_column: '',
+    overlay_type: 'none'
+  };
+  const [mapConfig, setMapConfig] = useState(defaultMapConfig);
+  const [mapData, setMapData] = useState([]);
 
   useEffect(() => {
     loadDatasets();
   }, []);
+
+  useEffect(() => {
+    if (!mapConfig?.dataset_id) {
+      setMapData([]);
+      return;
+    }
+
+    const selectedDs = datasets.find((d) => d.id === mapConfig.dataset_id);
+    setMapData(selectedDs?.sample_data || []);
+  }, [mapConfig?.dataset_id, datasets]);
 
   const loadDatasets = async () => {
     setIsLoading(true);
@@ -209,16 +227,10 @@ export default function Forecasting() {
 
   const handleMapConfigApply = (newConfig) => {
     setMapConfig(newConfig);
-    if (newConfig.dataset_id) {
-        const selectedDs = datasets.find(d => d.id === newConfig.dataset_id);
-        if (selectedDs) {
-            setMapData(selectedDs.sample_data || []);
-        } else {
-            setMapData(null); // Clear data if dataset not found
-        }
-    } else {
-        setMapData(null); // Clear data if no dataset selected
-    }
+  };
+
+  const handleMapConfigChange = (updatedConfig) => {
+    setMapConfig(updatedConfig);
   };
 
   return (
@@ -285,21 +297,15 @@ export default function Forecasting() {
         {activeTab === 'map' && (
           <div className="grid lg:grid-cols-3 gap-8">
             <div className="lg:col-span-1">
-              <MapConfigurator 
+              <MapConfigurator
                 datasets={datasets}
                 onSave={handleMapConfigApply}
-                onCancel={() => {}} // This can be empty as it's not saving to backend here
-                initialConfig={{
-                    title: 'Анализ на карте',
-                    dataset_id: '',
-                    lat_column: '',
-                    lon_column: '',
-                    value_column: '',
-                    overlay_type: 'none'
-                }}
+                onCancel={() => {}}
+                initialConfig={mapConfig}
+                onConfigChange={handleMapConfigChange}
                 forecastData={forecastResult}
                 correlationData={correlationResult}
-                isEmbedded={true} // Indicate that this is used within another view, not a standalone map creator
+                isEmbedded={true}
               />
             </div>
             <div className="lg:col-span-2">
