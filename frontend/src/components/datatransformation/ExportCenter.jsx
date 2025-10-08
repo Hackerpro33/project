@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { InvokeLLM } from "@/api/integrations";
+import { getExportContentType } from "@/utils/dataTransformation";
 import { 
   Download, 
   Database, 
@@ -80,8 +81,8 @@ export default function ExportCenter({ datasets, supportedFormats, isLoading }) 
       });
 
       // Создаем blob для скачивания
-      const blob = new Blob([result.converted_data], { 
-        type: getContentType(exportFormat) 
+      const blob = new Blob([result.converted_data], {
+        type: getExportContentType(exportFormat)
       });
       
       const url = URL.createObjectURL(blob);
@@ -110,18 +111,6 @@ export default function ExportCenter({ datasets, supportedFormats, isLoading }) 
     }
     
     setIsExporting(false);
-  };
-
-  const getContentType = (format) => {
-    const types = {
-      'csv': 'text/csv',
-      'json': 'application/json',
-      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'xml': 'application/xml',
-      'html': 'text/html',
-      'txt': 'text/plain'
-    };
-    return types[format.toLowerCase()] || 'application/octet-stream';
   };
 
   const exportFormats = [
