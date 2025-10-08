@@ -1,0 +1,28 @@
+[
+  {
+    "name": "Тестовый датасет",
+    "description": "demo",
+    "tags": [
+      "загружено"
+    ],
+    "columns": [
+      {
+        "name": "a",
+        "type": "number",
+        "selected": true
+      }
+    ],
+    "file_url": "demo",
+    "row_count": 2,
+    "sample_data": [
+      {
+        "a": 1
+      },
+      {
+        "a": 2
+      }
+    ],
+    "id": "95b03052-3055-42f4-bf0c-aecb80b292ef",
+    "created_at": 1759806439
+  }
+]

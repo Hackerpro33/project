@@ -1,22 +1,20 @@
-
 import React, { useState, useEffect } from 'react';
-import { Dataset, Visualization } from "@/api/entities";
+import { getDatasets, getVisualizations } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  Trash2,
-  Database,
-  BarChart3,
-  AlertTriangle,
-  CheckCircle2,
-  Filter,
-  Download,
-  Calendar,
-  HardDrive
-} from "lucide-react";
+import { AlertTriangle, HardDrive, Database, BarChart3 } from "lucide-react";
+
+// Временные заглушки (пока нет настоящих API для delete)
+async function deleteDataset(id) {
+  // todo: реализовать через backend или просто фильтрацией локально
+  return true;
+}
+async function deleteVisualization(id) {
+  // todo: реализовать через backend или просто фильтрацией локально
+  return true;
+}
 
 export default function DataManagement() {
   const [datasets, setDatasets] = useState([]);
@@ -25,7 +23,7 @@ export default function DataManagement() {
   const [selectedVisualizations, setSelectedVisualizations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false); // Добавим состояние для отслеживания процесса удаления
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -35,11 +33,11 @@ export default function DataManagement() {
     setIsLoading(true);
     try {
       const [datasetsData, visualizationsData] = await Promise.all([
-        Dataset.list('-created_date'),
-        Visualization.list('-created_date')
+        getDatasets(),
+        getVisualizations()
       ]);
-      setDatasets(datasetsData);
-      setVisualizations(visualizationsData);
+      setDatasets(datasetsData || []);
+      setVisualizations(visualizationsData || []);
     } catch (error) {
       console.error('Ошибка загрузки данных:', error);
     }
@@ -79,39 +77,38 @@ export default function DataManagement() {
   };
 
   const calculateStorageUsage = () => {
-    // Примерный расчет использования места
     const datasetStorage = datasets.length * 2.5; // ~2.5MB на набор данных
     const visualizationStorage = visualizations.length * 0.1; // ~100KB на визуализацию
     return (datasetStorage + visualizationStorage).toFixed(1);
   };
 
   const handleDeleteSelected = async () => {
-    setIsDeleting(true); // Начинаем удаление
+    setIsDeleting(true);
     try {
-      // Последовательное удаление наборов данных для избежания ошибки 429
+      // Просто фильтруем локально (удаляем только из UI)
+      let updatedDatasets = datasets;
+      let updatedVisualizations = visualizations;
+
       for (const id of selectedDatasets) {
-        await Dataset.delete(id);
+        await deleteDataset(id); // Здесь должен быть реальный вызов backend
+        updatedDatasets = updatedDatasets.filter(d => d.id !== id);
       }
-
-      // Последовательное удаление визуализаций
       for (const id of selectedVisualizations) {
-        await Visualization.delete(id);
+        await deleteVisualization(id); // Здесь должен быть реальный вызов backend
+        updatedVisualizations = updatedVisualizations.filter(v => v.id !== id);
       }
 
-      // alert(`Успешно удалено: ${selectedDatasets.length} наборов данных и ${selectedVisualizations.length} визуализаций.`); // Removed as per new dialog
+      setDatasets(updatedDatasets);
+      setVisualizations(updatedVisualizations);
 
-      // Сброс выбора
       setSelectedDatasets([]);
       setSelectedVisualizations([]);
-
-      // Перезагрузка данных для обновления списков
-      await loadData();
     } catch (error) {
       console.error('Ошибка при удалении:', error);
       alert('Произошла ошибка при удалении данных. Пожалуйста, попробуйте еще раз.');
     } finally {
-      setIsDeleting(false); // Завершаем удаление
-      setShowDeleteConfirm(false); // Закрываем диалог подтверждения
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
     }
   };
 
@@ -155,36 +152,35 @@ export default function DataManagement() {
               <Button variant="outline" size="sm" onClick={handleSelectAllDatasets}>
                 {selectedDatasets.length === datasets.length ? 'Снять выбор' : 'Выбрать все'}
               </Button>
-              {/* The delete button is moved to "Опасная зона" section */}
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {datasets.length === 0 ? (
-                <p className="text-sm text-slate-500 text-center py-4">Нет доступных наборов данных.</p>
+              <p className="text-sm text-slate-500 text-center py-4">Нет доступных наборов данных.</p>
             ) : (
-                datasets.map(dataset => (
-                    <div key={dataset.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50">
-                      <div className="flex items-center gap-3">
-                        <Checkbox
-                            checked={selectedDatasets.includes(dataset.id)}
-                            onCheckedChange={(checked) => handleDatasetSelection(dataset.id, checked)}
-                        />
-                        <div>
-                          <div className="font-medium">{dataset.name}</div>
-                          <div className="text-sm text-slate-500">
-                            {dataset.row_count || 0} строк • {dataset.columns?.length || 0} столбцов
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">
-                          {new Date(dataset.created_date).toLocaleDateString()}
-                        </Badge>
+              datasets.map(dataset => (
+                <div key={dataset.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50">
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      checked={selectedDatasets.includes(dataset.id)}
+                      onCheckedChange={(checked) => handleDatasetSelection(dataset.id, checked)}
+                    />
+                    <div>
+                      <div className="font-medium">{dataset.name}</div>
+                      <div className="text-sm text-slate-500">
+                        {dataset.row_count || 0} строк • {dataset.columns?.length || 0} столбцов
                       </div>
                     </div>
-                ))
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">
+                      {dataset.created_date ? new Date(dataset.created_date).toLocaleDateString() : "—"}
+                    </Badge>
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </CardContent>
@@ -195,52 +191,51 @@ export default function DataManagement() {
         <CardHeader>
           <div className="flex justify-between items-center">
             <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-blue-500" /> {/* Changed color from orange-500 to blue-500 */}
+              <BarChart3 className="w-5 h-5 text-blue-500" />
               Управление визуализациями
             </CardTitle>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={handleSelectAllVisualizations}>
                 {selectedVisualizations.length === visualizations.length ? 'Снять выбор' : 'Выбрать все'}
               </Button>
-              {/* The delete button is moved to "Опасная зона" section */}
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {visualizations.length === 0 ? (
-                <p className="text-sm text-slate-500 text-center py-4">Нет доступных визуализаций.</p>
+              <p className="text-sm text-slate-500 text-center py-4">Нет доступных визуализаций.</p>
             ) : (
-                visualizations.map(viz => (
-                    <div key={viz.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50">
-                      <div className="flex items-center gap-3">
-                        <Checkbox
-                            checked={selectedVisualizations.includes(viz.id)}
-                            onCheckedChange={(checked) => handleVisualizationSelection(viz.id, checked)}
-                        />
-                        <div>
-                          <div className="font-medium">{viz.title}</div>
-                          <div className="text-sm text-slate-500">
-                            Тип: {viz.type} • Оси: {viz.x_axis} × {viz.y_axis}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs capitalize">
-                          {viz.type}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          {new Date(viz.created_date).toLocaleDateString()}
-                        </Badge>
+              visualizations.map(viz => (
+                <div key={viz.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50">
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      checked={selectedVisualizations.includes(viz.id)}
+                      onCheckedChange={(checked) => handleVisualizationSelection(viz.id, checked)}
+                    />
+                    <div>
+                      <div className="font-medium">{viz.title}</div>
+                      <div className="text-sm text-slate-500">
+                        Тип: {viz.type} • Оси: {viz.x_axis} × {viz.y_axis}
                       </div>
                     </div>
-                ))
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs capitalize">
+                      {viz.type}
+                    </Badge>
+                    <Badge variant="outline" className="text-xs">
+                      {viz.created_date ? new Date(viz.created_date).toLocaleDateString() : "—"}
+                    </Badge>
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Actions (renamed from Bulk Actions, updated content) */}
+      {/* Опасная зона */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -262,11 +257,10 @@ export default function DataManagement() {
               Удалить выбранные
             </Button>
           </div>
-          {/* Old "Очистить все данные" and "Удалить старые данные" buttons are removed */}
         </CardContent>
       </Card>
 
-      {/* Confirmation Dialog (new modal structure) */}
+      {/* Confirmation Dialog */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <Card className="max-w-md w-full mx-4">
@@ -296,3 +290,4 @@ export default function DataManagement() {
     </div>
   );
 }
+

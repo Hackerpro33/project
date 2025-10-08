@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+import { Dataset } from '@/api/entities';
   Dialog,
   DialogContent,
   DialogDescription,
@@ -19,7 +20,30 @@ import { FileCheck2, X, AlertTriangle } from 'lucide-react';
 
 export default function DataImportPreview({ datasetInfo, onConfirmImport, onCancel }) {
   const [name, setName] = useState(datasetInfo.name);
-  const [description, setDescription] = useState(datasetInfo.description);
+  
+  const handleImport = async () => {
+    try {
+      setSaving && setSaving(true);
+      const payload = {
+        name: (datasetName || name || 'Набор данных'),
+        description: description || '',
+        tags: Array.isArray(tags) ? tags : [],
+        columns: (selectedColumns || columns || []).map(c => ({ name: c.name || c.column || 'column', type: c.type || 'string', selected: c.selected !== false })),
+        file_url: fileUrl || file_url || null,
+        row_count: extraction?.row_count ?? null,
+        sample_data: Array.isArray(extraction?.sample_data) ? extraction.sample_data.slice(0,50) : null
+      };
+      await Dataset.create(payload);
+      if (typeof loadDatasets === 'function') await loadDatasets();
+      if (typeof onClose === 'function') onClose();
+    } catch (e) {
+      console.error('Import failed', e);
+      alert('Не удалось импортировать набор: ' + (e?.message || e));
+    } finally {
+      setSaving && setSaving(false);
+    }
+  };
+const [description, setDescription] = useState(datasetInfo.description);
   const [selectedColumns, setSelectedColumns] = useState(datasetInfo.columns || []);
   const [tags, setTags] = useState(["загружено", "новое"]);
   const [tagInput, setTagInput] = useState("");
@@ -185,7 +209,7 @@ export default function DataImportPreview({ datasetInfo, onConfirmImport, onCanc
 
         <DialogFooter>
           <Button variant="outline" onClick={onCancel}>Отмена</Button>
-          <Button onClick={handleConfirm}>Импортировать {selectedColumns.length} столбцов</Button>
+          <Button onClick={handleImport} onClick={handleConfirm} onClick={handleImport}>Импортировать {selectedColumns.length} столбцов</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -6,7 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { UploadFile, ExtractDataFromUploadedFile, InvokeLLM } from "@/api/integrations";
+import { uploadFile, extractDataFromUploadedFile, InvokeLLM } from "@/api/integrations";
 import { Dataset } from "@/api/entities";
 import { 
   Upload, 
@@ -91,7 +91,7 @@ export default function FileConverter({ supportedFormats, onConversionComplete, 
     try {
       // Этап 1: Загрузка файла
       setConversionProgress(30);
-      const { file_url } = await UploadFile({ file: selectedFile });
+      const { file_url } = await uploadFile({ file: selectedFile });
       
       // Этап 2: Попытка извлечения данных
       setConversionProgress(60);
@@ -486,3 +486,4 @@ export default function FileConverter({ supportedFormats, onConversionComplete, 
     </div>
   );
 }
+

@@ -1,0 +1,173 @@
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import pandas as pd
+import numpy as np
+import httpx, os, io, json, uuid, re
+from typing import Optional, Dict, Any
+
+app = FastAPI(title="Insight Sphere Backend", version="0.1.0")
+
+# --- CORS ---
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[FRONTEND_ORIGIN, "http://localhost:5174", "http://127.0.0.1:5173", "http://127.0.0.1:5174"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "uploads"))
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+def _safe_name(name: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9._-]+", "_", name)
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+def read_table_bytes(file_bytes: bytes, filename: str) -> pd.DataFrame:
+    ext = os.path.splitext(filename)[1].lower()
+    if ext in [".xlsx", ".xls"]:
+        return pd.read_excel(io.BytesIO(file_bytes))
+    elif ext in [".csv", ".tsv"]:
+        sep = "\t" if ext == ".tsv" else None
+        return pd.read_csv(io.BytesIO(file_bytes), sep=sep)
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported format: {ext}")
+
+def detect_general_type(series: pd.Series) -> str:
+    if pd.api.types.is_bool_dtype(series):
+        return "boolean"
+    if pd.api.types.is_numeric_dtype(series):
+        return "number"
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return "datetime"
+    return "string"
+
+def build_extraction(df: pd.DataFrame, sample_rows: int = 100) -> Dict[str, Any]:
+    cols = [{"name": str(c), "type": detect_general_type(df[c])} for c in df.columns]
+    sample = df.head(sample_rows).replace({np.nan: ""}).astype(object)
+    sample = sample.to_dict(orient="records")
+    return {
+        "columns": cols,
+        "row_count": int(len(df)),
+        "sample_data": sample
+    }
+
+# simple in-memory registry file_id -> path
+FILE_REGISTRY: Dict[str, str] = {}
+
+@app.post("/api/upload")
+async def api_upload(file: UploadFile = File(...)):
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    # save
+    fid = str(uuid.uuid4())
+    safe = _safe_name(file.filename or "file")
+    path = os.path.join(UPLOAD_DIR, f"{fid}_{safe}")
+    with open(path, "wb") as f:
+        f.write(data)
+    FILE_REGISTRY[fid] = path
+    # quick extraction for preview (optional)
+    try:
+        df = read_table_bytes(data, file.filename)
+        extraction = build_extraction(df)
+    except Exception:
+        extraction = None
+    return {"status": "success", "file_url": fid, "filename": file.filename, "quick_extraction": extraction}
+
+class ExtractRequest(BaseModel):
+    file_url: str
+    json_schema: Optional[dict] = None
+
+@app.post("/api/extract")
+def api_extract(req: ExtractRequest):
+    fid = req.file_url
+    path = FILE_REGISTRY.get(fid)
+    if not path or not os.path.exists(path):
+        # try direct path if file_url was actually a path
+        path = os.path.join(UPLOAD_DIR, _safe_name(fid))
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404, detail="File not found")
+
+    with open(path, "rb") as f:
+        file_bytes = f.read()
+    try:
+        df = read_table_bytes(file_bytes, os.path.basename(path))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    output = build_extraction(df)
+    return {"status": "success", "output": output}
+
+# --- Local LLM via Ollama ---
+class LLMReq(BaseModel):
+    prompt: Optional[str] = None
+    summary: Optional[dict] = None
+    userQuestion: Optional[str] = None
+    response_json_schema: Optional[dict] = None
+
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
+
+@app.post("/api/llm")
+async def api_llm(req: LLMReq):
+    if not (req.prompt or req.summary or req.userQuestion):
+        raise HTTPException(status_code=400, detail="No prompt/summary provided")
+
+    system = "Ты локальный аналитик таблиц. Отвечай кратко и по делу. Если просят JSON — верни ТОЛЬКО валидный JSON без пояснений."
+    prompt_parts = [f"SYSTEM:\n{system}\n"]
+    if req.summary:
+        prompt_parts.append("ДАННЫЕ:\n" + json.dumps(req.summary, ensure_ascii=False, indent=2))
+    if req.prompt:
+        prompt_parts.append("ПРОМПТ:\n" + req.prompt)
+    if req.userQuestion:
+        prompt_parts.append("ВОПРОС:\n" + req.userQuestion)
+
+    # Если передана схема — просим вернуть строго JSON
+    if req.response_json_schema:
+        prompt_parts.append("\nТребование: Ответь строго в формате JSON, соответствующем этой схеме (без комментариев и лишнего текста):\n")
+        prompt_parts.append(json.dumps(req.response_json_schema, ensure_ascii=False))
+
+    full_prompt = "\n\n".join(prompt_parts)
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        r = await client.post(f"{OLLAMA_URL}/api/generate", json={
+            "model": OLLAMA_MODEL,
+            "prompt": full_prompt,
+            "stream": False
+        })
+        r.raise_for_status()
+        data = r.json()
+
+    text = data.get("response", "")
+    if req.response_json_schema:
+        # Попробуем вырезать и распарсить JSON
+        try:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                obj = json.loads(text[start:end+1])
+                return obj
+        except Exception:
+            pass
+    return {"response": text}
+
+@app.get("/api/dataset/list")
+def dataset_list():
+    # заглушка: вернём пустой список, чтобы фронт не падал
+    return []
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", "8080"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+
+
+
+from datasets_api import router as datasets_router
+app.include_router(datasets_router, prefix="/api/dataset")

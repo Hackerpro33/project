@@ -1,7 +1,6 @@
-
-import React, { useState, useEffect, useRef } from "react";
 import { Dataset } from "@/api/entities";
-import { ExtractDataFromUploadedFile, UploadFile } from "@/api/integrations";
+import React, { useState, useEffect, useRef } from "react";
+import { extractDataFromUploadedFile, uploadFile } from "@/api/integrations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,16 +38,17 @@ export default function DataSources() {
     loadDatasets();
   }, []);
 
-  const loadDatasets = async () => {
-    setIsLoading(true);
-    try {
-      const data = await Dataset.list('-created_date');
-      setDatasets(data);
-    } catch (error) {
-      console.error('Ошибка загрузки наборов данных:', error);
-    }
-    setIsLoading(false);
-  };
+const loadDatasets = async () => {
+  try {
+    const res = await fetch('/api/dataset/list');
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();   // ожидается []
+    setDatasets(data || []);
+  } catch (err) {
+    console.error('Failed to load datasets:', err);
+    setDatasets([]);
+  }
+};
 
   const handleFileUpload = async (file) => {
     setIsUploading(true);
@@ -65,7 +65,7 @@ export default function DataSources() {
     let uploadedFileUrl = null;
 
     try {
-      const { file_url } = await UploadFile({ file });
+      const { file_url } = await uploadFile({ file });
       uploadedFileUrl = file_url;
 
       // Проверяем тип файла

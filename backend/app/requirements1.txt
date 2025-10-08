@@ -1,0 +1,39 @@
+# FastAPI и сервер
+fastapi
+uvicorn[standard]
+
+# Работа с данными
+pandas
+numpy
+
+# Временные ряды
+prophet
+statsmodels
+
+# Машинное обучение (ML)
+scikit-learn
+xgboost
+lightgbm
+
+# Графы
+networkx
+
+# Нейросети
+torch
+transformers
+
+# Для загрузки моделей, сериализации
+joblib
+
+# Работа с Excel, CSV, PDF (при необходимости)
+openpyxl
+xlrd
+pdfplumber
+
+# Аналитика/визуализация (если нужно)
+matplotlib
+
+# Прочее
+python-multipart
+pydantic
+
