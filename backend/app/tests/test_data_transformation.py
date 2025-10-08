@@ -651,3 +651,67 @@ def test_api_send_email_logs_errors(monkeypatch):
         )
 
     assert excinfo.value.status_code == 500
+
+
+def test_extract_json_snippet_handles_nested_payload():
+    text = "Ответ модели: {\"outer\": {\"inner\": [1, 2, {\"flag\": true}]}} и ещё пояснения"
+    snippet = main._extract_json_snippet(text)
+    assert snippet is not None
+    payload = json.loads(snippet)
+    assert payload == {"outer": {"inner": [1, 2, {"flag": True}]}}
+
+
+def test_extract_json_snippet_returns_none_for_invalid_json():
+    text = "Неверный JSON: {\"outer\": {\"inner\": ]}"
+    assert main._extract_json_snippet(text) is None
+
+
+def test_api_llm_includes_all_prompt_sections(monkeypatch):
+    captured = {}
+
+    class DummyResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+        def raise_for_status(self):
+            return None
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, json):
+            captured["url"] = url
+            captured["payload"] = json
+            return DummyResponse({"response": "ok"})
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+
+    summary = {"columns": [{"name": "value", "type": "number"}]}
+    question = "Что дальше?"
+    result = asyncio.run(
+        main.api_llm(
+            main.LLMReq(
+                prompt="Привет",
+                summary=summary,
+                userQuestion=question,
+            )
+        )
+    )
+
+    assert result == {"response": "ok"}
+    prompt = captured["payload"]["prompt"]
+    assert "SYSTEM:\n" in prompt
+    assert "ПРОМПТ:\nПривет" in prompt
+    assert f"ВОПРОС:\n{question}" in prompt
+    assert json.dumps(summary, ensure_ascii=False, indent=2) in prompt
+    assert captured["payload"]["stream"] is False
