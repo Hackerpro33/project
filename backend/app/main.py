@@ -54,13 +54,10 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "uploads"))
+DATA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "data"))
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-try:
-    MAX_UPLOAD_SIZE_MB = float(os.getenv("MAX_UPLOAD_SIZE_MB", "10"))
-except ValueError:
-    MAX_UPLOAD_SIZE_MB = 10.0
-MAX_UPLOAD_SIZE_MB = max(MAX_UPLOAD_SIZE_MB, 0.1)
-MAX_UPLOAD_SIZE = int(MAX_UPLOAD_SIZE_MB * 1024 * 1024)
+os.makedirs(DATA_DIR, exist_ok=True)
+EMAIL_LOG_PATH = os.path.join(DATA_DIR, "email_log.jsonl")
 
 def _safe_name(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9._-]+", "_", name)
@@ -202,10 +199,27 @@ async def api_llm(req: LLMReq):
             pass
     return {"response": text}
 
-@app.get("/api/dataset/list")
-def dataset_list():
-    # заглушка: вернём пустой список, чтобы фронт не падал
-    return []
+class EmailRequest(BaseModel):
+    to: str
+    subject: str
+    body: str
+    from_name: Optional[str] = None
+
+
+@app.post("/api/utils/send-email")
+async def api_send_email(payload: EmailRequest):
+    record = {
+        "to": payload.to,
+        "subject": payload.subject,
+        "body": payload.body,
+        "from_name": payload.from_name,
+    }
+    try:
+        with open(EMAIL_LOG_PATH, "a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to log email: {exc}")
+    return {"status": "queued", "logged": True}
 
 if __name__ == "__main__":
     import uvicorn

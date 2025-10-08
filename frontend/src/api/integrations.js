@@ -30,6 +30,16 @@ async function _InvokeLLM_impl({ prompt, response_json_schema, summary, userQues
   return res.json(); // {response: "..."} или JSON по schema
 }
 
+async function _SendEmail_impl({ to, subject, body, from_name }) {
+  const res = await fetch(`${API_BASE}/api/utils/send-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, subject, body, from_name }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 // -------- named exports (все варианты, чтобы не падало нигде) --------
 export async function UploadFile(args) { return _UploadFile_impl(args); }
 export async function uploadFile(args) { return _UploadFile_impl(args); }
@@ -40,6 +50,8 @@ export async function extractDataFromUploadedFile(args) { return _ExtractDataFro
 export async function InvokeLLM(args) { return _InvokeLLM_impl(args); }
 export async function invokeLLM(args) { return _InvokeLLM_impl(args); }
 
+export async function SendEmail(args) { return _SendEmail_impl(args); }
+export async function sendEmail(args) { return _SendEmail_impl(args); }
+
 // заглушки для совместимости со старыми импортами
 export const GenerateImage = async () => { throw new Error('GenerateImage: not implemented locally'); }
-export const SendEmail = async () => { throw new Error('SendEmail: not implemented locally'); }
