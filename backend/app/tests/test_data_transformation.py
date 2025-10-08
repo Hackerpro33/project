@@ -1,6 +1,12 @@
+import asyncio
+import builtins
 import json
+from datetime import datetime
 
+import numpy as np
+import pandas as pd
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from .. import datasets_api
@@ -298,37 +304,228 @@ def test_send_email_logs_request(client, tmp_path):
     assert logged["subject"] == "Test"
 
 
-def test_llm_schema_parses_embedded_object(client, monkeypatch):
-    _mock_llm(monkeypatch, "Ответ: {\"result\": 7, \"status\": \"ok\"}\nСпасибо")
+def test_safe_name_normalizes_unsafe_characters():
+    assert main._safe_name("report 2024?.csv") == "report_2024_.csv"
 
-    response = client.post(
-        "/api/llm",
-        json={
-            "prompt": "test",
-            "response_json_schema": {"type": "object"},
-        },
-        headers=HEADERS,
+
+def test_read_table_bytes_parses_csv():
+    csv_bytes = b"a,b\n1,2\n"
+    df = main.read_table_bytes(csv_bytes, "sample.csv")
+    assert df.to_dict(orient="records") == [{"a": 1, "b": 2}]
+
+
+def test_read_table_bytes_parses_tsv():
+    tsv_bytes = b"c\td\n3\t4\n"
+    df = main.read_table_bytes(tsv_bytes, "sample.tsv")
+    assert df.to_dict(orient="records") == [{"c": 3, "d": 4}]
+
+
+def test_read_table_bytes_rejects_unknown_extension():
+    with pytest.raises(HTTPException) as excinfo:
+        main.read_table_bytes(b"", "file.txt")
+    assert excinfo.value.status_code == 400
+
+
+def test_detect_general_type_handles_common_series():
+    assert main.detect_general_type(pd.Series([True, False])) == "boolean"
+    assert main.detect_general_type(pd.Series([1, 2.5])) == "number"
+    assert main.detect_general_type(pd.Series(pd.to_datetime(["2024-01-01", "2024-01-02"]))) == "datetime"
+    assert main.detect_general_type(pd.Series(["a", "b"])) == "string"
+
+
+def test_build_extraction_replaces_nan_values():
+    df = pd.DataFrame({"num": [1, np.nan], "text": ["alpha", "beta"]})
+    result = main.build_extraction(df, sample_rows=2)
+    assert result["columns"] == [
+        {"name": "num", "type": "number"},
+        {"name": "text", "type": "string"},
+    ]
+    assert result["row_count"] == 2
+    assert result["sample_data"][1]["num"] == ""
+
+
+def test_dataset_ensure_dates_populates_missing_fields(monkeypatch):
+    timestamp = int(datetime(2024, 1, 1, 12, 0, 0).timestamp())
+    monkeypatch.setattr(datasets_api.time, "time", lambda: timestamp)
+    item = {"id": "1"}
+    result = datasets_api._ensure_dates(item)
+    assert result["created_at"] == timestamp
+    assert result["created_date"].startswith("2024-01-01T12:00:00")
+
+
+def test_dataset_ensure_dates_adds_updated_date():
+    updated_at = int(datetime(2024, 2, 1, 0, 0, 0).timestamp())
+    item = {"updated_at": updated_at}
+    result = datasets_api._ensure_dates(item)
+    assert result["updated_date"].startswith("2024-02-01T00:00:00")
+
+
+def test_dataset_listing_respects_order(monkeypatch):
+    datasets_api._save_all([])
+    times = iter([100, 200])
+
+    def _fake_time():
+        return next(times)
+
+    monkeypatch.setattr(datasets_api.time, "time", _fake_time)
+    datasets_api.create_dataset(datasets_api.DatasetCreate(name="First"))
+    datasets_api.create_dataset(datasets_api.DatasetCreate(name="Second"))
+
+    names_desc = [item["name"] for item in datasets_api.list_datasets()]
+    assert names_desc == ["Second", "First"]
+
+    names_asc = [item["name"] for item in datasets_api.list_datasets(order_by="created_at")]
+    assert names_asc == ["First", "Second"]
+
+
+def test_dataset_update_missing_raises():
+    datasets_api._save_all([])
+    with pytest.raises(HTTPException) as excinfo:
+        datasets_api.update_dataset("missing", datasets_api.DatasetUpdate(description="test"))
+    assert excinfo.value.status_code == 404
+
+
+def test_dataset_delete_missing_raises():
+    datasets_api._save_all([])
+    with pytest.raises(HTTPException) as excinfo:
+        datasets_api.delete_dataset("missing")
+    assert excinfo.value.status_code == 404
+
+
+def test_visualization_ensure_dates_populates_fields(monkeypatch):
+    timestamp = int(datetime(2023, 12, 31, 23, 59, 59).timestamp())
+    monkeypatch.setattr(visualizations_api.time, "time", lambda: timestamp)
+    item = {"id": "1"}
+    result = visualizations_api._ensure_dates(item)
+    assert result["created_at"] == timestamp
+    assert result["created_date"].startswith("2023-12-31T23:59:59")
+
+
+def test_visualization_list_and_filter(monkeypatch):
+    visualizations_api._save_all([])
+    times = iter([300, 400])
+
+    def _fake_time():
+        return next(times)
+
+    monkeypatch.setattr(visualizations_api.time, "time", _fake_time)
+    visualizations_api.create_visualization(
+        visualizations_api.VisualizationCreate(title="First", type="map")
+    )
+    visualizations_api.create_visualization(
+        visualizations_api.VisualizationCreate(title="Second", type="chart")
     )
 
+    titles_desc = [item["title"] for item in visualizations_api.list_visualizations()]
+    assert titles_desc == ["Second", "First"]
+
+    filtered = visualizations_api.filter_visualizations(
+        visualizations_api.VisualizationFilterRequest(filters={"type": "map"})
+    )
+    assert [item["title"] for item in filtered] == ["First"]
+
+    filtered_ordered = visualizations_api.filter_visualizations(
+        visualizations_api.VisualizationFilterRequest(filters={}, order_by="created_at")
+    )
+    assert [item["title"] for item in filtered_ordered] == ["First", "Second"]
+
+
+def test_visualization_update_missing_raises():
+    visualizations_api._save_all([])
+    with pytest.raises(HTTPException) as excinfo:
+        visualizations_api.update_visualization(
+            "missing", visualizations_api.VisualizationUpdate(title="Updated")
+        )
+    assert excinfo.value.status_code == 404
+
+
+def test_visualization_delete_missing_raises():
+    visualizations_api._save_all([])
+    with pytest.raises(HTTPException) as excinfo:
+        visualizations_api.delete_visualization("missing")
+    assert excinfo.value.status_code == 404
+
+
+def test_visualization_get_missing_raises():
+    visualizations_api._save_all([])
+    with pytest.raises(HTTPException) as excinfo:
+        visualizations_api.get_visualization("missing")
+    assert excinfo.value.status_code == 404
+
+
+def test_health_endpoint_returns_security_headers(client):
+    response = client.get("/health", headers=HEADERS)
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["result"] == 7
-    assert payload["status"] == "ok"
+    assert response.json() == {"status": "ok"}
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
 
 
-def test_llm_schema_parses_arrays(client, monkeypatch):
-    _mock_llm(monkeypatch, "Вот список:\n[ {\"value\": 1}, {\"value\": 2} ]")
-
+def test_upload_rejects_empty_payload(client):
     response = client.post(
-        "/api/llm",
-        json={
-            "userQuestion": "give array",
-            "response_json_schema": {"type": "array"},
-        },
+        "/api/upload",
+        files={"file": ("empty.csv", b"", "text/csv")},
         headers=HEADERS,
     )
+    assert response.status_code == 400
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert isinstance(payload, list)
-    assert payload[0]["value"] == 1
+
+def test_api_llm_requires_prompt():
+    with pytest.raises(HTTPException) as excinfo:
+        asyncio.run(main.api_llm(main.LLMReq()))
+    assert excinfo.value.status_code == 400
+
+
+def test_api_llm_parses_json_response(monkeypatch):
+    captured = {}
+
+    class DummyResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+        def raise_for_status(self):
+            return None
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, json):
+            captured["url"] = url
+            captured["json"] = json
+            return DummyResponse({"response": "prefix {\"answer\": 42} suffix"})
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+
+    result = asyncio.run(
+        main.api_llm(main.LLMReq(prompt="Hello", response_json_schema={"type": "object"}))
+    )
+
+    assert result == {"answer": 42}
+    assert captured["url"].endswith("/api/generate")
+    assert "Hello" in captured["json"]["prompt"]
+
+
+def test_api_send_email_logs_errors(monkeypatch):
+    def failing_open(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(builtins, "open", failing_open)
+
+    with pytest.raises(HTTPException) as excinfo:
+        asyncio.run(
+            main.api_send_email(
+                main.EmailRequest(to="user@example.com", subject="Hi", body="Body")
+            )
+        )
+
+    assert excinfo.value.status_code == 500
