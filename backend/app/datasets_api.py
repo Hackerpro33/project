@@ -169,12 +169,13 @@ def delete_dataset(dataset_id: str):
     return {"status": "deleted", "id": dataset_id}
 
 
-@router.get("/debug/paths")
-def debug_paths():
-    return {
-        "APP_DIR": str(APP_DIR),
-        "STORE_DIR": str(STORE_DIR),
-        "DATASETS_JSON": str(DATASETS_JSON),
-        "exists": DATASETS_JSON.exists(),
-        "size": DATASETS_JSON.stat().st_size if DATASETS_JSON.exists() else 0,
-    }
+if os.getenv("ENABLE_DATASET_DEBUG_ENDPOINT") == "1":
+    @router.get("/debug/paths")
+    def debug_paths():
+        return {
+            "APP_DIR": str(APP_DIR),
+            "STORE_DIR": str(STORE_DIR),
+            "DATASETS_JSON": str(DATASETS_JSON),
+            "exists": DATASETS_JSON.exists(),
+            "size": DATASETS_JSON.stat().st_size if DATASETS_JSON.exists() else 0,
+        }

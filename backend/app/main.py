@@ -1,22 +1,56 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 import pandas as pd
 import numpy as np
 import httpx, os, io, json, uuid, re
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 app = FastAPI(title="Insight Sphere Backend", version="0.1.0")
 
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Attach a strict set of security-oriented HTTP headers."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        headers = {
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "Referrer-Policy": "same-origin",
+            "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+            "Cross-Origin-Opener-Policy": "same-origin",
+            "Cross-Origin-Embedder-Policy": "require-corp",
+        }
+        for header, value in headers.items():
+            response.headers.setdefault(header, value)
+        return response
+
 # --- CORS ---
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
+ADDITIONAL_ORIGINS: List[str] = [
+    origin.strip()
+    for origin in os.getenv("ADDITIONAL_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+allow_origins = {FRONTEND_ORIGIN, "http://127.0.0.1:5173", "http://127.0.0.1:5174"}
+allow_origins.update(ADDITIONAL_ORIGINS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_ORIGIN, "http://localhost:5174", "http://127.0.0.1:5173", "http://127.0.0.1:5174"],
+    allow_origins=sorted(allow_origins),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
+
+allowed_hosts_env = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1")
+allowed_hosts = [host.strip() for host in allowed_hosts_env.split(",") if host.strip()]
+allowed_hosts.append("127.0.0.1")
+allowed_hosts.append("localhost")
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(dict.fromkeys(allowed_hosts)))
+app.add_middleware(SecurityHeadersMiddleware)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "uploads"))
@@ -69,6 +103,11 @@ async def api_upload(file: UploadFile = File(...)):
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="Empty file")
+    if len(data) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Max allowed size is {MAX_UPLOAD_SIZE_MB} MB",
+        )
     # save
     fid = str(uuid.uuid4())
     safe = _safe_name(file.filename or "file")

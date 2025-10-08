@@ -64,6 +64,7 @@ export default function DataImportPreview({ datasetInfo, onConfirmImport, onCanc
       }
       setTagInput('');
     }
+    setTagInput('');
   };
 
   const handleRemoveTag = (tag) => {
@@ -156,7 +157,7 @@ export default function DataImportPreview({ datasetInfo, onConfirmImport, onCanc
             <div>
               <Label htmlFor="dataset-tags" className="elegant-text">Теги</Label>
               <div className="flex flex-wrap gap-2 p-2 border rounded-md">
-                {tags.map(tag => (
+                {tags.map((tag) => (
                   <Badge key={tag} variant="secondary" className="elegant-text">
                     {tag}
                     <button type="button" onClick={() => handleRemoveTag(tag)} className="ml-1 rounded-full hover:bg-slate-300">
