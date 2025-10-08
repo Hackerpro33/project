@@ -69,8 +69,8 @@ def _save_all(items: List[Dict[str, Any]]):
 
 
 class VisualizationBase(BaseModel):
-    title: str
-    type: str = "chart"
+    title: Optional[str] = None
+    type: Optional[str] = "chart"
     dataset_id: Optional[str] = None
     config: Dict[str, Any] = Field(default_factory=dict)
     summary: Optional[Dict[str, Any]] = None
@@ -82,7 +82,8 @@ class VisualizationBase(BaseModel):
 
 
 class VisualizationCreate(VisualizationBase):
-    pass
+    title: str
+    type: str = "chart"
 
 
 class VisualizationUpdate(VisualizationBase):

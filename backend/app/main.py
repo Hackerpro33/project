@@ -59,6 +59,9 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 EMAIL_LOG_PATH = os.path.join(DATA_DIR, "email_log.jsonl")
 
+MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "25"))
+MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
 def _safe_name(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9._-]+", "_", name)
 
@@ -177,14 +180,20 @@ async def api_llm(req: LLMReq):
 
     full_prompt = "\n\n".join(prompt_parts)
 
-    async with httpx.AsyncClient(timeout=120) as client:
-        r = await client.post(f"{OLLAMA_URL}/api/generate", json={
-            "model": OLLAMA_MODEL,
-            "prompt": full_prompt,
-            "stream": False
-        })
-        r.raise_for_status()
-        data = r.json()
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            r = await client.post(
+                f"{OLLAMA_URL}/api/generate",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "prompt": full_prompt,
+                    "stream": False,
+                },
+            )
+            r.raise_for_status()
+            data = r.json()
+    except httpx.HTTPError as exc:  # pragma: no cover - network dependent
+        raise HTTPException(status_code=502, detail=f"LLM backend unavailable: {exc}") from exc
 
     text = data.get("response", "")
     if req.response_json_schema:
@@ -228,8 +237,8 @@ if __name__ == "__main__":
 
 
 
-from datasets_api import router as datasets_router
-from visualizations_api import router as visualizations_router
+from .datasets_api import router as datasets_router
+from .visualizations_api import router as visualizations_router
 
 app.include_router(datasets_router, prefix="/api/dataset")
 app.include_router(visualizations_router, prefix="/api/visualization")
