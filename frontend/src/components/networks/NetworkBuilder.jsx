@@ -78,13 +78,16 @@ export default function NetworkBuilder({ datasets, onSave, onCancel }) {
         social: `Проанализируйте данные как социальную сеть. Идентифицируйте ключевых акторов (узлы) и их взаимодействия (связи) на основе столбцов: ${config.selectedColumns.join(', ')}. Рассчитайте центральность узлов.`,
         geo: `Создайте граф пространственных связей. Узлы - это локации, ребра - сила связи между ними (например, корреляция событий). Используйте столбцы: ${config.selectedColumns.join(', ')}.`
     };
-    
-    // In a real application, you'd pass the actual dataset data here to the LLM.
-    // For this example, we'll simulate it by only passing the column names.
-    // Assuming `InvokeLLM` somehow gets access to the current dataset rows.
+
+    const columnMetadata = selectedDataset?.columns || [];
+    const previewRows = selectedDataset?.sample_data?.slice(0, 50) || [];
+
     const prompt = `
-        Вы — эксперт по графовому анализу. На основе предоставленных данных и задачи, сгенерируйте структуру графа.
+        Вы — эксперт по графовому анализу. Используйте фактические данные, приведенные ниже, чтобы построить структуру графа без домыслов.
         Задача: ${prompts[config.graphType]}
+        Метаданные столбцов: ${JSON.stringify(columnMetadata)}
+        Пример строк данных (не более 50): ${JSON.stringify(previewRows)}
+        Если корреляция между столбцами менее 0.3 по модулю, связь не добавляйте.
         Предоставьте результат в формате JSON, соответствующем схеме.
     `;
 
@@ -277,7 +280,11 @@ export default function NetworkBuilder({ datasets, onSave, onCancel }) {
         </CardHeader>
         <CardContent className="p-6">
           {generatedGraph ? (
-            <NetworkVisualization config={config} graphData={generatedGraph} />
+            <NetworkVisualization
+              config={config}
+              graphData={generatedGraph}
+              dataset={selectedDataset}
+            />
           ) : isGenerating ? (
             <div className="h-96 flex items-center justify-center text-slate-500 elegant-text">
                 <div className="text-center">
