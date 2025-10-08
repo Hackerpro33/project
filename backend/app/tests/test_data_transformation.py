@@ -10,6 +10,35 @@ from .. import main
 HEADERS = {"host": "localhost"}
 
 
+class DummyLLMResponse:
+    def __init__(self, text: str):
+        self._text = text
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"response": self._text}
+
+
+class DummyLLMClient:
+    def __init__(self, text: str):
+        self._text = text
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, *args, **kwargs):
+        return DummyLLMResponse(self._text)
+
+
+def _mock_llm(monkeypatch, text: str):
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *args, **kwargs: DummyLLMClient(text))
+
+
 @pytest.fixture(autouse=True)
 def isolate_dataset_store(tmp_path, monkeypatch):
     store_dir = tmp_path / "datasets"
@@ -267,3 +296,39 @@ def test_send_email_logs_request(client, tmp_path):
     logged = json.loads(lines[0])
     assert logged["to"] == "user@example.com"
     assert logged["subject"] == "Test"
+
+
+def test_llm_schema_parses_embedded_object(client, monkeypatch):
+    _mock_llm(monkeypatch, "Ответ: {\"result\": 7, \"status\": \"ok\"}\nСпасибо")
+
+    response = client.post(
+        "/api/llm",
+        json={
+            "prompt": "test",
+            "response_json_schema": {"type": "object"},
+        },
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["result"] == 7
+    assert payload["status"] == "ok"
+
+
+def test_llm_schema_parses_arrays(client, monkeypatch):
+    _mock_llm(monkeypatch, "Вот список:\n[ {\"value\": 1}, {\"value\": 2} ]")
+
+    response = client.post(
+        "/api/llm",
+        json={
+            "userQuestion": "give array",
+            "response_json_schema": {"type": "array"},
+        },
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload, list)
+    assert payload[0]["value"] == 1
