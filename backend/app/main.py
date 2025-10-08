@@ -215,4 +215,7 @@ if __name__ == "__main__":
 
 
 from datasets_api import router as datasets_router
+from visualizations_api import router as visualizations_router
+
 app.include_router(datasets_router, prefix="/api/dataset")
+app.include_router(visualizations_router, prefix="/api/visualization")
