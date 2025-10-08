@@ -75,7 +75,12 @@ def read_table_bytes(file_bytes: bytes, filename: str) -> pd.DataFrame:
         return pd.read_excel(io.BytesIO(file_bytes))
     elif ext in [".csv", ".tsv"]:
         sep = "\t" if ext == ".tsv" else None
-        return pd.read_csv(io.BytesIO(file_bytes), sep=sep)
+        read_kwargs = {"sep": sep}
+        if sep is None:
+            # Let pandas automatically detect delimiters without emitting
+            # a fallback warning by explicitly selecting the python engine.
+            read_kwargs["engine"] = "python"
+        return pd.read_csv(io.BytesIO(file_bytes), **read_kwargs)
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported format: {ext}")
 
