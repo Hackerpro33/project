@@ -100,7 +100,7 @@ export default function FileConverter({ supportedFormats, onConversionComplete, 
       let extractedData = null;
       
       try {
-        const extractionResult = await ExtractDataFromUploadedFile({
+        const extractionResult = await extractDataFromUploadedFile({
           file_url,
           json_schema: {
             type: "object",

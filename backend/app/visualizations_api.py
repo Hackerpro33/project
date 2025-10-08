@@ -7,10 +7,10 @@ from pydantic import BaseModel, Field
 
 import json
 import os
-import time
-import uuid
 import tempfile
 import shutil
+import time
+import uuid
 
 
 router = APIRouter()
@@ -31,13 +31,12 @@ def _ensure_store_dir() -> Path:
 
 
 STORE_DIR = _ensure_store_dir()
-DATASETS_JSON = STORE_DIR / "datasets.json"
+VISUALIZATIONS_JSON = STORE_DIR / "visualizations.json"
 
 
 def _atomic_write_json(path: Path, data: Any):
-    fd, tmp_path = tempfile.mkstemp(prefix="datasets_", suffix=".json", dir=str(path.parent))
+    fd, tmp_path = tempfile.mkstemp(prefix="visualizations_", suffix=".json", dir=str(path.parent))
     tmp = Path(tmp_path)
-    # close the descriptor immediately, we'll reopen via Path
     try:
         os.close(fd)
     except OSError:
@@ -55,7 +54,7 @@ def _atomic_write_json(path: Path, data: Any):
 
 def _load_all() -> List[Dict[str, Any]]:
     for directory in CANDIDATE_DIRS:
-        candidate = directory / "datasets.json"
+        candidate = directory / "visualizations.json"
         if candidate.exists():
             try:
                 with candidate.open("r", encoding="utf-8") as f:
@@ -66,27 +65,33 @@ def _load_all() -> List[Dict[str, Any]]:
 
 
 def _save_all(items: List[Dict[str, Any]]):
-    _atomic_write_json(DATASETS_JSON, items)
+    _atomic_write_json(VISUALIZATIONS_JSON, items)
 
 
-class ColumnInfo(BaseModel):
-    name: str
-    type: str = "string"
-    selected: Optional[bool] = True
-
-
-class DatasetCreate(BaseModel):
-    name: str = Field(..., description="Название набора")
-    description: Optional[str] = ""
+class VisualizationBase(BaseModel):
+    title: str
+    type: str = "chart"
+    dataset_id: Optional[str] = None
+    config: Dict[str, Any] = Field(default_factory=dict)
+    summary: Optional[Dict[str, Any]] = None
     tags: List[str] = Field(default_factory=list)
-    columns: List[ColumnInfo] = Field(default_factory=list)
-    file_url: Optional[str] = None
-    row_count: Optional[int] = None
-    sample_data: Optional[List[Dict[str, Any]]] = None
+    x_axis: Optional[str] = None
+    y_axis: Optional[str] = None
+    z_axis: Optional[str] = None
+    insights: Optional[List[str]] = None
 
 
-class DatasetUpdate(DatasetCreate):
+class VisualizationCreate(VisualizationBase):
     pass
+
+
+class VisualizationUpdate(VisualizationBase):
+    pass
+
+
+class VisualizationFilterRequest(BaseModel):
+    filters: Dict[str, Any] = Field(default_factory=dict)
+    order_by: Optional[str] = "-created_at"
 
 
 def _ensure_dates(item: Dict[str, Any]) -> Dict[str, Any]:
@@ -110,44 +115,48 @@ def _ensure_dates(item: Dict[str, Any]) -> Dict[str, Any]:
     return item
 
 
+def _sort_items(items: List[Dict[str, Any]], order_by: Optional[str]) -> List[Dict[str, Any]]:
+    if not order_by:
+        return items
+    reverse = order_by.startswith("-")
+    key = order_by.lstrip("-")
+    return sorted(items, key=lambda x: x.get(key, 0), reverse=reverse)
+
+
 @router.get("/list")
-def list_datasets(order_by: Optional[str] = "-created_at"):
+def list_visualizations(order_by: Optional[str] = "-created_at"):
     items = [_ensure_dates(item) for item in _load_all()]
-    if order_by:
-        reverse = order_by.startswith("-")
-        key = order_by.lstrip("-")
-        items.sort(key=lambda x: x.get(key, 0), reverse=reverse)
-    return items
+    return _sort_items(items, order_by)
 
 
 @router.post("/create")
-def create_dataset(payload: DatasetCreate):
+def create_visualization(payload: VisualizationCreate):
     items = _load_all()
-    dataset = payload.model_dump()
-    dataset["id"] = str(uuid.uuid4())
-    dataset["created_at"] = int(time.time())
-    dataset["created_date"] = datetime.utcfromtimestamp(dataset["created_at"]).isoformat() + "Z"
-    items.append(dataset)
+    viz = payload.model_dump()
+    viz["id"] = str(uuid.uuid4())
+    viz["created_at"] = int(time.time())
+    viz["created_date"] = datetime.utcfromtimestamp(viz["created_at"]).isoformat() + "Z"
+    items.append(viz)
     _save_all(items)
-    return {"status": "created", "id": dataset["id"], "dataset": _ensure_dates(dataset)}
+    return {"status": "created", "id": viz["id"], "visualization": _ensure_dates(viz)}
 
 
-@router.get("/{dataset_id}")
-def get_dataset(dataset_id: str):
+@router.get("/{viz_id}")
+def get_visualization(viz_id: str):
     for item in _load_all():
-        if item.get("id") == dataset_id:
+        if item.get("id") == viz_id:
             return _ensure_dates(item)
-    raise HTTPException(status_code=404, detail="Dataset not found")
+    raise HTTPException(status_code=404, detail="Visualization not found")
 
 
-@router.put("/{dataset_id}")
-def update_dataset(dataset_id: str, payload: DatasetUpdate):
+@router.put("/{viz_id}")
+def update_visualization(viz_id: str, payload: VisualizationUpdate):
     items = _load_all()
     for index, item in enumerate(items):
-        if item.get("id") == dataset_id:
+        if item.get("id") == viz_id:
             updated = item.copy()
             updated.update(payload.model_dump(exclude_unset=True))
-            updated["id"] = dataset_id
+            updated["id"] = viz_id
             updated["updated_at"] = int(time.time())
             updated["updated_date"] = datetime.utcfromtimestamp(updated["updated_at"]).isoformat() + "Z"
             if not updated.get("created_at"):
@@ -155,26 +164,30 @@ def update_dataset(dataset_id: str, payload: DatasetUpdate):
             updated["created_date"] = updated.get("created_date") or datetime.utcfromtimestamp(updated["created_at"]).isoformat() + "Z"
             items[index] = updated
             _save_all(items)
-            return {"status": "updated", "dataset": _ensure_dates(updated)}
-    raise HTTPException(status_code=404, detail="Dataset not found")
+            return {"status": "updated", "visualization": _ensure_dates(updated)}
+    raise HTTPException(status_code=404, detail="Visualization not found")
 
 
-@router.delete("/{dataset_id}")
-def delete_dataset(dataset_id: str):
+@router.delete("/{viz_id}")
+def delete_visualization(viz_id: str):
     items = _load_all()
-    remaining = [item for item in items if item.get("id") != dataset_id]
+    remaining = [item for item in items if item.get("id") != viz_id]
     if len(remaining) == len(items):
-        raise HTTPException(status_code=404, detail="Dataset not found")
+        raise HTTPException(status_code=404, detail="Visualization not found")
     _save_all(remaining)
-    return {"status": "deleted", "id": dataset_id}
+    return {"status": "deleted", "id": viz_id}
 
 
-@router.get("/debug/paths")
-def debug_paths():
-    return {
-        "APP_DIR": str(APP_DIR),
-        "STORE_DIR": str(STORE_DIR),
-        "DATASETS_JSON": str(DATASETS_JSON),
-        "exists": DATASETS_JSON.exists(),
-        "size": DATASETS_JSON.stat().st_size if DATASETS_JSON.exists() else 0,
-    }
+@router.post("/filter")
+def filter_visualizations(request: VisualizationFilterRequest):
+    items = [_ensure_dates(item) for item in _load_all()]
+    result = []
+    for item in items:
+        match = True
+        for key, expected in request.filters.items():
+            if item.get(key) != expected:
+                match = False
+                break
+        if match:
+            result.append(item)
+    return _sort_items(result, request.order_by)

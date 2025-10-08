@@ -33,17 +33,20 @@ export default function Dashboard() {
   }, []);
 
   const loadData = async () => {
-   setIsLoading(true);
-   try {
-    const datasetsData = await getDatasets();
-    // const visualizationsData = await getVisualizations(); // если реализуешь
-    setDatasets(datasetsData);
-    // setVisualizations(visualizationsData);
-  } catch (error) {
-    console.error('Ошибка загрузки данных:', error);
-  }
-   setIsLoading(false);
-};
+    setIsLoading(true);
+    try {
+      const [datasetsData, visualizationsData] = await Promise.all([
+        getDatasets(),
+        getVisualizations(),
+      ]);
+      setDatasets(Array.isArray(datasetsData) ? datasetsData : []);
+      setVisualizations(Array.isArray(visualizationsData) ? visualizationsData : []);
+    } catch (error) {
+      console.error('Ошибка загрузки данных:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
      
 
   const sampleTrendData = [
