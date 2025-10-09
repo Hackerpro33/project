@@ -20,16 +20,6 @@ async function _ExtractDataFromUploadedFile_impl({ file_url, json_schema }) {
   return res.json(); // { status:"success", output:{columns,row_count,sample_data} }
 }
 
-async function _InvokeLLM_impl({ prompt, response_json_schema, summary, userQuestion }) {
-  const res = await fetch(`${API_BASE}/api/llm`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, response_json_schema, summary, userQuestion })
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json(); // {response: "..."} или JSON по schema
-}
-
 async function _SendEmail_impl({ to, subject, body, from_name }) {
   const res = await fetch(`${API_BASE}/api/utils/send-email`, {
     method: 'POST',
@@ -46,9 +36,6 @@ export async function uploadFile(args) { return _UploadFile_impl(args); }
 
 export async function ExtractDataFromUploadedFile(args) { return _ExtractDataFromUploadedFile_impl(args); }
 export async function extractDataFromUploadedFile(args) { return _ExtractDataFromUploadedFile_impl(args); }
-
-export async function InvokeLLM(args) { return _InvokeLLM_impl(args); }
-export async function invokeLLM(args) { return _InvokeLLM_impl(args); }
 
 export async function SendEmail(args) { return _SendEmail_impl(args); }
 export async function sendEmail(args) { return _SendEmail_impl(args); }

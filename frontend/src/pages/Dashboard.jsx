@@ -71,7 +71,7 @@ export default function Dashboard() {
                   Панель аналитики
                 </h1>
                 <p className="text-xl text-slate-300 max-w-2xl leading-relaxed">
-                  Превратите ваши данные в полезные инсайты с помощью AI-визуализаций и прогнозирования
+                  Превратите ваши данные в полезные инсайты с помощью локальных визуализаций и прогнозирования
                 </p>
                 <div className="flex items-center gap-6 mt-6 text-sm">
                   <div className="flex items-center gap-2">
@@ -80,7 +80,7 @@ export default function Dashboard() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Zap className="w-4 h-4 text-yellow-400" />
-                    <span className="text-slate-300">AI-Ассистент</span>
+                    <span className="text-slate-300">Локальный ассистент</span>
                   </div>
                 </div>
               </div>

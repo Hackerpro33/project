@@ -5,42 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { InvokeLLM } from "@/api/integrations";
 import { BarChart3, Sparkles } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-
-const correlationSchema = {
-    type: "object",
-    properties: {
-        correlation_matrix: {
-            type: "array",
-            items: {
-                type: "object",
-                properties: {
-                    feature: { type: "string" },
-                    correlations: { type: "object" }
-                }
-            }
-        },
-        insights: {
-            type: "array",
-            items: { type: "string" }
-        },
-        strongest_correlations: {
-            type: "array",
-            items: {
-                type: "object",
-                properties: {
-                    feature1: { type: "string" },
-                    feature2: { type: "string" },
-                    correlation: { type: "number" },
-                    interpretation: { type: "string" }
-                }
-            }
-        }
-    },
-    required: ["correlation_matrix", "insights"]
-};
+import { analyzeCorrelation } from "@/utils/localAnalysis";
 
 export default function CorrelationMatrix({ datasets, isLoading, onCorrelationCalculated }) {
     const [selectedDatasets, setSelectedDatasets] = useState([]);
@@ -58,11 +25,11 @@ export default function CorrelationMatrix({ datasets, isLoading, onCorrelationCa
       setResult(null);
     };
 
-    const handleFeatureToggle = (featureName) => {
+    const handleFeatureToggle = (featureId) => {
         setSelectedFeatures(prev =>
-            prev.includes(featureName)
-                ? prev.filter(f => f !== featureName)
-                : [...prev, featureName]
+            prev.includes(featureId)
+                ? prev.filter(f => f !== featureId)
+                : [...prev, featureId]
         );
     };
 
@@ -74,31 +41,19 @@ export default function CorrelationMatrix({ datasets, isLoading, onCorrelationCa
         setIsCalculating(true);
         setResult(null);
         try {
-            const prompt = `
-                Вы — эксперт по статистическому анализу данных и корреляционному анализу.
-                
-                Проанализируйте следующий набор данных и рассчитайте подробную матрицу корреляции для указанных признаков: ${selectedFeatures.join(', ')}.
-                
-                ЗАДАЧА:
-                1. Рассчитайте коэффициенты корреляции Пирсона между всеми парами признаков. Признаки могут быть из разных, но связанных наборов данных.
-                2. Определите статистическую значимость корреляций (p-value).
-                3. Выявите наиболее сильные положительные и отрицательные корреляции (коэффициент > 0.7 или < -0.7).
-                4. Предоставьте развернутую интерпретацию для самых сильных корреляций, объясняя их практическое значение.
-                
-                ПРИЗНАКИ ДЛЯ АНАЛИЗА:
-                ${selectedFeatures.map(feature => `- ${feature}`).join('\n')}
-                
-                ДОПОЛНИТЕЛЬНЫЕ ТРЕБОВАНИЯ:
-                - Объясните, какие выводы можно сделать на основе обнаруженных связей.
-                - Укажите на возможные ложные корреляции (spurious correlations) и объясните, почему они могут возникать.
-                - Дайте рекомендации по дальнейшему исследованию или использованию этих результатов в бизнес-процессах.
-                
-                Предоставьте результат в указанном JSON формате.
-            `;
-            const response = await InvokeLLM({
-                prompt: prompt,
-                response_json_schema: correlationSchema
-            });
+            const featureMap = selectedFeatures
+              .map((featureId) => {
+                const [datasetId, columnName] = featureId.split("::");
+                const dataset = datasets.find((d) => d.id === datasetId);
+                if (!dataset) return null;
+                return {
+                    label: `${dataset.name} > ${columnName}`,
+                    values: (dataset.sample_data || []).map((row) => row?.[columnName])
+                };
+              })
+              .filter(Boolean);
+
+            const response = analyzeCorrelation({ features: featureMap });
             setResult(response);
             if (onCorrelationCalculated) {
               onCorrelationCalculated(response);
@@ -125,10 +80,13 @@ export default function CorrelationMatrix({ datasets, isLoading, onCorrelationCa
 
     const availableFeatures = datasets
       .filter(d => selectedDatasets.includes(d.id))
-      .flatMap(d => 
-        d.columns
+      .flatMap(d =>
+        (d.columns || [])
           .filter(c => c.type === 'number')
-          .map(c => `${d.name} > ${c.name}`)
+          .map(c => ({
+            id: `${d.id}::${c.name}`,
+            label: `${d.name} > ${c.name}`,
+          }))
       );
 
     return (
@@ -162,13 +120,13 @@ export default function CorrelationMatrix({ datasets, isLoading, onCorrelationCa
                             <Label>Выберите признаки для анализа</Label>
                             <div className="space-y-2 p-3 border rounded-lg max-h-60 overflow-y-auto">
                                 {availableFeatures.map(feature => (
-                                    <div key={feature} className="flex items-center gap-2">
+                                    <div key={feature.id} className="flex items-center gap-2">
                                         <Checkbox
-                                            id={feature}
-                                            checked={selectedFeatures.includes(feature)}
-                                            onCheckedChange={() => handleFeatureToggle(feature)}
+                                            id={feature.id}
+                                            checked={selectedFeatures.includes(feature.id)}
+                                            onCheckedChange={() => handleFeatureToggle(feature.id)}
                                         />
-                                        <Label htmlFor={feature} className="text-sm">{feature}</Label>
+                                        <Label htmlFor={feature.id} className="text-sm">{feature.label}</Label>
                                     </div>
                                 ))}
                             </div>
@@ -185,7 +143,7 @@ export default function CorrelationMatrix({ datasets, isLoading, onCorrelationCa
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-slate-900">
                         <Sparkles className="w-5 h-5 text-purple-500" />
-                        Результаты корреляционного анализа
+                        Корреляционный анализ (локальный расчёт)
                     </CardTitle>
                 </CardHeader>
                 <CardContent>

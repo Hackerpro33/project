@@ -33,8 +33,8 @@ export default function QuickActions() {
       hoverGradient: "hover:from-purple-600 hover:to-indigo-700"
     },
     {
-      title: "AI Прогнозирование",
-      description: "Предсказать будущие тренды",
+      title: "Локальное прогнозирование",
+      description: "Предсказать будущие тренды без подключения к сети",
       icon: TrendingUp,
       href: createPageUrl("Forecasting"),
       gradient: "from-orange-500 to-red-600",

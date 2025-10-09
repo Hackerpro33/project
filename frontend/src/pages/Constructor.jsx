@@ -49,7 +49,7 @@ export default function Constructor() {
             Конструктор отчетов и связей
           </h1>
           <p className="text-slate-600 text-lg max-w-2xl mx-auto elegant-text">
-            Создавайте интерактивные дашборды, анализируйте глобальные взаимосвязи или сгенерируйте автоматический AI-отчет.
+            Создавайте интерактивные дашборды, анализируйте глобальные взаимосвязи или сформируйте автоматический локальный отчёт.
           </p>
         </div>
 
@@ -79,7 +79,7 @@ export default function Constructor() {
                 className="gap-2 text-purple-600 hover:bg-purple-100 hover:text-purple-700"
               >
                 <Sparkles className="w-4 h-4" />
-                Сводный AI-отчет
+                Сводный локальный отчёт
               </Button>
             </div>
           </CardContent>

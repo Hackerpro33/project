@@ -1,18 +1,60 @@
 
-import React, { useMemo } from 'react';
-import { MapContainer, TileLayer, Popup, CircleMarker } from 'react-leaflet';
+import React, { useEffect, useMemo } from 'react';
+import { MapContainer, Popup, CircleMarker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-// Placeholder for Leaflet's default icon issue with bundlers
 import L from 'leaflet';
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-});
+
+function LocalTileLayer() {
+  const map = useMap();
+
+  useEffect(() => {
+    const gridLayer = L.gridLayer({ tileSize: 256 });
+
+    gridLayer.createTile = () => {
+      const tile = document.createElement('canvas');
+      tile.width = 256;
+      tile.height = 256;
+
+      const ctx = tile.getContext('2d');
+      if (!ctx) {
+        return tile;
+      }
+
+      const gradient = ctx.createLinearGradient(0, 0, 256, 256);
+      gradient.addColorStop(0, '#f0f6ff');
+      gradient.addColorStop(1, '#e0e9f9');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 256, 256);
+
+      ctx.strokeStyle = '#c7d2fe';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 256; i += 64) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, 256);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(256, i);
+        ctx.stroke();
+      }
+
+      return tile;
+    };
+
+    gridLayer.addTo(map);
+
+    return () => {
+      gridLayer.remove();
+    };
+  }, [map]);
+
+  return null;
+}
 
 const parseCoordinate = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -159,10 +201,7 @@ export default function MapView({ data, config, forecastOverlay, correlationOver
         scrollWheelZoom={true}
         style={{ height: '100%', width: '100%', borderRadius: '0.75rem' }}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-        />
+        <LocalTileLayer />
         {pointsToRender.map((point, index) => {
           const lat = config?.lat_column ? parseCoordinate(point[config.lat_column]) : parseCoordinate(point.lat);
           const lon = config?.lon_column ? parseCoordinate(point[config.lon_column]) : parseCoordinate(point.lon);

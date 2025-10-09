@@ -5,7 +5,11 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 import pandas as pd
 import numpy as np
-import httpx, os, io, json, uuid, re
+import os
+import io
+import json
+import uuid
+import re
 from typing import Optional, Dict, Any, List
 
 app = FastAPI(title="Insight Sphere Backend", version="0.1.0")
@@ -104,59 +108,6 @@ def build_extraction(df: pd.DataFrame, sample_rows: int = 100) -> Dict[str, Any]
     }
 
 
-def _extract_json_snippet(text: str) -> Optional[str]:
-    """Attempt to pull a JSON object or array out of an arbitrary string."""
-
-    stripped = text.strip()
-    if not stripped:
-        return None
-
-    # Try direct load first – maybe the model returned pristine JSON.
-    try:
-        json.loads(stripped)
-        return stripped
-    except json.JSONDecodeError:
-        pass
-
-    candidates: List[tuple[int, str]] = []
-    for token in ("{", "["):
-        pos = stripped.find(token)
-        if pos != -1:
-            candidates.append((pos, token))
-    if not candidates:
-        return None
-
-    start, opening = min(candidates, key=lambda x: x[0])
-    closing = "}" if opening == "{" else "]"
-
-    depth = 0
-    in_string = False
-    escape = False
-    for index, char in enumerate(stripped[start:], start=start):
-        if in_string:
-            if escape:
-                escape = False
-            elif char == "\\":
-                escape = True
-            elif char == '"':
-                in_string = False
-            continue
-
-        if char == '"':
-            in_string = True
-        elif char == opening:
-            depth += 1
-        elif char == closing:
-            depth -= 1
-            if depth == 0:
-                snippet = stripped[start:index + 1]
-                try:
-                    json.loads(snippet)
-                    return snippet
-                except json.JSONDecodeError:
-                    return None
-    return None
-
 # simple in-memory registry file_id -> path
 FILE_REGISTRY: Dict[str, str] = {}
 
@@ -207,62 +158,6 @@ def api_extract(req: ExtractRequest):
         raise HTTPException(status_code=400, detail=str(e))
     output = build_extraction(df)
     return {"status": "success", "output": output}
-
-# --- Local LLM via Ollama ---
-class LLMReq(BaseModel):
-    prompt: Optional[str] = None
-    summary: Optional[dict] = None
-    userQuestion: Optional[str] = None
-    response_json_schema: Optional[dict] = None
-
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
-
-@app.post("/api/llm")
-async def api_llm(req: LLMReq):
-    if not (req.prompt or req.summary or req.userQuestion):
-        raise HTTPException(status_code=400, detail="No prompt/summary provided")
-
-    system = "Ты локальный аналитик таблиц. Отвечай кратко и по делу. Если просят JSON — верни ТОЛЬКО валидный JSON без пояснений."
-    prompt_parts = [f"SYSTEM:\n{system}\n"]
-    if req.summary:
-        prompt_parts.append("ДАННЫЕ:\n" + json.dumps(req.summary, ensure_ascii=False, indent=2))
-    if req.prompt:
-        prompt_parts.append("ПРОМПТ:\n" + req.prompt)
-    if req.userQuestion:
-        prompt_parts.append("ВОПРОС:\n" + req.userQuestion)
-
-    # Если передана схема — просим вернуть строго JSON
-    if req.response_json_schema:
-        prompt_parts.append("\nТребование: Ответь строго в формате JSON, соответствующем этой схеме (без комментариев и лишнего текста):\n")
-        prompt_parts.append(json.dumps(req.response_json_schema, ensure_ascii=False))
-
-    full_prompt = "\n\n".join(prompt_parts)
-
-    try:
-        async with httpx.AsyncClient(timeout=120) as client:
-            r = await client.post(
-                f"{OLLAMA_URL}/api/generate",
-                json={
-                    "model": OLLAMA_MODEL,
-                    "prompt": full_prompt,
-                    "stream": False,
-                },
-            )
-            r.raise_for_status()
-            data = r.json()
-    except httpx.HTTPError as exc:  # pragma: no cover - network dependent
-        raise HTTPException(status_code=502, detail=f"LLM backend unavailable: {exc}") from exc
-
-    text = data.get("response", "")
-    if req.response_json_schema:
-        snippet = _extract_json_snippet(text)
-        if snippet is not None:
-            try:
-                return json.loads(snippet)
-            except json.JSONDecodeError:
-                pass
-    return {"response": text}
 
 class EmailRequest(BaseModel):
     to: str
