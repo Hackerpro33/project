@@ -7,6 +7,7 @@ import { Map as MapIcon, Globe, Compass, Settings, Plus } from "lucide-react";
 import MapConfigurator from "../components/maps/MapConfigurator";
 import MapView from "../components/maps/MapView";
 import MapGallery from "../components/maps/MapGallery";
+import MapAnalyticsPanel from "../components/maps/MapAnalyticsPanel";
 
 export default function Maps() {
   const [datasets, setDatasets] = useState([]);
@@ -265,6 +266,13 @@ export default function Maps() {
                     </div>
                   </CardContent>
                 </Card>
+
+                <MapAnalyticsPanel
+                  data={mapData}
+                  config={currentMapConfig}
+                  datasets={datasets}
+                  isLoading={isDatasetLoading}
+                />
               </div>
             </div>
 
