@@ -89,7 +89,7 @@ export default function DashboardBuilder({ datasets, visualizations, onSave, isL
           <div className="h-32 bg-gradient-to-r from-orange-50 to-red-50 rounded-lg p-4 flex items-center justify-center">
             <div className="text-center text-orange-600">
               <IconComponent className="w-12 h-12 mx-auto mb-2" />
-              <div className="text-sm">AI Прогноз</div>
+              <div className="text-sm">Локальный прогноз</div>
             </div>
           </div>
         );

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Dataset } from "@/api/entities";
-import { extractDataFromUploadedFile, uploadFile, InvokeLLM } from "@/api/integrations";
+import { extractDataFromUploadedFile, uploadFile } from "@/api/integrations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

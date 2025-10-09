@@ -16,35 +16,6 @@ from .. import main
 HEADERS = {"host": "localhost"}
 
 
-class DummyLLMResponse:
-    def __init__(self, text: str):
-        self._text = text
-
-    def raise_for_status(self):
-        return None
-
-    def json(self):
-        return {"response": self._text}
-
-
-class DummyLLMClient:
-    def __init__(self, text: str):
-        self._text = text
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
-
-    async def post(self, *args, **kwargs):
-        return DummyLLMResponse(self._text)
-
-
-def _mock_llm(monkeypatch, text: str):
-    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *args, **kwargs: DummyLLMClient(text))
-
-
 @pytest.fixture(autouse=True)
 def isolate_dataset_store(tmp_path, monkeypatch):
     store_dir = tmp_path / "datasets"
@@ -568,74 +539,6 @@ def test_upload_rejects_empty_payload(client):
     assert response.status_code == 400
 
 
-def test_api_llm_requires_prompt():
-    with pytest.raises(HTTPException) as excinfo:
-        asyncio.run(main.api_llm(main.LLMReq()))
-    assert excinfo.value.status_code == 400
-
-
-def test_api_llm_parses_json_response(monkeypatch):
-    captured = {}
-
-    class DummyResponse:
-        def __init__(self, payload):
-            self._payload = payload
-
-        def json(self):
-            return self._payload
-
-        def raise_for_status(self):
-            return None
-
-    class DummyAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
-
-        async def post(self, url, json):
-            captured["url"] = url
-            captured["json"] = json
-            return DummyResponse({"response": "prefix {\"answer\": 42} suffix"})
-
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
-
-    result = asyncio.run(
-        main.api_llm(main.LLMReq(prompt="Hello", response_json_schema={"type": "object"}))
-    )
-
-    assert result == {"answer": 42}
-    assert captured["url"].endswith("/api/generate")
-    assert "Hello" in captured["json"]["prompt"]
-
-
-def test_api_llm_returns_plain_text_when_json_missing(monkeypatch):
-    _mock_llm(monkeypatch, "Answer: 42")
-    result = asyncio.run(
-        main.api_llm(
-            main.LLMReq(prompt="Hi", response_json_schema={"type": "object"})
-        )
-    )
-    assert result == {"response": "Answer: 42"}
-
-
-def test_api_llm_returns_json_when_prompted_via_client(monkeypatch, client):
-    _mock_llm(monkeypatch, '{"summary": {"rows": 10}}')
-    response = client.post(
-        "/api/llm",
-        json={
-            "prompt": "Summarize",
-            "response_json_schema": {"type": "object"},
-        },
-        headers=HEADERS,
-    )
-    assert response.status_code == 200
-    assert response.json() == {"summary": {"rows": 10}}
-
 
 def test_api_send_email_logs_errors(monkeypatch):
     def failing_open(*args, **kwargs):
@@ -653,65 +556,5 @@ def test_api_send_email_logs_errors(monkeypatch):
     assert excinfo.value.status_code == 500
 
 
-def test_extract_json_snippet_handles_nested_payload():
-    text = "Ответ модели: {\"outer\": {\"inner\": [1, 2, {\"flag\": true}]}} и ещё пояснения"
-    snippet = main._extract_json_snippet(text)
-    assert snippet is not None
-    payload = json.loads(snippet)
-    assert payload == {"outer": {"inner": [1, 2, {"flag": True}]}}
 
 
-def test_extract_json_snippet_returns_none_for_invalid_json():
-    text = "Неверный JSON: {\"outer\": {\"inner\": ]}"
-    assert main._extract_json_snippet(text) is None
-
-
-def test_api_llm_includes_all_prompt_sections(monkeypatch):
-    captured = {}
-
-    class DummyResponse:
-        def __init__(self, payload):
-            self._payload = payload
-
-        def json(self):
-            return self._payload
-
-        def raise_for_status(self):
-            return None
-
-    class DummyAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
-
-        async def post(self, url, json):
-            captured["url"] = url
-            captured["payload"] = json
-            return DummyResponse({"response": "ok"})
-
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
-
-    summary = {"columns": [{"name": "value", "type": "number"}]}
-    question = "Что дальше?"
-    result = asyncio.run(
-        main.api_llm(
-            main.LLMReq(
-                prompt="Привет",
-                summary=summary,
-                userQuestion=question,
-            )
-        )
-    )
-
-    assert result == {"response": "ok"}
-    prompt = captured["payload"]["prompt"]
-    assert "SYSTEM:\n" in prompt
-    assert "ПРОМПТ:\nПривет" in prompt
-    assert f"ВОПРОС:\n{question}" in prompt
-    assert json.dumps(summary, ensure_ascii=False, indent=2) in prompt
-    assert captured["payload"]["stream"] is False

@@ -8,29 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Network, Save, ArrowLeft, Sparkles } from "lucide-react";
 import NetworkVisualization from "./NetworkVisualization";
-import { InvokeLLM } from "@/api/integrations";
-
-const networkGraphSchema = {
-    type: "object",
-    properties: {
-        nodes: {
-            type: "array",
-            items: {
-                type: "object",
-                properties: { id: { type: "string" }, group: { type: "string" } }
-            }
-        },
-        links: {
-            type: "array",
-            items: {
-                type: "object",
-                properties: { source: { type: "string" }, target: { type: "string" }, value: { type: "number" } }
-            }
-        },
-        insights: { type: "array", items: { type: "string" } }
-    },
-    required: ["nodes", "links"]
-};
+import { buildNetworkGraph } from "@/utils/localAnalysis";
 
 export default function NetworkBuilder({ datasets, onSave, onCancel }) {
   const [config, setConfig] = useState({
@@ -82,21 +60,17 @@ export default function NetworkBuilder({ datasets, onSave, onCancel }) {
     const columnMetadata = selectedDataset?.columns || [];
     const previewRows = selectedDataset?.sample_data?.slice(0, 50) || [];
 
-    const prompt = `
-        Вы — эксперт по графовому анализу. Используйте фактические данные, приведенные ниже, чтобы построить структуру графа без домыслов.
-        Задача: ${prompts[config.graphType]}
-        Метаданные столбцов: ${JSON.stringify(columnMetadata)}
-        Пример строк данных (не более 50): ${JSON.stringify(previewRows)}
-        Если корреляция между столбцами менее 0.3 по модулю, связь не добавляйте.
-        Предоставьте результат в формате JSON, соответствующем схеме.
-    `;
-
     try {
-        const result = await InvokeLLM({ prompt, response_json_schema: networkGraphSchema });
+        const result = buildNetworkGraph({
+            datasetName: selectedDataset?.name || "",
+            columns: columnMetadata,
+            rows: previewRows,
+            graphType: config.graphType,
+        });
         setGeneratedGraph(result);
     } catch(e) {
         console.error("Ошибка генерации графа", e);
-        alert("Ошибка при генерации графа. Пожалуйста, попробуйте еще раз.");
+        alert("Ошибка при генерации графа локальными методами. Пожалуйста, проверьте данные.");
     }
     setIsGenerating(false);
   };

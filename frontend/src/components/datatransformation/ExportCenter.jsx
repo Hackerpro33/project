@@ -5,8 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { InvokeLLM } from "@/api/integrations";
 import { getExportContentType } from "@/utils/dataTransformation";
+import { convertDataset } from "@/utils/localAnalysis";
 import { 
   Download, 
   Database, 
@@ -40,45 +40,7 @@ export default function ExportCenter({ datasets, supportedFormats, isLoading }) 
     try {
       const dataset = datasets.find(d => d.id === selectedDataset);
       
-      // Используем ИИ для умного экспорта
-      const exportPrompt = `
-        Вы — эксперт по конвертации данных. Преобразуйте данные в формат ${exportFormat}.
-        
-        ИСХОДНЫЕ ДАННЫЕ:
-        Название: ${dataset.name}
-        Столбцы: ${JSON.stringify(dataset.columns)}
-        Образцы данных: ${JSON.stringify(dataset.sample_data?.slice(0, 10))}
-        
-        НАСТРОЙКИ ЭКСПОРТА:
-        Формат: ${exportFormat}
-        Включить заголовки: ${exportOptions.includeHeaders}
-        Разделитель: ${exportOptions.delimiter}
-        Кодировка: ${exportOptions.encoding}
-        
-        ЗАДАЧА:
-        Создайте оптимальное представление данных в формате ${exportFormat}, учитывая:
-        1. Сохранение структуры данных
-        2. Правильное форматирование типов данных
-        3. Совместимость с популярными программами
-        4. Качественную читаемость
-        
-        Предоставьте готовый файл в указанном формате.
-      `;
-
-      const result = await InvokeLLM({
-        prompt: exportPrompt,
-        response_json_schema: {
-          type: "object",
-          properties: {
-            converted_data: { type: "string" },
-            format_info: { type: "string" },
-            compatibility_notes: { type: "array", items: { type: "string" } },
-            file_size_estimate: { type: "string" },
-            export_quality: { type: "string", enum: ["excellent", "good", "fair"] }
-          },
-          required: ["converted_data", "format_info"]
-        }
-      });
+      const result = convertDataset({ dataset, format: exportFormat, options: exportOptions });
 
       // Создаем blob для скачивания
       const blob = new Blob([result.converted_data], {
@@ -208,7 +170,7 @@ export default function ExportCenter({ datasets, supportedFormats, isLoading }) 
           <div className="flex items-center gap-4 pt-4">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-purple-600" />
-              <span className="text-sm font-medium text-purple-700">ИИ-оптимизация включена</span>
+              <span className="text-sm font-medium text-purple-700">Локальная оптимизация включена</span>
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-green-600" />

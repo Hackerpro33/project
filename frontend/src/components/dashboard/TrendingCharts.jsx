@@ -46,7 +46,7 @@ export default function TrendingCharts({ data }) {
 
           <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-100">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-medium text-slate-700">AI Predictions</span>
+              <span className="text-sm font-medium text-slate-700">Локальные прогнозы</span>
               <div className="flex items-center gap-1 text-blue-600">
                 <TrendingUp className="w-3 h-3" />
                 <span className="text-xs font-medium">+31%</span>

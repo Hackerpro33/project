@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Dataset, Visualization } from "@/api/entities";
-import { InvokeLLM, SendEmail } from "@/api/integrations";
+import { SendEmail } from "@/api/integrations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, Sparkles, BrainCircuit, BarChart3, Mail, Map } from "lucide-react";
@@ -10,48 +10,7 @@ import ForecastResult from "../components/forecasting/ForecastResult";
 import CorrelationMatrix from "../components/forecasting/CorrelationMatrix";
 import MapView from "../components/maps/MapView";
 import MapConfigurator from "../components/maps/MapConfigurator";
-
-const forecastSchema = {
-  type: "object",
-  properties: {
-    forecast_data: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          date: { type: "string", format: "date" },
-          predicted_value: { type: "number" },
-          confidence_lower: { type: "number" },
-          confidence_upper: { type: "number" }
-        },
-        required: ["date", "predicted_value"]
-      }
-    },
-    scenarios: {
-        type: "object",
-        properties: {
-            optimistic: { type: "array", items: { "type": "number" } },
-            pessimistic: { type: "array", items: { "type": "number" } }
-        },
-        description: "Прогнозы для оптимистичного и пессимистичного сценариев."
-    },
-    summary: {
-      type: "object",
-      properties: {
-        predicted_growth_percentage: { type: "number" },
-        key_insights: { type: "array", items: { type: "string" } },
-        seasonality_detected: { type: "boolean" },
-        trend_direction: { type: "string", enum: ["возрастающий", "убывающий", "стабильный"] },
-        volatility_level: { type: "string", enum: ["низкая", "средняя", "высокая"] },
-        confidence_score: { type: "number" },
-        risk_factors: { type: "array", items: { type: "string" } },
-        recommendations: { type: "array", items: { type: "string" } }
-      },
-      required: ["predicted_growth_percentage", "key_insights"]
-    }
-  },
-  required: ["forecast_data", "summary"]
-};
+import { generateForecastReport } from "@/utils/localAnalysis";
 
 export default function Forecasting() {
   const [datasets, setDatasets] = useState([]);
@@ -100,7 +59,7 @@ export default function Forecasting() {
   const handleSendSummary = async () => {
     if (!forecastResult) return;
     
-    const subject = `AI-прогноз: Результаты анализа`;
+    const subject = `Локальный прогноз: результаты анализа`;
     const body = `
       <h1>Отчет по прогнозу</h1>
       <h2>Ключевые выводы:</h2>
@@ -222,9 +181,10 @@ export default function Forecasting() {
         Предоставьте результат в указанном JSON формате.
       `;
 
-      const result = await InvokeLLM({
-        prompt: prompt,
-        response_json_schema: forecastSchema
+      const result = generateForecastReport({
+        historical: mockHistorical,
+        horizon: config.horizon,
+        externalFactors: externalFactorsDetails,
       });
       
       // Сохранение прогноза как визуализации
@@ -265,7 +225,7 @@ export default function Forecasting() {
             Прогнозирование и анализ
           </h1>
           <p className="text-slate-600 text-lg max-w-2xl mx-auto">
-            Предсказывайте будущие тенденции и принимайте решения на основе данных. Наш AI анализирует ваши данные для предоставления точных прогнозов и инсайтов.
+            Предсказывайте будущие тенденции и принимайте решения на основе данных. Локальные алгоритмы анализа используют статистику рядов без обращения к внешним сервисам.
           </p>
         </div>
         

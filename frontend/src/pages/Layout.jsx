@@ -193,7 +193,7 @@ export default function Layout({ children, currentPageName }) {
                   <TrendingUp className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <p className="text-white font-medium text-sm elegant-text">AI-Аналитика</p>
+                  <p className="text-white font-medium text-sm elegant-text">Локальная аналитика</p>
                   <p className="text-slate-400 text-xs elegant-text">на базе ML</p>
                 </div>
               </div>

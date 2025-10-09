@@ -2,11 +2,10 @@ import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Settings as SettingsIcon, 
-  Brain, 
-  Trash2, 
-  Activity, 
+import {
+  Settings as SettingsIcon,
+  Trash2,
+  Activity,
   Server,
   Download,
   Upload,
@@ -27,7 +26,7 @@ import SystemMonitor from "../components/settings/SystemMonitor";
 import UserManagement from "../components/settings/UserManagement";
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState('ai');
+  const [activeTab, setActiveTab] = useState('modules');
   const [systemStats, setSystemStats] = useState({
     totalDatasets: 0,
     totalVisualizations: 0,
@@ -37,10 +36,10 @@ export default function Settings() {
 
   const settingsTabs = [
     {
-      id: 'ai',
-      label: 'AI Модели',
-      icon: Brain,
-      description: 'Настройка и управление AI моделями'
+      id: 'modules',
+      label: 'Локальные алгоритмы',
+      icon: Cpu,
+      description: 'Настройка локальных модулей анализа'
     },
     {
       id: 'data',
@@ -77,7 +76,7 @@ export default function Settings() {
             Настройки системы
           </h1>
           <p className="text-slate-600 text-lg max-w-2xl mx-auto elegant-text">
-            Управляйте AI моделями, данными, мониторингом и другими параметрами системы
+            Управляйте локальными алгоритмами, данными, мониторингом и другими параметрами системы
           </p>
         </div>
 
@@ -141,7 +140,7 @@ export default function Settings() {
                 ))}
               </TabsList>
 
-              <TabsContent value="ai" className="mt-0">
+              <TabsContent value="modules" className="mt-0">
                 <AIModelSettings />
               </TabsContent>
 

@@ -149,7 +149,7 @@ export default function ForecastResult({ result, historicalData, onReset, onSend
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-slate-900">
               <List className="w-5 h-5 text-blue-500" />
-              AI Инсайты
+              Локальные инсайты
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
