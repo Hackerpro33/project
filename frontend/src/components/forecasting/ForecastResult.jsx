@@ -124,7 +124,7 @@ export default function ForecastResult({ result, historicalData, onReset, onSend
                 </Badge>
               </div>
               
-              {result.summary.confidence_score && (
+              {result.summary.confidence_score !== undefined && result.summary.confidence_score !== null && (
                 <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                   <span className="text-sm font-medium">Достоверность:</span>
                   <span className="text-sm font-bold text-blue-600">

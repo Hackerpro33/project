@@ -170,31 +170,55 @@ export default function Forecasting() {
     setHistoricalData(mockHistorical);
 
     try {
-      const externalFactorsPrompt = config.external_factors?.length > 0 
-        ? `Учтите следующие внешние факторы (экзогенные переменные) при построении прогноза: ${config.external_factors.join(', ')}. Данные из корреляционного и графового анализа можно использовать как основу для этих факторов.`
+      const externalFactorsDetails = (config.external_factors || []).map((factor) => {
+        const dataset = datasets.find((d) => d.id === factor.dataset_id);
+        const sampleValues = dataset?.sample_data
+          ?.map((row) => row?.[factor.column])
+          .filter((value) => value !== undefined && value !== null)
+          .slice(0, 5) || [];
+
+        return {
+          ...factor,
+          sampleValues,
+        };
+      });
+
+      const externalFactorsPrompt = externalFactorsDetails.length > 0
+        ? `Учтите следующие внешние факторы (экзогенные переменные) при построении прогноза: ${externalFactorsDetails.map((factor) => `"${factor.column}" из набора данных "${factor.dataset_name}" (ID: ${factor.dataset_id})${factor.sampleValues.length ? `, примеры значений: ${JSON.stringify(factor.sampleValues)}` : ''}`).join('; ')}. Данные из корреляционного и графового анализа можно использовать как основу для этих факторов.`
         : '';
-        
+
+      const externalFactorsSection = externalFactorsDetails.length > 0
+        ? `
+        ДОПОЛНИТЕЛЬНЫЕ ПЕРЕМЕННЫЕ:
+        ${externalFactorsDetails.map((factor) => `- ${factor.dataset_name} (ID: ${factor.dataset_id}) → ${factor.column}${factor.sampleValues.length ? ` | Примеры: ${factor.sampleValues.join(', ')}` : ''}`).join('\n        ')}
+      `
+        : '';
+
       const prompt = `
         Вы — эксперт по анализу временных рядов и машинному обучению.
-        
+
         Проанализируйте предоставленные исторические данные и создайте детальный прогноз на ${config.horizon} дней вперед.
-        
+
         ДАННЫЕ ДЛЯ АНАЛИЗА:
         - Основной временной ряд: '${config.value_column}' из набора данных ID ${config.dataset_id}
         - Последние 30 точек данных: ${JSON.stringify(mockHistorical.slice(-30))}
-        
+
+        ${externalFactorsSection}
+
         ${externalFactorsPrompt}
-        
+
         ТРЕБОВАНИЯ К ПРОГНОЗУ:
         1.  Постройте базовый прогноз ('predicted_value') с 95% доверительным интервалом ('confidence_lower', 'confidence_upper').
         2.  Сгенерируйте два дополнительных сценария: 'optimistic' и 'pessimistic'. Оптимистичный сценарий должен отражать наилучшее возможное развитие событий с учетом позитивных факторов, а пессимистичный — наихудшее.
         3.  Проведите глубокий анализ данных, включая тренды, сезонность, волатильность.
         4.  Сформируйте ключевые выводы, факторы риска и практические рекомендации.
-        
+        5.  Укажите уровень достоверности прогноза в поле summary.confidence_score (число от 0 до 1) с обоснованием в инсайтах.
+        6.  Объясните влияние каждого выбранного внешнего фактора в разделе key_insights или risk_factors.
+
         МЕТОДОЛОГИЯ:
         - Используйте ансамбль моделей (SARIMAX, Prophet, градиентный бустинг) для повышения точности.
         - Учтите влияние внешних факторов при построении всех сценариев.
-        
+
         Предоставьте результат в указанном JSON формате.
       `;
 

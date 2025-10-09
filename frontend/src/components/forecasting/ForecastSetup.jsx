@@ -14,7 +14,7 @@ export default function ForecastSetup({ datasets, onGenerate, isLoading, isForec
     date_column: '',
     value_column: '',
     horizon: 30,
-    external_factors: [] // Added external_factors to config state
+    external_factors: []
   });
   const [selectedDataset, setSelectedDataset] = useState(null);
 
@@ -29,21 +29,29 @@ export default function ForecastSetup({ datasets, onGenerate, isLoading, isForec
     setConfig(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleFactorToggle = (factorName) => {
-    setConfig(prev => ({
-      ...prev,
-      external_factors: prev.external_factors.includes(factorName)
-        ? prev.external_factors.filter(f => f !== factorName)
-        : [...prev.external_factors, factorName]
-    }));
-  };
+  const handleFactorToggle = (datasetId, columnName, datasetName) => {
+    setConfig(prev => {
+      const exists = prev.external_factors.some(
+        (factor) => factor.dataset_id === datasetId && factor.column === columnName
+      );
 
-  // Derived state for all numeric columns across all datasets
-  const allNumericColumns = datasets.flatMap(d =>
-    d.columns
-     .filter(c => c.type === 'number')
-     .map(c => `${d.name} > ${c.name}`)
-  );
+      return {
+        ...prev,
+        external_factors: exists
+          ? prev.external_factors.filter(
+              (factor) => !(factor.dataset_id === datasetId && factor.column === columnName)
+            )
+          : [
+              ...prev.external_factors,
+              {
+                dataset_id: datasetId,
+                dataset_name: datasetName,
+                column: columnName
+              }
+            ]
+      };
+    });
+  };
 
   return (
     <Card className="max-w-3xl mx-auto border-0 bg-white/70 backdrop-blur-xl shadow-2xl">
@@ -119,17 +127,41 @@ export default function ForecastSetup({ datasets, onGenerate, isLoading, isForec
         {/* New External Factors section */}
         <div className="space-y-2">
             <Label className="elegant-text">Внешние факторы (из всех таблиц)</Label>
-            <div className="space-y-2 p-3 border rounded-lg max-h-48 overflow-y-auto bg-slate-50/50">
-              {allNumericColumns.map(factor => (
-                <div key={factor} className="flex items-center gap-2">
-                  <Checkbox
-                    id={factor}
-                    checked={config.external_factors.includes(factor)}
-                    onCheckedChange={() => handleFactorToggle(factor)}
-                  />
-                  <Label htmlFor={factor} className="elegant-text text-sm">{factor}</Label>
-                </div>
-              ))}
+            <div className="space-y-3 p-3 border rounded-lg max-h-64 overflow-y-auto bg-slate-50/50">
+              {datasets.map(dataset => {
+                const numericColumns = dataset.columns?.filter(col => col.type === 'number') || [];
+
+                if (numericColumns.length === 0) {
+                  return null;
+                }
+
+                return (
+                  <div key={dataset.id} className="space-y-2">
+                    <div className="text-sm font-semibold text-slate-700">{dataset.name}</div>
+                    <div className="space-y-1">
+                      {numericColumns.map(col => {
+                        const checkboxId = `${dataset.id}-${col.name}`;
+                        const isChecked = config.external_factors.some(
+                          factor => factor.dataset_id === dataset.id && factor.column === col.name
+                        );
+
+                        return (
+                          <div key={checkboxId} className="flex items-center gap-2">
+                            <Checkbox
+                              id={checkboxId}
+                              checked={isChecked}
+                              onCheckedChange={() => handleFactorToggle(dataset.id, col.name, dataset.name)}
+                            />
+                            <Label htmlFor={checkboxId} className="elegant-text text-sm">
+                              {col.name}
+                            </Label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
         </div>
 
