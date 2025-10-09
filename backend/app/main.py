@@ -8,6 +8,7 @@ import numpy as np
 import os
 import io
 import json
+import sys
 import uuid
 import re
 from typing import Optional, Dict, Any, List
@@ -188,8 +189,20 @@ if __name__ == "__main__":
 
 
 
-from .datasets_api import router as datasets_router
-from .visualizations_api import router as visualizations_router
+# Allow running both as part of the ``app`` package (e.g. ``uvicorn app.main:app``)
+# and as a standalone script (e.g. ``python main.py`` or ``uvicorn main:app``).
+if __package__ in {None, ""}:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.append(current_dir)
+    import datasets_api as datasets_router_module
+    import visualizations_api as visualizations_router_module
+else:
+    from . import datasets_api as datasets_router_module
+    from . import visualizations_api as visualizations_router_module
+
+datasets_router = datasets_router_module.router
+visualizations_router = visualizations_router_module.router
 
 app.include_router(datasets_router, prefix="/api/dataset")
 app.include_router(visualizations_router, prefix="/api/visualization")
