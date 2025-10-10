@@ -139,6 +139,9 @@ def _format_response(state: Dict[str, Any]) -> AssistantState:
     return AssistantState(**state)
 
 
+MAX_FOCUS_POINTS = 6
+
+
 def _derive_focus_points(text: str) -> List[str]:
     lowered = text.lower()
     focus: List[str] = []
@@ -169,7 +172,12 @@ def _derive_focus_points(text: str) -> List[str]:
             ]
         )
 
-    return focus[:4]
+    unique_focus: List[str] = []
+    for point in focus:
+        if point not in unique_focus:
+            unique_focus.append(point)
+
+    return unique_focus[:MAX_FOCUS_POINTS]
 
 
 def _generate_reply(instructions: str, user_message: str) -> str:
