@@ -4,6 +4,7 @@ import {
   generateForecastReport,
   analyzeCorrelation,
   buildNetworkGraph,
+  compareTables,
   summarizeProjectStructure,
   convertDataset,
   buildProjectReport,
@@ -101,6 +102,49 @@ describe("buildNetworkGraph", () => {
     expect(result.nodes.map((node) => node.id)).toEqual(["sales", "profit"]);
     expect(result.links).toHaveLength(1);
     expect(result.insights.some((text) => text.includes("центры влияния"))).toBe(true);
+  });
+});
+
+describe("compareTables", () => {
+  it("detects shared structure, mismatched types and row differences", () => {
+    const left = {
+      columns: [
+        { name: "id", type: "number" },
+        { name: "city", type: "string" },
+        { name: "amount", type: "number" },
+      ],
+      sample_data: [
+        { id: 1, city: "Paris", amount: 120 },
+        { id: 2, city: "Berlin", amount: 90 },
+      ],
+    };
+
+    const right = {
+      columns: [
+        { name: "id", type: "int" },
+        { name: "city", type: "STRING" },
+        { name: "amount", type: "text" },
+        { name: "status", type: "boolean" },
+      ],
+      sample_data: [
+        { id: 1, city: "Paris", amount: "120", status: true },
+        { id: 3, city: "Rome", amount: "70", status: false },
+      ],
+    };
+
+    const result = compareTables({ left, right });
+
+    expect(result.column_comparison.matching_columns).toEqual(["id", "city"]);
+    expect(result.column_comparison.type_mismatches).toEqual([
+      { column: "amount", left_type: "number", right_type: "string" },
+    ]);
+    expect(result.column_comparison.left_only).toEqual([]);
+    expect(result.column_comparison.right_only).toEqual(["status"]);
+
+    expect(result.row_comparison.matching_rows).toBe(1);
+    expect(result.row_comparison.left_only_rows[0].count).toBe(1);
+    expect(result.row_comparison.right_only_rows[0].count).toBe(1);
+    expect(result.insights[0]).toContain("Совпадающих столбцов: 2 из 3");
   });
 });
 
