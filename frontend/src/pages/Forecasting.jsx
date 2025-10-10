@@ -78,7 +78,7 @@ export default function Forecasting() {
       <ul>
         ${forecastResult.summary.recommendations?.map(rec => `<li>${rec}</li>`).join('') || '<li>Рекомендации не сформированы</li>'}
       </ul>
-      <p>Отчет сгенерирован автоматически платформой DataViz Pro.</p>
+      <p>Отчет сгенерирован автоматически платформой Анализатор.</p>
     `;
     
     const userEmail = "user@example.com"; 
@@ -88,7 +88,7 @@ export default function Forecasting() {
         to: userEmail,
         subject: subject,
         body: body,
-        from_name: "DataViz Pro Аналитика"
+        from_name: "Анализатор Аналитика"
       });
       alert(`Отчет отправлен на ${userEmail}`);
     } catch (error) {
