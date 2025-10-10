@@ -9,11 +9,11 @@ const formatNumber = (value) => {
     return "—";
   }
 
-  if (value >= 1000000) {
-    return `${(value / 1000000).toFixed(1)}M`;
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M`;
   }
 
-  if (value >= 1000) {
+  if (value >= 1_000) {
     return value.toLocaleString("ru-RU");
   }
 
@@ -23,7 +23,6 @@ const formatNumber = (value) => {
 export default function TrendingCharts({ data = [], summary = {}, isLoading = false }) {
   const hasData = Array.isArray(data) && data.some((item) => (item?.datasets || 0) > 0 || (item?.visualizations || 0) > 0);
 
-export default function TrendingCharts({ data }) {
   const numberFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
   const totalValue = data.reduce((sum, point) => sum + (point.value || 0), 0);
   const totalGrowth = data.reduce((sum, point) => sum + (point.growth || 0), 0);
@@ -127,33 +126,24 @@ export default function TrendingCharts({ data }) {
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4">
                 <p className="text-xs font-medium text-emerald-600 uppercase tracking-wide">Наборы данных</p>
-                <p className="text-2xl font-bold text-slate-900 mt-2">{summary.datasetCount ?? 0}</p>
-                <p className="text-xs text-slate-600 mt-1">
+                <p className="mt-2 text-2xl font-bold text-slate-900">{summary.datasetCount ?? 0}</p>
+                <p className="mt-1 text-xs text-slate-600">
                   Новых за 7 дней: {summary.weeklyNewDatasets ?? 0}
                 </p>
               </div>
 
-        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
-          {summaryMetrics.map((metric) => (
-            <div key={metric.label} className="rounded-xl bg-slate-50/70 p-3 text-center">
-              <div className="text-xl font-semibold text-slate-900">{metric.value}</div>
-              <div className="text-xs font-medium text-slate-600">{metric.label}</div>
-              <div className="mt-1 text-[11px] text-slate-500">{metric.description}</div>
-            </div>
-          ))}
-        </div>
               <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-4">
                 <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Визуализации</p>
-                <p className="text-2xl font-bold text-slate-900 mt-2">{summary.visualizationCount ?? 0}</p>
-                <p className="text-xs text-slate-600 mt-1">
+                <p className="mt-2 text-2xl font-bold text-slate-900">{summary.visualizationCount ?? 0}</p>
+                <p className="mt-1 text-xs text-slate-600">
                   Новых за 7 дней: {summary.weeklyNewVisualizations ?? 0}
                 </p>
               </div>
 
-              <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-2">
+              <div className="sm:col-span-2 space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
                 <div className="text-sm text-slate-600">
                   <span className="font-semibold text-slate-700">Общее количество строк: </span>
                   {formatNumber(typeof summary.totalRows === "number" ? summary.totalRows : Number.NaN)}
@@ -164,9 +154,20 @@ export default function TrendingCharts({ data }) {
                 </div>
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+              {summaryMetrics.map((metric) => (
+                <div key={metric.label} className="rounded-xl bg-slate-50/70 p-3 text-center">
+                  <div className="text-xl font-semibold text-slate-900">{metric.value}</div>
+                  <div className="text-xs font-medium text-slate-600">{metric.label}</div>
+                  <div className="mt-1 text-[11px] text-slate-500">{metric.description}</div>
+                </div>
+              ))}
+            </div>
           </>
         )}
       </CardContent>
     </Card>
   );
 }
+
