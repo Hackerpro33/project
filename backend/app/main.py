@@ -257,14 +257,18 @@ if __package__ in {None, ""}:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     if current_dir not in sys.path:
         sys.path.append(current_dir)
+    import chat_api as chat_router_module
     import datasets_api as datasets_router_module
     import visualizations_api as visualizations_router_module
 else:
+    from . import chat_api as chat_router_module
     from . import datasets_api as datasets_router_module
     from . import visualizations_api as visualizations_router_module
 
 datasets_router = datasets_router_module.router
 visualizations_router = visualizations_router_module.router
+chat_router = chat_router_module.router
 
 app.include_router(datasets_router, prefix="/api/dataset")
 app.include_router(visualizations_router, prefix="/api/visualization")
+app.include_router(chat_router, prefix="/api/chat")

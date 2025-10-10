@@ -14,7 +14,8 @@ import {
   Network,
   Component, // Added Component icon
   Settings as SettingsIcon, // Imported SettingsIcon
-  RefreshCw // Added RefreshCw icon for Data Transformation
+  RefreshCw, // Added RefreshCw icon for Data Transformation
+  MessageSquare
 } from "lucide-react";
 import {
   Sidebar,
@@ -36,6 +37,12 @@ const navigationItems = [
     url: createPageUrl("Dashboard"),
     icon: Home,
     gradient: "from-emerald-500 to-teal-600"
+  },
+  {
+    title: "Аналитический ассистент",
+    url: createPageUrl("Assistant"),
+    icon: MessageSquare,
+    gradient: "from-violet-500 to-purple-600"
   },
   {
     title: "Источники данных",
