@@ -2,14 +2,30 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  BarChart3, 
-  LineChart, 
+import {
+  Sheet,
+  SheetTrigger,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetClose
+} from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  BarChart3,
+  LineChart,
   ScatterChart,
   TrendingUp,
   Plus,
   Sparkles,
-  Box
+  Box,
+  Sigma,
+  FunctionSquare,
+  BrainCircuit,
+  Binary,
+  Calculator,
+  CheckCircle2
 } from "lucide-react";
 
 export default function ChartTypeSelector({ onSelectType, datasets }) {
@@ -56,6 +72,101 @@ export default function ChartTypeSelector({ onSelectType, datasets }) {
     }
   ];
 
+  const econometricsTools = [
+    {
+      title: 'Регрессионные модели',
+      description: 'Линейные и нелинейные модели, диагностика, регуляризация и работа с инструментальными переменными.',
+      icon: TrendingUp,
+      accent: 'from-blue-500 to-cyan-500',
+      tools: ['Линейная/множественная OLS', 'Логит/Прбит модели', 'Ridge/Lasso', 'Инструментальные переменные', 'Диагностика остатков']
+    },
+    {
+      title: 'Анализ временных рядов',
+      description: 'Продвинутые сценарии прогноза: ARIMA, SARIMAX, Prophet, сезонность и обработка выбросов.',
+      icon: LineChart,
+      accent: 'from-indigo-500 to-purple-500',
+      tools: ['ARIMA/SARIMA', 'SARIMAX', 'Prophet', 'Поиск сезонности', 'Декомпозиция трендов']
+    },
+    {
+      title: 'Панельные данные и причинность',
+      description: 'Fixed/Random effects модели, Difference-in-Differences, тесты на коинтеграцию и причинность.',
+      icon: BrainCircuit,
+      accent: 'from-emerald-500 to-teal-500',
+      tools: ['Fixed / Random effects', 'Difference-in-Differences', 'GMM', 'Тест Грейнджера', 'Коинтеграция (ADF, KPSS)']
+    },
+    {
+      title: 'Кластеризация и сегментация',
+      description: 'Кластеризация K-Means, иерархические методы, анализ главных компонент и факторный анализ.',
+      icon: ScatterChart,
+      accent: 'from-amber-500 to-orange-500',
+      tools: ['K-Means', 'DBSCAN', 'Иерархическая кластеризация', 'PCA', 'Факторный анализ']
+    },
+    {
+      title: 'Оценка рисков и сценарный анализ',
+      description: 'Монте-Карло, стресс-тестирование портфелей, Value at Risk и оптимизация активов.',
+      icon: BarChart3,
+      accent: 'from-rose-500 to-red-500',
+      tools: ['Симуляции Монте-Карло', 'Value at Risk', 'CVaR', 'Stress-test', 'Оптимизация портфеля']
+    }
+  ];
+
+  const mathTools = [
+    {
+      title: 'Оптимизация и численные методы',
+      description: 'Линейное/квадратичное программирование, градиентные методы, решение систем уравнений.',
+      icon: FunctionSquare,
+      accent: 'from-orange-500 to-yellow-500',
+      tools: ['Simplex', 'QP оптимизация', 'Градиентный спуск', 'Нелинейные решатели', 'Системы уравнений']
+    },
+    {
+      title: 'Статистика и проверки гипотез',
+      description: 'T-тесты, ANOVA, непараметрические проверки, бутстрэп и байесовский анализ.',
+      icon: Sigma,
+      accent: 'from-sky-500 to-blue-500',
+      tools: ['t/z тесты', 'ANOVA', 'Хи-квадрат', 'Манна-Уитни', 'Бутстрэп/пермутации']
+    },
+    {
+      title: 'Математика данных',
+      description: 'Матрицы, собственные значения, сингулярное разложение и операции с тензорами.',
+      icon: Binary,
+      accent: 'from-violet-500 to-fuchsia-500',
+      tools: ['Линал операции', 'SVD', 'Eigenvalues', 'Тензорные вычисления', 'Нормализация признаков']
+    },
+    {
+      title: 'Прикладные расчёты',
+      description: 'Финансовая математика, анализ чувствительности, модели роста и дисконтирование.',
+      icon: Calculator,
+      accent: 'from-lime-500 to-emerald-500',
+      tools: ['NPV/IRR', 'DCF', 'Цепочки Маркова', 'Эластичности', 'Сенситивити-анализ']
+    }
+  ];
+
+  const renderToolkitSection = (section) => (
+    <div
+      key={section.title}
+      className="rounded-2xl border border-slate-800/60 bg-slate-900/60 p-5 shadow-inner">
+      <div className="flex items-start gap-4">
+        <div className={`rounded-xl bg-gradient-to-r ${section.accent} p-3 shadow-lg`}>
+          <section.icon className="h-5 w-5 text-white" />
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-lg font-semibold text-white heading-text">{section.title}</h3>
+          <p className="text-sm text-slate-300 elegant-text">{section.description}</p>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {section.tools.map((tool) => (
+          <Badge
+            key={tool}
+            variant="outline"
+            className="border-slate-700 bg-slate-900/80 text-slate-100">
+            {tool}
+          </Badge>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <Card className="border-0 bg-white/50 backdrop-blur-xl shadow-lg">
@@ -96,6 +207,137 @@ export default function ChartTypeSelector({ onSelectType, datasets }) {
                   </Button>
                 </CardContent>
               </Card>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-0 bg-gradient-to-r from-slate-900 via-indigo-900 to-purple-900 text-white shadow-2xl">
+        <CardContent className="p-8 space-y-6">
+          <div className="flex flex-col gap-3">
+            <span className="inline-flex items-center gap-2 text-sm uppercase tracking-wide text-indigo-200">
+              <Sparkles className="h-4 w-4" /> Интеллектуальные инструменты анализа
+            </span>
+            <h2 className="text-2xl font-semibold heading-text">Эконометрика и расширенные математические модули</h2>
+            <p className="text-sm text-indigo-100/80 elegant-text">
+              Откройте полноценный набор аналитических инструментов: прогнозируйте временные ряды, оценивайте причинно-следственные связи и применяйте численные методы без переключения контекста.
+            </p>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="space-y-4 rounded-3xl bg-white/10 p-5 shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-gradient-to-r from-blue-500 to-cyan-500 p-3">
+                  <TrendingUp className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold heading-text">Эконометрический комбайн</h3>
+                  <p className="text-sm text-indigo-100/80 elegant-text">Регрессии, панели, временные ряды и риск-анализ в едином интерфейсе.</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {['Прогноз спроса', 'Коинтеграция', 'Диагностика моделей', 'Stress-test'].map((item) => (
+                  <Badge key={item} className="bg-blue-500/20 text-blue-50 border-blue-400/40">
+                    {item}
+                  </Badge>
+                ))}
+              </div>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button className="w-full bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white gap-2 elegant-text">
+                    <Sigma className="h-4 w-4" /> Открыть эконометрику
+                  </Button>
+                </SheetTrigger>
+                <SheetContent className="sm:max-w-2xl border-l border-slate-800 bg-slate-950 text-slate-100">
+                  <SheetHeader>
+                    <SheetTitle className="text-2xl font-semibold heading-text text-white">Эконометрический набор инструментов</SheetTitle>
+                    <SheetDescription className="text-slate-300 elegant-text">
+                      Готовые сценарии анализа данных: выберите методику и сразу переходите к построению графиков на основе результатов.
+                    </SheetDescription>
+                  </SheetHeader>
+                  <ScrollArea className="mt-6 h-[calc(100vh-220px)] pr-4">
+                    <div className="space-y-5">
+                      {econometricsTools.map(renderToolkitSection)}
+                    </div>
+                  </ScrollArea>
+                  <div className="mt-6 space-y-3">
+                    <SheetClose asChild>
+                      <Button
+                        onClick={() => onSelectType('line')}
+                        className="w-full bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white gap-2 heading-text">
+                        <LineChart className="h-4 w-4" /> Построить временной ряд
+                      </Button>
+                    </SheetClose>
+                    <p className="text-xs text-slate-400 elegant-text">
+                      Совет: выберите набор данных с датой или категорией времени, чтобы протестировать прогностические модели сразу после анализа.
+                    </p>
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
+
+            <div className="space-y-4 rounded-3xl bg-white/10 p-5 shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-gradient-to-r from-emerald-500 to-lime-500 p-3">
+                  <FunctionSquare className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold heading-text">Математическая мастерская</h3>
+                  <p className="text-sm text-indigo-100/80 elegant-text">Численные методы, статистика и моделирование для углублённой аналитики.</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {['Оптимизация', 'Гипотезы', 'Матрицы', 'Финансовые формулы'].map((item) => (
+                  <Badge key={item} className="bg-emerald-500/20 text-emerald-50 border-emerald-400/40">
+                    {item}
+                  </Badge>
+                ))}
+              </div>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button className="w-full bg-gradient-to-r from-emerald-500 to-lime-500 hover:from-emerald-600 hover:to-lime-600 text-white gap-2 elegant-text">
+                    <FunctionSquare className="h-4 w-4" /> Математические инструменты
+                  </Button>
+                </SheetTrigger>
+                <SheetContent className="sm:max-w-2xl border-l border-slate-800 bg-slate-950 text-slate-100">
+                  <SheetHeader>
+                    <SheetTitle className="text-2xl font-semibold heading-text text-white">Математическая лаборатория</SheetTitle>
+                    <SheetDescription className="text-slate-300 elegant-text">
+                      Собрали проверенные методики для численных расчётов, статистики и прикладных задач — выбирайте и применяйте в пару кликов.
+                    </SheetDescription>
+                  </SheetHeader>
+                  <ScrollArea className="mt-6 h-[calc(100vh-220px)] pr-4">
+                    <div className="space-y-5">
+                      {mathTools.map(renderToolkitSection)}
+                    </div>
+                  </ScrollArea>
+                  <div className="mt-6 space-y-3">
+                    <SheetClose asChild>
+                      <Button
+                        onClick={() => onSelectType('scatter')}
+                        className="w-full bg-gradient-to-r from-emerald-500 to-lime-500 hover:from-emerald-600 hover:to-lime-600 text-white gap-2 heading-text">
+                        <ScatterChart className="h-4 w-4" /> Запустить аналитический конструктор
+                      </Button>
+                    </SheetClose>
+                    <p className="text-xs text-slate-400 elegant-text">
+                      Лайфхак: комбинируйте расчёты с визуализацией — после расчёта просто выберите тип графика и примените результаты.
+                    </p>
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            {[
+              'Куратор сценариев подскажет оптимальную методологию под ваши данные.',
+              'Пошаговые шпаргалки помогают не забыть проверки и диагностику моделей.',
+              'Экспортируйте отчёт с описанием выбранных методов одним кликом.'
+            ].map((item) => (
+              <div key={item} className="flex items-start gap-3 rounded-2xl bg-white/5 p-4">
+                <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-300" />
+                <p className="text-sm text-indigo-100/90 elegant-text">{item}</p>
+              </div>
             ))}
           </div>
         </CardContent>
