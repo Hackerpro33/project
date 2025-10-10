@@ -5,9 +5,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   BrainCircuit,
   Database,
+  FileText,
+  Grid3x3,
   Info,
   LayoutDashboard,
   LineChart,
+  Map,
   RefreshCcw,
   Sparkles
 } from "lucide-react";
@@ -43,7 +46,35 @@ export default function Constructor() {
         type: 'chart',
         title: 'График',
         icon: LineChart,
-        description: 'Диаграмма с настраиваемыми параметрами',
+        description: 'Диаграмма с настраиваемыми параметрами и источниками данных',
+      },
+      {
+        id: 'map',
+        type: 'map',
+        title: 'Геообласть',
+        icon: Map,
+        description: 'Визуализация данных на карте и выделение регионов',
+      },
+      {
+        id: 'correlation',
+        type: 'correlation',
+        title: 'Матрица корреляции',
+        icon: Grid3x3,
+        description: 'Анализ взаимосвязей показателей внутри выбранного набора данных',
+      },
+      {
+        id: 'forecast',
+        type: 'forecast',
+        title: 'Прогноз',
+        icon: Sparkles,
+        description: 'Постройте локальный прогноз по выбранным временным рядам',
+      },
+      {
+        id: 'report-section',
+        type: 'report',
+        title: 'Раздел отчёта',
+        icon: FileText,
+        description: 'Создайте текстовый блок с выводами и ссылками на данные',
       },
     ];
 
