@@ -101,6 +101,8 @@ export default function Forecasting() {
     setIsForecasting(true);
     setForecastResult(null);
 
+    const timeColumn = config.useSyntheticDates ? 'synthetic_time' : config.date_column;
+
     // Генерация более реалистичных исторических данных
     const generateHistoricalData = (days, baseValue, volatility = 0.1, trend = 0.02) => {
       const data = [];
@@ -196,8 +198,11 @@ export default function Forecasting() {
         title: `Прогноз: ${config.value_column}`,
         type: 'forecast',
         dataset_id: config.dataset_id,
-        config: config,
-        x_axis: config.date_column,
+        config: {
+          ...config,
+          date_column: timeColumn,
+        },
+        x_axis: timeColumn,
         y_axis: config.value_column
       });
       
