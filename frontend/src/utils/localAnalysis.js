@@ -46,6 +46,18 @@ const pearsonCorrelation = (seriesA, seriesB) => {
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+const formatList = (items, limit = 3) => {
+  if (!Array.isArray(items) || items.length === 0) {
+    return "";
+  }
+  if (items.length <= limit) {
+    return items.join(", ");
+  }
+  const visible = items.slice(0, limit).join(", ");
+  const remaining = items.length - limit;
+  return `${visible} и ещё ${remaining}`;
+};
+
 const normalizeColumnType = (type) => {
   if (!type) return "string";
   const lower = String(type).toLowerCase();
@@ -129,6 +141,46 @@ export function generateForecastReport({ historical, horizon, externalFactors = 
         `${factor.sampleValues?.length ? `на основе примеров ${factor.sampleValues.join(", ")}` : "как стабилизирующая переменная"}.`
     );
 
+  const hasHistoricalData = timeline.length > 0;
+
+  const recommendations = [];
+  if (!hasHistoricalData) {
+    recommendations.push(
+      "Загрузите исторические наблюдения, чтобы прогноз отражал реальные колебания вашего показателя."
+    );
+    recommendations.push(
+      "После добавления данных обновите расчёт — рекомендации и сценарии адаптируются автоматически."
+    );
+  } else {
+    recommendations.push("Пересматривайте прогноз каждые 7 дней для учёта новых данных и событий.");
+    if (volatilityLevel === "высокая") {
+      recommendations.push(
+        "Снизьте волатильность: добавьте сглаживание, очистите выбросы и уточните частоту обновления источников."
+      );
+    } else if (trendDirection !== "стабильный") {
+      recommendations.push(
+        `Подготовьте меры реагирования на ${trendDirection} тренд — протестируйте оптимистичный и пессимистичный сценарии.`
+      );
+    } else {
+      recommendations.push(
+        "Поддерживайте стабильность ряда: отслеживайте отклонения и фиксируйте причины резких изменений."
+      );
+    }
+    if (externalFactors.length) {
+      recommendations.push(
+        "Продолжайте отслеживать влияние внешних факторов и своевременно актуализируйте их набор."
+      );
+    } else {
+      recommendations.push(
+        "Добавьте внешние факторы (погода, события, маркетинговые активности), чтобы повысить точность прогноза."
+      );
+    }
+  }
+
+  if (!recommendations.length) {
+    recommendations.push("Пересматривайте прогноз каждые 7 дней для учёта новых данных.");
+  }
+
   const summary = {
     predicted_growth_percentage: Number(growthPercent.toFixed(1)),
     key_insights: [
@@ -147,11 +199,7 @@ export function generateForecastReport({ historical, horizon, externalFactors = 
         : "Значительных рисков, связанных с волатильностью, не обнаружено.",
       "Продолжительные отклонения от прогнозной линии требуют ручной проверки источников данных.",
     ],
-    recommendations: [
-      "Пересматривать прогноз каждые 7 дней для учёта новых данных.",
-      "Использовать сценарий пессимистичного прогноза при планировании бюджета безопасности.",
-      ...(externalFactors.length ? ["Отслеживать влияние внешних факторов и актуализировать список переменных."] : []),
-    ],
+    recommendations,
   };
 
   return {
@@ -476,6 +524,12 @@ export function summarizeProjectStructure({ datasets, visualizations }) {
     }
   });
 
+  const datasetMap = new Map((datasets || []).map((dataset) => [dataset.id, dataset]));
+  const datasetCount = datasets?.length ?? 0;
+  const visualizationCount = visualizations?.length ?? 0;
+  const hasDatasets = datasetCount > 0;
+  const hasVisualizations = visualizationCount > 0;
+
   const keyDatasets = [...datasetUsage.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
@@ -488,6 +542,18 @@ export function summarizeProjectStructure({ datasets, visualizations }) {
     .filter((dataset) => !datasetUsage.has(dataset.id))
     .map((dataset) => dataset.name);
 
+  const datasetsWithoutSamples = (datasets || [])
+    .filter((dataset) => !Array.isArray(dataset.sample_data) || dataset.sample_data.length === 0)
+    .map((dataset) => dataset.name || "Набор без названия");
+
+  const unlinkedVisualizations = (visualizations || [])
+    .filter((visualization) => !visualization.dataset_id)
+    .map((visualization) => visualization.title || "Визуализация без названия");
+
+  const heavilyUsedDatasets = [...datasetUsage.entries()]
+    .filter(([, count]) => count > 3)
+    .map(([datasetId]) => datasetMap.get(datasetId)?.name || datasetId);
+
   const insights = [];
   insights.push(`В проекте используется ${visualizations?.length ?? 0} визуализаций и ${datasets?.length ?? 0} наборов данных.`);
   if (keyDatasets.length) {
@@ -499,12 +565,43 @@ export function summarizeProjectStructure({ datasets, visualizations }) {
     insights.push("Все загруженные наборы данных задействованы в визуализациях.");
   }
 
-  const recommendations = [
-    "Проверьте, можно ли объединить часто используемые наборы данных в единый витринный слой.",
-    "Добавьте новые связи между визуализациями для комплексного анализа (например, прогноз + корреляция).",
-  ];
-  if (unusedDatasets.length) {
-    recommendations.push("Используйте неактивные наборы данных для экспериментов и проверки гипотез.");
+  const recommendations = [];
+  if (!hasDatasets) {
+    recommendations.push(
+      "Загрузите хотя бы один набор данных, чтобы система могла построить связи и сформировать рекомендации."
+    );
+    recommendations.push(
+      "После загрузки создайте визуализацию или прогноз — это активирует локальный анализ проекта."
+    );
+  } else {
+    recommendations.push("Регулярно обновляйте загруженные таблицы и отслеживайте качество данных.");
+    if (!hasVisualizations) {
+      recommendations.push("Создайте первую визуализацию на основе ключевого набора, чтобы увидеть взаимосвязи.");
+    } else {
+      recommendations.push("Развивайте связи между визуализациями для комплексного анализа (прогнозы, корреляции, карты).");
+    }
+    if (unusedDatasets.length) {
+      recommendations.push(
+        `Подключите наборы ${formatList(unusedDatasets)} к визуализациям, чтобы использовать весь потенциал данных.`
+      );
+    }
+    if (datasetsWithoutSamples.length) {
+      recommendations.push(
+        `Добавьте примеры строк для ${formatList(datasetsWithoutSamples)} — это улучшит точность аналитики.`
+      );
+    }
+    if (heavilyUsedDatasets.length) {
+      recommendations.push(
+        `Рассмотрите выделение витринного слоя для ${formatList(heavilyUsedDatasets)}: на них приходится основная нагрузка визуализаций.`
+      );
+    }
+    if (unlinkedVisualizations.length) {
+      recommendations.push(
+        `Укажите источники данных для визуализаций ${formatList(unlinkedVisualizations)} — это обеспечит воспроизводимость отчётов.`
+      );
+    } else if (hasVisualizations && !unusedDatasets.length) {
+      recommendations.push("Поддерживайте описания визуализаций в актуальном состоянии — все наборы данных уже задействованы.");
+    }
   }
 
   return {
@@ -512,6 +609,134 @@ export function summarizeProjectStructure({ datasets, visualizations }) {
     key_datasets: keyDatasets,
     unused_datasets: unusedDatasets,
     recommendations,
+  };
+}
+
+const numberFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
+
+export function analyzeDataset(dataset = {}) {
+  const columns = Array.isArray(dataset.columns) ? dataset.columns : [];
+  const sample = Array.isArray(dataset.sample_data) ? dataset.sample_data : [];
+
+  const normalizedColumns = columns.map((column) => ({
+    ...column,
+    normalizedType: normalizeColumnType(column.type),
+  }));
+
+  const sampleRows = sample.length;
+  const totalRows = dataset.row_count ?? sampleRows;
+  const totalCells = sampleRows * normalizedColumns.length;
+
+  let filledCells = 0;
+  sample.forEach((row) => {
+    normalizedColumns.forEach((column) => {
+      const value = row?.[column.name];
+      if (value !== null && value !== undefined && value !== "") {
+        filledCells += 1;
+      }
+    });
+  });
+
+  const completeness = totalCells
+    ? Math.round((filledCells / Math.max(totalCells, 1)) * 100)
+    : sampleRows
+    ? 100
+    : 0;
+
+  const numericSummary = normalizedColumns
+    .filter((column) => column.normalizedType === "number")
+    .map((column) => {
+      const values = toNumberArray(sample.map((row) => row?.[column.name]));
+      if (!values.length) {
+        return { name: column.name, type: column.normalizedType, hasData: false };
+      }
+
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const mean = average(values);
+      const deviation = standardDeviation(values);
+
+      return {
+        name: column.name,
+        type: column.normalizedType,
+        hasData: true,
+        min,
+        max,
+        mean: Number(mean.toFixed(2)),
+        deviation: Number(deviation.toFixed(2)),
+        variation: max - min,
+        formattedMin: numberFormatter.format(min),
+        formattedMax: numberFormatter.format(max),
+        formattedMean: numberFormatter.format(mean),
+      };
+    });
+
+  const duplicates = (() => {
+    if (!sampleRows) return 0;
+    const keys = normalizedColumns.map((column) => column.name);
+    if (!keys.length) return 0;
+
+    const occurrences = new Map();
+    sample.forEach((row) => {
+      const fingerprint = createRowFingerprint(row, keys);
+      occurrences.set(fingerprint, (occurrences.get(fingerprint) ?? 0) + 1);
+    });
+
+    let duplicatesCount = 0;
+    occurrences.forEach((count) => {
+      if (count > 1) {
+        duplicatesCount += count - 1;
+      }
+    });
+
+    return duplicatesCount;
+  })();
+
+  const insights = [];
+
+  if (!sampleRows) {
+    insights.push(
+      "Нет примерочных данных — добавьте выборку, чтобы система могла построить статистику и рекомендации."
+    );
+  } else {
+    insights.push(
+      `Предоставленная выборка содержит ${sampleRows} строк при общем объёме ${totalRows || sampleRows}.`
+    );
+
+    if (completeness < 70) {
+      insights.push(`Заполненность данных около ${completeness}% — рекомендуется проверить источники на пропуски.`);
+    } else {
+      insights.push(`Заполненность выборки достигает ${completeness}% — критических пропусков не обнаружено.`);
+    }
+
+    const numericWithData = numericSummary.filter((column) => column.hasData);
+    if (numericWithData.length) {
+      const widest = [...numericWithData].sort((a, b) => (b.variation ?? 0) - (a.variation ?? 0))[0];
+      if (widest && Number.isFinite(widest.variation) && widest.variation > 0) {
+        insights.push(
+          `Столбец «${widest.name}» варьируется от ${widest.formattedMin} до ${widest.formattedMax}, среднее значение ${widest.formattedMean}.`
+        );
+      } else {
+        insights.push("Числовые признаки имеют стабильные значения без существенного разброса.");
+      }
+    } else {
+      insights.push("Числовые признаки не обнаружены — используйте категориальные инструменты анализа.");
+    }
+
+    if (duplicates > 0) {
+      insights.push(
+        `В примерочных данных выявлено ${duplicates} повторяющихся строк — рекомендуется очистить их перед моделированием.`
+      );
+    }
+  }
+
+  return {
+    totalRows,
+    sampleRows,
+    completeness,
+    duplicates,
+    numericSummary,
+    insights,
   };
 }
 
@@ -607,6 +832,7 @@ export function buildProjectReport({ datasets, visualizations }) {
     const hasSample = Array.isArray(dataset?.sample_data) && dataset.sample_data.length > 0;
 
     return {
+      id: dataset.id,
       name: name || "Набор без названия",
       columns,
       rows,
@@ -620,11 +846,35 @@ export function buildProjectReport({ datasets, visualizations }) {
     const datasetName = datasets?.find((dataset) => dataset.id === viz?.dataset_id)?.name;
 
     return {
+      datasetId: viz?.dataset_id,
       title,
       type,
       dataset: datasetName,
     };
   });
+
+  const datasetUsage = new Map();
+  visualizationCoverage.forEach((viz) => {
+    if (viz.datasetId) {
+      datasetUsage.set(viz.datasetId, (datasetUsage.get(viz.datasetId) ?? 0) + 1);
+    }
+  });
+
+  const unusedDatasets = datasetCoverage
+    .filter((dataset) => !datasetUsage.has(dataset.id))
+    .map((dataset) => dataset.name);
+
+  const datasetsWithoutSamples = datasetCoverage
+    .filter((dataset) => !dataset.hasSample)
+    .map((dataset) => dataset.name);
+
+  const unlinkedVisualizations = visualizationCoverage
+    .filter((viz) => !viz.datasetId)
+    .map((viz) => viz.title);
+
+  const heavilyUsedDatasets = [...datasetUsage.entries()]
+    .filter(([, count]) => count > 3)
+    .map(([datasetId]) => datasetCoverage.find((dataset) => dataset.id === datasetId)?.name || datasetId);
 
   const datasetsSummary = datasetCoverage.map(
     ({ name, columns, rows, hasSample }) =>
@@ -662,11 +912,62 @@ export function buildProjectReport({ datasets, visualizations }) {
         : ["Визуализации отсутствуют — создайте первую диаграмму."],
     },
     risk_zones: unusedDatasetsReport(datasets),
-    recommendations: [
-      "Регулярно обновляйте локальные данные и проверяйте качество источников.",
-      "Фиксируйте гипотезы и проверяйте их на новых визуализациях.",
-      "Для расширенного анализа добавьте дополнительные числовые признаки и связи между наборами.",
-    ],
+    recommendations: (() => {
+      const recommendations = [];
+
+      if (!datasetCount) {
+        recommendations.push(
+          "Загрузите таблицы с данными, чтобы сформировать полноценный отчёт и персональные рекомендации."
+        );
+        recommendations.push(
+          "После загрузки создайте хотя бы одну визуализацию или прогноз — это активирует аналитические модули."
+        );
+      } else {
+        recommendations.push("Регулярно актуализируйте загруженные наборы и контролируйте качество источников.");
+
+        if (!visualizationCount) {
+          recommendations.push(
+            "Создайте первую визуализацию на основе ключевого набора данных, чтобы рассказ стал наглядным."
+          );
+        } else {
+          recommendations.push(
+            "Расширяйте набор визуализаций и связывайте их с ключевыми метриками для управленческих решений."
+          );
+        }
+
+        if (unusedDatasets.length) {
+          recommendations.push(
+            `Подключите наборы ${formatList(unusedDatasets)} к визуализациям, чтобы раскрыть весь потенциал данных.`
+          );
+        }
+
+        if (datasetsWithoutSamples.length) {
+          recommendations.push(
+            `Добавьте примеры строк для ${formatList(datasetsWithoutSamples)} — это повысит доверие к отчёту.`
+          );
+        }
+
+        if (heavilyUsedDatasets.length) {
+          recommendations.push(
+            `Рассмотрите создание витринного слоя для ${formatList(heavilyUsedDatasets)} — на них сосредоточено большинство визуализаций.`
+          );
+        }
+
+        if (unlinkedVisualizations.length) {
+          recommendations.push(
+            `Укажите источники данных для визуализаций ${formatList(unlinkedVisualizations)}, чтобы обеспечить воспроизводимость анализа.`
+          );
+        } else if (!unusedDatasets.length && visualizationCount) {
+          recommendations.push(
+            "Продолжайте фиксировать гипотезы и расширяйте аналитические сценарии — все загруженные данные уже задействованы."
+          );
+        }
+      }
+
+      return recommendations.length
+        ? recommendations
+        : ["Регулярно обновляйте локальные данные и проверяйте качество источников."];
+    })(),
   };
 }
 
