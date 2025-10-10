@@ -9,6 +9,7 @@ import {
   convertDataset,
   buildProjectReport,
   summarizeEmailBody,
+  suggestDataApplications,
 } from "../localAnalysis";
 
 describe("generateForecastReport", () => {
@@ -291,5 +292,60 @@ describe("buildProjectReport and summarizeEmailBody", () => {
     const email = summarizeEmailBody(report);
     expect(email).toContain("Краткое описание локального анализа:");
     expect(email).toContain("Рекомендации:");
+  });
+});
+
+describe("suggestDataApplications", () => {
+  it("proposes local analytical scenarios based on dataset structure", () => {
+    const dataset = {
+      name: "Crime Stats",
+      row_count: 1200,
+      columns: [
+        { name: "date", type: "date" },
+        { name: "district", type: "string" },
+        { name: "incidents", type: "number" },
+        { name: "latitude", type: "number" },
+        { name: "longitude", type: "number" },
+        { name: "notes", type: "string" },
+      ],
+      sample_data: [
+        {
+          date: "2024-01-01",
+          district: "Downtown",
+          incidents: 42,
+          latitude: 40.7128,
+          longitude: -74.006,
+          notes: "Вечерние патрули отмечают всплеск правонарушений вблизи станции метро.",
+        },
+      ],
+    };
+
+    const project = {
+      datasets: [{ id: "d1" }, { id: "d2" }],
+    };
+
+    const suggestion = suggestDataApplications({ dataset, project });
+
+    expect(suggestion.summary).toContain("Локальный ассистент");
+    expect(suggestion.suggestions.some((text) => text.toLowerCase().includes("прогноз"))).toBe(true);
+    expect(suggestion.suggestions.some((text) => text.toLowerCase().includes("карту"))).toBe(true);
+    expect(suggestion.tags).toEqual(expect.arrayContaining(["forecast", "geo"]));
+    expect(suggestion.focus_areas.length).toBeGreaterThan(0);
+    expect(suggestion.confidence).toBeGreaterThan(0);
+    expect(suggestion.local_execution_note).toContain("локально");
+  });
+
+  it("falls back to exploratory advice when structure is minimal", () => {
+    const dataset = {
+      name: "Minimal",
+      columns: [{ name: "id", type: "string" }],
+      sample_data: [],
+    };
+
+    const suggestion = suggestDataApplications({ dataset });
+
+    expect(suggestion.suggestions[0]).toContain("базовой визуализации");
+    expect(suggestion.focus_areas[0]).toContain("Разведочный анализ");
+    expect(suggestion.tags).toHaveLength(0);
   });
 });

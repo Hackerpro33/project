@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { suggestDataApplications } from "@/utils/localAnalysis";
 import { 
   Database, 
   X, 
@@ -26,6 +27,7 @@ import { format } from "date-fns";
 export default function DatasetPreview({ dataset, onClose }) {
   const [sampleData, setSampleData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [aiSuggestions, setAiSuggestions] = useState(null);
 
   useEffect(() => {
     // Используем реальные данные из датасета или оставляем пустым, если их нет
@@ -35,6 +37,14 @@ export default function DatasetPreview({ dataset, onClose }) {
       setSampleData([]); // Не генерируем ложные данные, просто показываем пустую таблицу
     }
     setIsLoading(false);
+
+    try {
+      const suggestion = suggestDataApplications({ dataset });
+      setAiSuggestions(suggestion);
+    } catch (error) {
+      console.warn("Не удалось сформировать локальные рекомендации по использованию данных", error);
+      setAiSuggestions(null);
+    }
   }, [dataset]);
 
   const getColumnIcon = (type) => {
@@ -127,6 +137,33 @@ export default function DatasetPreview({ dataset, onClose }) {
               <div className="text-sm text-orange-700">Тегов</div>
             </div>
           </div>
+
+          {aiSuggestions && (
+            <div className="p-5 rounded-xl border border-slate-200 bg-slate-50/60">
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Рекомендации локального ИИ</h3>
+                  <p className="text-sm text-slate-600 mt-2">{aiSuggestions.summary}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {aiSuggestions.focus_areas.map((area) => (
+                    <Badge key={area} variant="secondary" className="text-[11px] bg-white text-slate-700 border border-slate-200">
+                      {area}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+              <ul className="mt-4 space-y-2 list-disc list-inside text-sm text-slate-700">
+                {aiSuggestions.suggestions.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+              </ul>
+              <div className="mt-4 text-xs text-slate-500">
+                <p>{aiSuggestions.context_note}</p>
+                <p className="mt-1">{aiSuggestions.local_execution_note}</p>
+              </div>
+            </div>
+          )}
 
           {/* Column Information */}
           {dataset.columns && dataset.columns.length > 0 && (

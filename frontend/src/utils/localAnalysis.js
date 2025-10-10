@@ -709,3 +709,155 @@ export function summarizeEmailBody(summary) {
     ...(summary.recommendations || []),
   ].join("\n");
 }
+
+const GEO_COLUMN_PATTERNS = [
+  /latitude/,
+  /longitude/,
+  /lat$/, /lng$/, /lon$/, /coord/,
+  /широт/, /долгот/, /гео/,
+];
+
+const REGION_COLUMN_PATTERNS = [
+  /region/, /district/, /city/, /area/, /oblast/, /район/, /город/, /террит/,
+];
+
+const ENTITY_RELATION_PATTERNS = [
+  /source/, /target/, /from/, /to/, /parent/, /child/, /sender/, /receiver/,
+];
+
+const TEXT_SIGNAL_PATTERNS = [
+  /description/, /comment/, /notes?/, /summary/, /message/, /text/, /feedback/,
+];
+
+function normaliseColumns(columns = []) {
+  return columns.map((column) => {
+    const type = normalizeColumnType(column.type);
+    const name = String(column.name || "");
+    return { ...column, name, lowerName: name.toLowerCase(), normalizedType: type };
+  });
+}
+
+function detectMatches(columns, patterns) {
+  return columns.some((column) =>
+    patterns.some((pattern) => pattern.test(column.lowerName))
+  );
+}
+
+function countTypes(columns) {
+  return columns.reduce(
+    (acc, column) => {
+      acc[column.normalizedType] = (acc[column.normalizedType] ?? 0) + 1;
+      return acc;
+    },
+    { string: 0, number: 0, datetime: 0, boolean: 0 }
+  );
+}
+
+function hasLongTextSample(column, sampleRows = []) {
+  const sampleValues = sampleRows
+    .map((row) => row?.[column.name])
+    .filter((value) => typeof value === "string");
+  return sampleValues.some((value) => value.length > 40);
+}
+
+export function suggestDataApplications({ dataset = {}, project = {} } = {}) {
+  const columns = normaliseColumns(dataset.columns || []);
+  const sampleRows = Array.isArray(dataset.sample_data) ? dataset.sample_data : [];
+  const rowCount = dataset.row_count ?? sampleRows.length ?? 0;
+
+  const hasNumeric = columns.some((column) => column.normalizedType === "number");
+  const hasDate = columns.some((column) => column.normalizedType === "datetime");
+  const hasString = columns.some((column) => column.normalizedType === "string");
+  const hasBoolean = columns.some((column) => column.normalizedType === "boolean");
+
+  const hasGeo = detectMatches(columns, GEO_COLUMN_PATTERNS);
+  const hasRegions = detectMatches(columns, REGION_COLUMN_PATTERNS);
+  const hasRelations = detectMatches(columns, ENTITY_RELATION_PATTERNS);
+  const hasTextNotes = columns.some(
+    (column) => column.normalizedType === "string" && detectMatches([column], TEXT_SIGNAL_PATTERNS)
+  );
+  const hasRichText = columns.some((column) => column.normalizedType === "string" && hasLongTextSample(column, sampleRows));
+
+  const typeCounts = countTypes(columns);
+
+  const suggestions = [];
+  const focusAreas = [];
+  const tags = new Set();
+
+  if (hasNumeric && hasDate) {
+    suggestions.push(
+      "Используйте локальный прогноз временных рядов для оценки динамики показателей по датам." +
+        " Такой анализ не требует доступа к внешним сервисам."
+    );
+    focusAreas.push("Прогнозирование спроса/инцидентов");
+    tags.add("forecast");
+    tags.add("time-series");
+  }
+
+  if (hasGeo || (hasNumeric && hasRegions)) {
+    suggestions.push(
+      "Постройте карту или тепловую схему, чтобы выявить территориальные аномалии на локальном уровне."
+    );
+    focusAreas.push("Геоаналитика и тепловые карты");
+    tags.add("geo");
+  }
+
+  if (hasNumeric && hasString) {
+    suggestions.push(
+      "Создайте набор KPI и сравните категории между собой, используя локальные визуализации и фильтры."
+    );
+    focusAreas.push("Оперативные панели и KPI");
+    tags.add("dashboard");
+  }
+
+  if (hasRelations || (hasNumeric && hasBoolean)) {
+    suggestions.push(
+      "Проведите анализ связей или сценариев " +
+        "(например, социальные графы, влияние факторов) через локальные алгоритмы."
+    );
+    focusAreas.push("Связи между объектами");
+    tags.add("network");
+  }
+
+  if (hasTextNotes || hasRichText) {
+    suggestions.push(
+      "Примените локальную обработку текста: выделите темы, классифицируйте обращения и сформируйте отчёт без отправки данных вовне."
+    );
+    focusAreas.push("Качественный анализ текста");
+    tags.add("nlp");
+  }
+
+  if (!suggestions.length) {
+    suggestions.push(
+      "Сконцентрируйтесь на базовой визуализации распределений и проверке качества данных. Все шаги выполняются локально."
+    );
+    focusAreas.push("Разведочный анализ");
+  }
+
+  const projectDatasets = Array.isArray(project.datasets) ? project.datasets.length : 0;
+  const relatedContext = projectDatasets
+    ? `В проекте уже используется ${projectDatasets} набор(ов) данных — можно сопоставить их по ключевым столбцам.`
+    : "Набор пока изолирован — добавьте дополнительные источники для связного анализа.";
+
+  const confidenceBase = 0.4 + [hasNumeric, hasDate, hasGeo, hasRelations, hasTextNotes, hasRichText]
+    .filter(Boolean)
+    .length * 0.1;
+  const confidence = Math.max(0.3, Math.min(0.95, confidenceBase));
+
+  return {
+    summary:
+      `Локальный ассистент обработал ${columns.length} столбца(ов) и ${rowCount || "0"} строк: ` +
+      `определены типы данных и потенциальные сценарии использования без внешних вызовов.`,
+    suggestions,
+    focus_areas: [...new Set(focusAreas)].slice(0, 5),
+    tags: Array.from(tags),
+    confidence: Number(confidence.toFixed(2)),
+    data_profile: {
+      row_count: rowCount,
+      column_types: typeCounts,
+      has_samples: sampleRows.length > 0,
+    },
+    context_note: relatedContext,
+    local_execution_note: "Рекомендации сформированы локально, данные не покидают систему.",
+  };
+}
