@@ -2,14 +2,15 @@ import React, { useState, useEffect } from "react";
 import { Dataset, Visualization } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-  BarChart3, 
-  LineChart, 
+import {
+  BarChart3,
+  LineChart,
   ScatterChart,
   TrendingUp,
   Plus,
   Filter
 } from "lucide-react";
+import PageContainer from "@/components/layout/PageContainer";
 
 import ChartBuilder from "../components/charts/ChartBuilder";
 import ChartGallery from "../components/charts/ChartGallery";
@@ -62,10 +63,9 @@ export default function Charts() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="text-center space-y-4">
+    <PageContainer className="space-y-8">
+      {/* Header */}
+      <div className="text-center space-y-4">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
             Конструктор графиков
           </h1>
@@ -112,7 +112,6 @@ export default function Charts() {
                 onClose={() => setViewingViz(null)}
             />
         )}
-      </div>
-    </div>
+    </PageContainer>
   );
 }

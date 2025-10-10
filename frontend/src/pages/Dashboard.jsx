@@ -8,6 +8,7 @@ import StatsGrid from "../components/dashboard/StatsGrid";
 import QuickActions from "../components/dashboard/QuickActions";
 import RecentActivity from "../components/dashboard/RecentActivity";
 import TrendingCharts from "../components/dashboard/TrendingCharts";
+import PageContainer from "@/components/layout/PageContainer";
 
 export default function Dashboard() {
   const [datasets, setDatasets] = useState([]);
@@ -251,10 +252,9 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Hero Section */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-purple-900 to-slate-900 p-8 text-white">
+    <PageContainer className="space-y-8">
+      {/* Hero Section */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-purple-900 to-slate-900 p-8 text-white">
           <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 via-purple-600/20 to-pink-600/20" />
           <div className="relative z-10">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
@@ -311,39 +311,38 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+      </div>
+
+      {/* Stats Grid */}
+      <StatsGrid
+        datasets={datasets}
+        visualizations={visualizations}
+        isLoading={isLoading}
+        changes={metrics.changes}
+      />
+
+      {/* Quick Actions */}
+      <QuickActions />
+
+      <div className="grid lg:grid-cols-3 gap-8">
+        {/* Recent Activity */}
+        <div className="lg:col-span-2">
+          <RecentActivity
+            datasets={datasets}
+            visualizations={visualizations}
+            isLoading={isLoading}
+          />
         </div>
 
-        {/* Stats Grid */}
-        <StatsGrid
-          datasets={datasets}
-          visualizations={visualizations}
-          isLoading={isLoading}
-          changes={metrics.changes}
-        />
-
-        {/* Quick Actions */}
-        <QuickActions />
-
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Recent Activity */}
-          <div className="lg:col-span-2">
-            <RecentActivity 
-              datasets={datasets}
-              visualizations={visualizations}
-              isLoading={isLoading}
-            />
-          </div>
-
-          {/* Trending Charts */}
-          <div>
-            <TrendingCharts
-              data={metrics.trendData}
-              summary={metrics.summary}
-              isLoading={isLoading}
-            />
-          </div>
+        {/* Trending Charts */}
+        <div>
+          <TrendingCharts
+            data={metrics.trendData}
+            summary={metrics.summary}
+            isLoading={isLoading}
+          />
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }
