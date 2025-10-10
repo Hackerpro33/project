@@ -1,33 +1,27 @@
 // Локальные интеграции: ходим на FastAPI backend (через Vite proxy /api)
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+import { buildApiUrl, jsonRequest } from './http';
 
 // -------- core implementations --------
 async function _UploadFile_impl({ file }) {
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: form });
+  const res = await fetch(buildApiUrl('/api/upload'), { method: 'POST', body: form });
   if (!res.ok) throw new Error(await res.text());
   return res.json(); // { status, file_url, filename, quick_extraction }
 }
 
 async function _ExtractDataFromUploadedFile_impl({ file_url, json_schema }) {
-  const res = await fetch(`${API_BASE}/api/extract`, {
+  return jsonRequest('/api/extract', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ file_url, json_schema })
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json(); // { status:"success", output:{columns,row_count,sample_data} }
 }
 
 async function _SendEmail_impl({ to, subject, body, from_name }) {
-  const res = await fetch(`${API_BASE}/api/utils/send-email`, {
+  return jsonRequest('/api/utils/send-email', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ to, subject, body, from_name }),
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
 }
 
 // -------- named exports (все варианты, чтобы не падало нигде) --------
