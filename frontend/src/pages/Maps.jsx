@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Dataset, Visualization } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,50 @@ export default function Maps() {
     overlay_type: 'none'
   });
   const [isDatasetLoading, setIsDatasetLoading] = useState(false);
+
+  const selectedDataset = useMemo(
+    () => datasets.find((dataset) => dataset.id === currentMapConfig?.dataset_id),
+    [datasets, currentMapConfig?.dataset_id]
+  );
+
+  const configHighlights = useMemo(() => {
+    const datasetLabel =
+      currentMapConfig.dataset_id === "sample"
+        ? "Образец данных"
+        : selectedDataset?.name || "Не выбран";
+
+    const overlayMap = {
+      none: "Без наложений",
+      heatmap: "Тепловая карта",
+      clusters: "Кластеры",
+      forecast: "Прогноз",
+    };
+
+    return [
+      {
+        label: "Источник данных",
+        value: datasetLabel,
+      },
+      {
+        label: "Количество точек",
+        value: isDatasetLoading
+          ? "Загрузка..."
+          : mapData?.length
+            ? mapData.length.toLocaleString("ru-RU")
+            : "Нет данных",
+      },
+      {
+        label: "Режим отображения",
+        value: overlayMap[currentMapConfig.overlay_type] || "Стандартный",
+      },
+    ];
+  }, [
+    currentMapConfig.dataset_id,
+    currentMapConfig.overlay_type,
+    isDatasetLoading,
+    mapData?.length,
+    selectedDataset?.name,
+  ]);
 
   useEffect(() => {
     loadData();
@@ -186,8 +230,20 @@ export default function Maps() {
             </div>
 
             {/* Interactive Map Display */}
-            <div className="grid lg:grid-cols-4 gap-8">
-              <div className="lg:col-span-3">
+            <div className="grid gap-8 xl:grid-cols-[1.75fr_1fr]">
+              <section className="space-y-8">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {configHighlights.map((item) => (
+                    <div
+                      key={item.label}
+                      className="rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 shadow-sm backdrop-blur"
+                    >
+                      <p className="text-xs uppercase tracking-wide text-slate-500">{item.label}</p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+
                 <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-2xl">
                   <CardHeader className="border-b border-slate-200">
                     <CardTitle className="flex items-center gap-2 text-slate-900 heading-text">
@@ -204,43 +260,50 @@ export default function Maps() {
                     <MapView config={currentMapConfig} data={mapData} />
                   </CardContent>
                 </Card>
-              </div>
+              </section>
 
               {/* Map Info Panel */}
-              <div className="lg:col-span-1 space-y-6">
-                <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-xl">
-                  <CardHeader>
+              <aside className="space-y-6 xl:sticky xl:top-24 xl:self-start">
+                <Card className="border-0 bg-white/80 backdrop-blur-xl shadow-xl">
+                  <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-slate-900 heading-text">
                       <MapIcon className="w-5 h-5 text-blue-500" />
                       Информация о карте
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <h4 className="font-semibold text-slate-800 mb-2">Текущая конфигурация:</h4>
-                      <div className="space-y-2 text-sm text-slate-600">
-                        <div className="flex justify-between">
-                          <span>Источник данных:</span>
-                          <span className="font-medium">
-                            {currentMapConfig.dataset_id === 'sample' ? 'Образцы' : datasets.find(d => d.id === currentMapConfig.dataset_id)?.name || 'Не выбран'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Широта:</span>
-                          <span className="font-medium">{currentMapConfig.lat_column || 'latitude'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Долгота:</span>
-                          <span className="font-medium">{currentMapConfig.lon_column || 'longitude'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Значения:</span>
-                          <span className="font-medium">{currentMapConfig.value_column || 'value'}</span>
-                        </div>
+                  <CardContent className="space-y-5">
+                    <div className="space-y-3 text-sm text-slate-600">
+                      <div className="flex items-center justify-between gap-4">
+                        <span>Источник данных:</span>
+                        <span className="font-medium text-right">
+                          {currentMapConfig.dataset_id === 'sample' ? 'Образцы' : selectedDataset?.name || 'Не выбран'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <span>Широта:</span>
+                        <span className="font-medium text-right">{currentMapConfig.lat_column || 'latitude'}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <span>Долгота:</span>
+                        <span className="font-medium text-right">{currentMapConfig.lon_column || 'longitude'}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <span>Значения:</span>
+                        <span className="font-medium text-right">{currentMapConfig.value_column || 'value'}</span>
                       </div>
                     </div>
 
-                    <div className="pt-4 border-t border-slate-200">
+                    <div className="rounded-2xl bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 p-4 text-center shadow-inner">
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600">
+                        <Compass className="h-6 w-6 text-white" />
+                      </div>
+                      <h4 className="font-semibold text-purple-800">Исследуйте данные</h4>
+                      <p className="mt-1 text-sm text-purple-700">
+                        Кликайте по точкам, чтобы увидеть подробности и найти скрытые закономерности.
+                      </p>
+                    </div>
+
+                    <div>
                       <h4 className="font-semibold text-slate-800 mb-2">Возможности карты:</h4>
                       <ul className="text-sm text-slate-600 space-y-1">
                         <li>• Интерактивное масштабирование</li>
@@ -253,27 +316,13 @@ export default function Maps() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-0 bg-gradient-to-r from-purple-50 to-indigo-50 shadow-lg border border-purple-200">
-                  <CardContent className="p-4">
-                    <div className="text-center">
-                      <div className="w-12 h-12 mx-auto mb-3 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center">
-                        <Compass className="w-6 h-6 text-white" />
-                      </div>
-                      <h4 className="font-semibold text-purple-800 mb-2">Исследуйте данные</h4>
-                      <p className="text-sm text-purple-700">
-                        Нажмите на точки карты, чтобы увидеть детальную информацию и скрытые паттерны в ваших данных.
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-
                 <MapAnalyticsPanel
                   data={mapData}
                   config={currentMapConfig}
                   datasets={datasets}
                   isLoading={isDatasetLoading}
                 />
-              </div>
+              </aside>
             </div>
 
             {/* Saved Maps Gallery */}
