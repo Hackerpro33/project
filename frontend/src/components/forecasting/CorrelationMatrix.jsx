@@ -7,6 +7,12 @@ import { Label } from "@/components/ui/label";
 import { BarChart3, Sparkles } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { analyzeCorrelation } from "@/utils/localAnalysis";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const getCorrelationDescriptor = (value) => {
     const absValue = Math.abs(value);
