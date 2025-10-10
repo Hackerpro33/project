@@ -14,7 +14,8 @@ export default function ForecastSetup({ datasets, onGenerate, isLoading, isForec
     date_column: '',
     value_column: '',
     horizon: 30,
-    external_factors: []
+    external_factors: [],
+    useSyntheticDates: false,
   });
   const [selectedDataset, setSelectedDataset] = useState(null);
 
@@ -22,11 +23,29 @@ export default function ForecastSetup({ datasets, onGenerate, isLoading, isForec
     // Existing handleDatasetChange logic
     const dataset = datasets.find(d => d.id === datasetId);
     setSelectedDataset(dataset);
-    setConfig(prev => ({ ...prev, dataset_id: datasetId, date_column: '', value_column: '' }));
+    setConfig(prev => ({
+      ...prev,
+      dataset_id: datasetId,
+      date_column: '',
+      value_column: '',
+      useSyntheticDates: false,
+    }));
   };
 
   const handleInputChange = (field, value) => {
-    setConfig(prev => ({ ...prev, [field]: value }));
+    setConfig(prev => ({
+      ...prev,
+      [field]: value,
+      ...(field === 'date_column' ? { useSyntheticDates: false } : {}),
+    }));
+  };
+
+  const handleSyntheticToggle = (checked) => {
+    const isChecked = checked === true;
+    setConfig(prev => ({
+      ...prev,
+      useSyntheticDates: isChecked,
+    }));
   };
 
   const handleFactorToggle = (datasetId, columnName, datasetName) => {
@@ -82,7 +101,11 @@ export default function ForecastSetup({ datasets, onGenerate, isLoading, isForec
           <>
             <div className="space-y-2">
               <Label htmlFor="date-column" className="elegant-text">Столбец даты/времени</Label>
-              <Select onValueChange={(value) => handleInputChange('date_column', value)} value={config.date_column}>
+              <Select
+                onValueChange={(value) => handleInputChange('date_column', value)}
+                value={config.useSyntheticDates ? '' : config.date_column}
+                disabled={config.useSyntheticDates}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Выберите столбец с датами" />
                 </SelectTrigger>
@@ -94,6 +117,26 @@ export default function ForecastSetup({ datasets, onGenerate, isLoading, isForec
                   ))}
                 </SelectContent>
               </Select>
+              {(!selectedDataset.columns?.some(c => c.type === 'date')) && !config.useSyntheticDates && (
+                <p className="text-sm text-slate-500">
+                  В наборе данных не найдено столбцов с датой. Вы можете создать искусственный интервал времени ниже.
+                </p>
+              )}
+              <div className="flex items-start gap-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/70 p-3">
+                <Checkbox
+                  id="synthetic-dates"
+                  checked={config.useSyntheticDates}
+                  onCheckedChange={handleSyntheticToggle}
+                />
+                <div className="space-y-1">
+                  <Label htmlFor="synthetic-dates" className="elegant-text text-sm">
+                    Создать искусственный интервал времени
+                  </Label>
+                  <p className="text-xs text-slate-500">
+                    Добавит последовательность дат по порядку, чтобы продолжить прогноз даже без реального столбца времени.
+                  </p>
+                </div>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="value-column" className="elegant-text">Столбец значений для прогноза</Label>
@@ -167,7 +210,13 @@ export default function ForecastSetup({ datasets, onGenerate, isLoading, isForec
 
         <Button
           onClick={() => onGenerate(config)}
-          disabled={isForecasting || isLoading || !config.dataset_id || !config.date_column || !config.value_column}
+          disabled={
+            isForecasting ||
+            isLoading ||
+            !config.dataset_id ||
+            (!config.date_column && !config.useSyntheticDates) ||
+            !config.value_column
+          }
           className="w-full bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white gap-2 text-lg py-6 elegant-text"
         >
           {isForecasting ? (
