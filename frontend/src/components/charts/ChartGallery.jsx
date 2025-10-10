@@ -197,8 +197,8 @@ export default function ChartGallery({ visualizations, datasets, isLoading, onEd
             Ваши графики
           </CardTitle>
           {visualizations.length > 0 && (
-            <PDFExporter 
-              title="Отчет по графикам DataViz Pro" 
+            <PDFExporter
+              title="Отчет по графикам Анализатор"
               elementId="charts-gallery"
             />
           )}

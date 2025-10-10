@@ -154,7 +154,7 @@ export default function Layout({ children, currentPageName }) {
                 </div>
               </div>
               <div>
-                <h2 className="font-bold text-white text-lg elegant-text">DataViz Pro</h2>
+                <h2 className="font-bold text-lg elegant-text text-orange-400">Анализатор</h2>
                 <p className="text-xs text-slate-400 elegant-text">Платформа для аналитики</p>
               </div>
             </div>
@@ -176,7 +176,7 @@ export default function Layout({ children, currentPageName }) {
                             to={item.url} 
                             className={`nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 elegant-text ${
                               isActive 
-                                ? `bg-gradient-to-r ${item.gradient} text-white shadow-lg shadow-blue-500/25` 
+                                ? `bg-gradient-to-r ${item.gradient} text-white shadow-lg shadow-blue-500/25`
                                 : 'text-slate-300 hover:text-white hover:bg-slate-800/50'
                             }`}
                           >
@@ -207,11 +207,11 @@ export default function Layout({ children, currentPageName }) {
               <div className="space-y-2 text-xs elegant-text">
                 <div className="flex justify-between text-slate-300">
                   <span>Точность модели</span>
-                  <span className="text-green-400 font-medium">94.2%</span>
+                  <span className="text-green-300 font-medium">94.2%</span>
                 </div>
                 <div className="flex justify-between text-slate-300">
                   <span>Точек данных</span>
-                  <span className="text-blue-400 font-medium">1.2M</span>
+                  <span className="text-blue-300 font-medium">1.2M</span>
                 </div>
               </div>
             </div>
@@ -222,7 +222,7 @@ export default function Layout({ children, currentPageName }) {
           <header className="bg-white/70 backdrop-blur-xl border-b border-white/20 px-6 py-4 md:hidden">
             <div className="flex items-center gap-4">
               <SidebarTrigger className="hover:bg-slate-100 p-2 rounded-lg transition-colors duration-200" />
-              <h1 className="text-xl font-bold gradient-text heading-text">DataViz Pro</h1>
+              <h1 className="text-xl font-bold heading-text text-orange-600">Анализатор</h1>
             </div>
           </header>
 

@@ -181,6 +181,8 @@ export default function DatasetPreview({ dataset, onClose }) {
                 <p>{aiSuggestions.context_note}</p>
                 <p className="mt-1">{aiSuggestions.local_execution_note}</p>
               </div>
+            </div>
+          )}
           {/* AI Insights */}
           {aiSummary && (
             <div className="space-y-4">
