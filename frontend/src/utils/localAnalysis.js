@@ -515,6 +515,134 @@ export function summarizeProjectStructure({ datasets, visualizations }) {
   };
 }
 
+const numberFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
+
+export function analyzeDataset(dataset = {}) {
+  const columns = Array.isArray(dataset.columns) ? dataset.columns : [];
+  const sample = Array.isArray(dataset.sample_data) ? dataset.sample_data : [];
+
+  const normalizedColumns = columns.map((column) => ({
+    ...column,
+    normalizedType: normalizeColumnType(column.type),
+  }));
+
+  const sampleRows = sample.length;
+  const totalRows = dataset.row_count ?? sampleRows;
+  const totalCells = sampleRows * normalizedColumns.length;
+
+  let filledCells = 0;
+  sample.forEach((row) => {
+    normalizedColumns.forEach((column) => {
+      const value = row?.[column.name];
+      if (value !== null && value !== undefined && value !== "") {
+        filledCells += 1;
+      }
+    });
+  });
+
+  const completeness = totalCells
+    ? Math.round((filledCells / Math.max(totalCells, 1)) * 100)
+    : sampleRows
+    ? 100
+    : 0;
+
+  const numericSummary = normalizedColumns
+    .filter((column) => column.normalizedType === "number")
+    .map((column) => {
+      const values = toNumberArray(sample.map((row) => row?.[column.name]));
+      if (!values.length) {
+        return { name: column.name, type: column.normalizedType, hasData: false };
+      }
+
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const mean = average(values);
+      const deviation = standardDeviation(values);
+
+      return {
+        name: column.name,
+        type: column.normalizedType,
+        hasData: true,
+        min,
+        max,
+        mean: Number(mean.toFixed(2)),
+        deviation: Number(deviation.toFixed(2)),
+        variation: max - min,
+        formattedMin: numberFormatter.format(min),
+        formattedMax: numberFormatter.format(max),
+        formattedMean: numberFormatter.format(mean),
+      };
+    });
+
+  const duplicates = (() => {
+    if (!sampleRows) return 0;
+    const keys = normalizedColumns.map((column) => column.name);
+    if (!keys.length) return 0;
+
+    const occurrences = new Map();
+    sample.forEach((row) => {
+      const fingerprint = createRowFingerprint(row, keys);
+      occurrences.set(fingerprint, (occurrences.get(fingerprint) ?? 0) + 1);
+    });
+
+    let duplicatesCount = 0;
+    occurrences.forEach((count) => {
+      if (count > 1) {
+        duplicatesCount += count - 1;
+      }
+    });
+
+    return duplicatesCount;
+  })();
+
+  const insights = [];
+
+  if (!sampleRows) {
+    insights.push(
+      "Нет примерочных данных — добавьте выборку, чтобы система могла построить статистику и рекомендации."
+    );
+  } else {
+    insights.push(
+      `Предоставленная выборка содержит ${sampleRows} строк при общем объёме ${totalRows || sampleRows}.`
+    );
+
+    if (completeness < 70) {
+      insights.push(`Заполненность данных около ${completeness}% — рекомендуется проверить источники на пропуски.`);
+    } else {
+      insights.push(`Заполненность выборки достигает ${completeness}% — критических пропусков не обнаружено.`);
+    }
+
+    const numericWithData = numericSummary.filter((column) => column.hasData);
+    if (numericWithData.length) {
+      const widest = [...numericWithData].sort((a, b) => (b.variation ?? 0) - (a.variation ?? 0))[0];
+      if (widest && Number.isFinite(widest.variation) && widest.variation > 0) {
+        insights.push(
+          `Столбец «${widest.name}» варьируется от ${widest.formattedMin} до ${widest.formattedMax}, среднее значение ${widest.formattedMean}.`
+        );
+      } else {
+        insights.push("Числовые признаки имеют стабильные значения без существенного разброса.");
+      }
+    } else {
+      insights.push("Числовые признаки не обнаружены — используйте категориальные инструменты анализа.");
+    }
+
+    if (duplicates > 0) {
+      insights.push(
+        `В примерочных данных выявлено ${duplicates} повторяющихся строк — рекомендуется очистить их перед моделированием.`
+      );
+    }
+  }
+
+  return {
+    totalRows,
+    sampleRows,
+    completeness,
+    duplicates,
+    numericSummary,
+    insights,
+  };
+}
+
 const formatGenerators = {
   csv: ({ dataset, options }) => {
     const delimiter = options?.delimiter ?? ",";
