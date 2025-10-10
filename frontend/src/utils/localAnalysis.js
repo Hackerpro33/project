@@ -282,6 +282,63 @@ export function buildNetworkGraph({ datasetName, columns, rows, graphType }) {
   };
 }
 
+function valuesAreEquivalent(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (a == null || b == null) {
+    return false;
+  }
+
+  const numberA = typeof a === "number" ? a : Number(a);
+  const numberB = typeof b === "number" ? b : Number(b);
+  if (!Number.isNaN(numberA) && !Number.isNaN(numberB)) {
+    return numberA === numberB;
+  }
+
+  return String(a) === String(b);
+}
+
+function buildCellComparison({ leftRows, rightRows, columns }) {
+  const totalRows = Math.max(leftRows.length, rightRows.length);
+  const resultRows = [];
+
+  for (let index = 0; index < totalRows; index += 1) {
+    const leftRow = leftRows[index]?.raw ?? null;
+    const rightRow = rightRows[index]?.raw ?? null;
+
+    const cells = columns.map((column) => {
+      const leftValue = leftRow ? leftRow[column] : undefined;
+      const rightValue = rightRow ? rightRow[column] : undefined;
+      const matches = valuesAreEquivalent(leftValue, rightValue);
+
+      return {
+        column,
+        left_value: leftValue ?? null,
+        right_value: rightValue ?? null,
+        status: matches ? "match" : "mismatch",
+        color: matches ? "green" : "red",
+      };
+    });
+
+    resultRows.push({
+      row_index: index,
+      left_present: Boolean(leftRow),
+      right_present: Boolean(rightRow),
+      cells,
+    });
+  }
+
+  return {
+    columns,
+    legend: {
+      match: { color: "green", description: "Совпадение значений" },
+      mismatch: { color: "red", description: "Расхождение значений" },
+    },
+    rows: resultRows,
+  };
+}
+
 export function compareTables({ left, right, keyColumns }) {
   const leftColumns = new Map(
     (left?.columns || []).map((column) => [column.name, normalizeColumnType(column.type)])
@@ -316,6 +373,12 @@ export function compareTables({ left, right, keyColumns }) {
     raw: row,
     fingerprint: createRowFingerprint(row, rowsToCompare),
   }));
+
+  const cellComparison = buildCellComparison({
+    leftRows,
+    rightRows,
+    columns: rowsToCompare,
+  });
 
   const leftRowCounts = new Map();
   leftRows.forEach((entry) => {
@@ -399,6 +462,7 @@ export function compareTables({ left, right, keyColumns }) {
       left_sampled_total: leftRows.length,
       right_sampled_total: rightRows.length,
     },
+    cell_comparison: cellComparison,
     insights,
   };
 }

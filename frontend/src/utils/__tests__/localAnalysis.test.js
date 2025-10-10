@@ -145,6 +145,80 @@ describe("compareTables", () => {
     expect(result.row_comparison.left_only_rows[0].count).toBe(1);
     expect(result.row_comparison.right_only_rows[0].count).toBe(1);
     expect(result.insights[0]).toContain("Совпадающих столбцов: 2 из 3");
+
+    expect(result.cell_comparison.legend.match.color).toBe("green");
+    expect(result.cell_comparison.rows[0].cells.every((cell) => cell.status === "match")).toBe(true);
+  });
+
+  it("builds highlighted grids for tables with similar layout and reordered columns", () => {
+    const tableA1 = {
+      columns: [
+        { name: "id", type: "number" },
+        { name: "name", type: "string" },
+        { name: "score", type: "number" },
+      ],
+      sample_data: [
+        { id: 1, name: "Alice", score: 80 },
+        { id: 2, name: "Bob", score: 92 },
+        { id: 3, name: "Cara", score: 87 },
+        { id: 4, name: "Dan", score: 75 },
+        { id: 5, name: "Eva", score: 91 },
+      ],
+    };
+
+    const tableA2 = {
+      columns: [
+        { name: "id", type: "number" },
+        { name: "name", type: "string" },
+        { name: "score", type: "number" },
+      ],
+      sample_data: [
+        { id: 1, name: "Alice", score: 80 },
+        { id: 2, name: "Bob", score: 92 },
+        { id: 3, name: "Cara", score: 87 },
+        { id: 4, name: "Dan", score: 75 },
+        { id: 5, name: "Eva", score: 70 },
+      ],
+    };
+
+    const tableB1 = {
+      columns: [
+        { name: "region", type: "string" },
+        { name: "q1", type: "number" },
+        { name: "q2", type: "number" },
+      ],
+      sample_data: [
+        { region: "North", q1: 100, q2: 120 },
+        { region: "South", q1: 95, q2: 110 },
+      ],
+    };
+
+    const tableB2 = {
+      columns: [
+        { name: "q2", type: "number" },
+        { name: "region", type: "string" },
+        { name: "q1", type: "number" },
+      ],
+      sample_data: [
+        { q2: 120, region: "North", q1: 100 },
+        { q2: 110, region: "South", q1: 95 },
+      ],
+    };
+
+    const similarLayout = compareTables({ left: tableA1, right: tableA2 });
+    const reorderedColumns = compareTables({ left: tableB1, right: tableB2 });
+
+    const fifthRowCells = similarLayout.cell_comparison.rows[4].cells;
+    expect(fifthRowCells.some((cell) => cell.status === "mismatch")).toBe(true);
+    expect(fifthRowCells.find((cell) => cell.column === "score").color).toBe("red");
+    expect(similarLayout.cell_comparison.rows[0].cells.every((cell) => cell.color === "green")).toBe(true);
+
+    reorderedColumns.cell_comparison.rows.forEach((row) => {
+      row.cells.forEach((cell) => {
+        expect(cell.status).toBe("match");
+        expect(cell.color).toBe("green");
+      });
+    });
   });
 });
 
