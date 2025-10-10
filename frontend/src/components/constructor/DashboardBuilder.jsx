@@ -6,6 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Plus,
   Grip,
@@ -19,6 +23,50 @@ import {
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
 const STORAGE_KEY = 'dashboard-builder-state';
+
+const NONE_DATASET_VALUE = '__none__';
+
+const widgetDefaultsByType = {
+  stats: { datasetId: '', metricLabel: 'Всего записей' },
+  chart: { datasetId: '', chartVariant: 'line', xField: '', yField: '' },
+  map: {
+    datasetId: '',
+    mapVariant: 'heatmap',
+    mapRegion: 'world',
+    locationField: '',
+    valueField: '',
+  },
+  forecast: { datasetId: '', forecastHorizon: 12, targetField: '' },
+  correlation: { datasetId: '', selectedColumns: [] },
+  report: { datasetId: '', customTitle: '', notes: '', reportLayout: 'text' },
+};
+
+const chartVariants = [
+  { value: 'line', label: 'Линейный график' },
+  { value: 'bar', label: 'Столбчатая диаграмма' },
+  { value: 'area', label: 'Область значений' },
+  { value: 'scatter', label: 'Точечная диаграмма' },
+  { value: 'pie', label: 'Круговая диаграмма' },
+];
+
+const mapVariants = [
+  { value: 'heatmap', label: 'Тепловая карта' },
+  { value: 'choropleth', label: 'Хороплет' },
+  { value: 'clusters', label: 'Кластеры точек' },
+];
+
+const mapRegions = [
+  { value: 'world', label: 'Весь мир' },
+  { value: 'europe', label: 'Европа' },
+  { value: 'asia', label: 'Азия' },
+  { value: 'custom', label: 'Пользовательский регион' },
+];
+
+const reportLayouts = [
+  { value: 'text', label: 'Текстовый блок' },
+  { value: 'bullets', label: 'Список выводов' },
+  { value: 'table', label: 'Табличное резюме' },
+];
 
 function SummaryContent({ content }) {
   if (!content) {
@@ -149,6 +197,65 @@ export default function DashboardBuilder({
     });
   }, [availableWidgets, librarySearch]);
 
+  const updateWidget = (widgetId, updates) => {
+    setSelectedWidgets((prev) =>
+      prev.map((widget) =>
+        widget.id === widgetId
+          ? {
+              ...widget,
+              ...updates,
+            }
+          : widget
+      )
+    );
+  };
+
+  const renderDatasetSelector = (
+    widget,
+    { label = 'Источник данных', onDatasetChange } = {}
+  ) => {
+    const handleChange = (value) => {
+      const datasetId = value === NONE_DATASET_VALUE ? '' : value;
+      const extraUpdates = onDatasetChange?.(datasetId, widget) || {};
+      updateWidget(widget.id, { datasetId, ...extraUpdates });
+    };
+
+    return (
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {label}
+        </Label>
+        <Select
+          value={widget.datasetId ? widget.datasetId : NONE_DATASET_VALUE}
+          onValueChange={handleChange}
+        >
+          <SelectTrigger className="text-sm">
+            <SelectValue placeholder="Выберите набор данных" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE_DATASET_VALUE}>Без источника</SelectItem>
+            {datasets.map((dataset) => (
+              <SelectItem key={dataset.id} value={dataset.id}>
+                {dataset.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  };
+
+  const toggleWidgetColumn = (widget, columnName, isChecked) => {
+    const normalized = Array.isArray(widget.selectedColumns)
+      ? widget.selectedColumns
+      : [];
+    const nextColumns = isChecked
+      ? Array.from(new Set([...normalized, columnName]))
+      : normalized.filter((name) => name !== columnName);
+
+    updateWidget(widget.id, { selectedColumns: nextColumns });
+  };
+
   const handleDragEnd = (result) => {
     if (!result.destination) return;
 
@@ -160,8 +267,19 @@ export default function DashboardBuilder({
   };
 
   const addWidget = (widget) => {
+    const defaults = widgetDefaultsByType[widget.type];
+    const preparedDefaults = defaults
+      ? Object.fromEntries(
+          Object.entries(defaults).map(([key, value]) => [
+            key,
+            Array.isArray(value) ? [...value] : value,
+          ])
+        )
+      : {};
+
     const newWidget = {
       ...widget,
+      ...preparedDefaults,
       id: `${widget.id}_${Date.now()}`,
       sourceId: widget.id,
       x: 0,
@@ -234,42 +352,452 @@ export default function DashboardBuilder({
       : undefined;
 
     switch (widget.type) {
-      case 'stats':
+      case 'stats': {
+        const metricLabel = widget.metricLabel || 'Всего записей';
         return (
-          <div className="h-32 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg p-4 flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">147</div>
-              <div className="text-sm text-blue-700">Всего записей</div>
+          <div className="space-y-4">
+            {renderDatasetSelector(widget, { label: 'Источник для расчёта' })}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Подпись показателя
+              </Label>
+              <Input
+                value={widget.metricLabel || ''}
+                onChange={(event) =>
+                  updateWidget(widget.id, { metricLabel: event.target.value })
+                }
+                placeholder="Например: Количество клиентов"
+                className="text-sm"
+              />
+            </div>
+            <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 via-sky-50 to-cyan-50 p-6 text-center">
+              <div className="text-sm font-medium text-blue-700">
+                {datasetInfo?.name || 'Выберите набор данных'}
+              </div>
+              <div className="mt-3 text-4xl font-semibold text-blue-900">
+                {datasetInfo?.row_count !== undefined
+                  ? datasetInfo.row_count.toLocaleString('ru-RU')
+                  : '—'}
+              </div>
+              <div className="text-xs text-blue-700/80">
+                {metricLabel}
+              </div>
             </div>
           </div>
         );
-      case 'chart':
+      }
+      case 'chart': {
+        const chartType = widget.chartVariant || 'line';
+        const columns = Array.isArray(datasetInfo?.columns)
+          ? datasetInfo.columns
+          : [];
         return (
-          <div className="h-32 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg p-4 flex items-center justify-center">
-            <div className="text-center text-emerald-600">
-              <IconComponent className="w-12 h-12 mx-auto mb-2" />
-              <div className="text-sm">Линейный график</div>
+          <div className="space-y-4">
+            {renderDatasetSelector(widget, {
+              onDatasetChange: () => ({ xField: '', yField: '' }),
+            })}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Тип визуализации
+              </Label>
+              <Select
+                value={chartType}
+                onValueChange={(value) => updateWidget(widget.id, { chartVariant: value })}
+              >
+                <SelectTrigger className="text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {chartVariants.map((variant) => (
+                    <SelectItem key={variant.value} value={variant.value}>
+                      {variant.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {columns.length > 0 && (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Ось X
+                  </Label>
+                  <Select
+                    value={widget.xField || ''}
+                    onValueChange={(value) => updateWidget(widget.id, { xField: value })}
+                  >
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder="Авто" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Авто</SelectItem>
+                      {columns.map((column) => (
+                        <SelectItem key={column.name} value={column.name}>
+                          {column.name} {column.type ? `(${column.type})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Ось Y
+                  </Label>
+                  <Select
+                    value={widget.yField || ''}
+                    onValueChange={(value) => updateWidget(widget.id, { yField: value })}
+                  >
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder="Авто" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Авто</SelectItem>
+                      {columns.map((column) => (
+                        <SelectItem key={column.name} value={column.name}>
+                          {column.name} {column.type ? `(${column.type})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+            <div className="rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 p-6 text-center">
+              <IconComponent className="w-10 h-10 mx-auto text-emerald-500 mb-3" />
+              <div className="text-sm font-semibold text-emerald-700">
+                {chartVariants.find((variant) => variant.value === chartType)?.label || 'График'}
+              </div>
+              <div className="text-xs text-emerald-600 mt-1">
+                {datasetInfo?.name
+                  ? `Источник: ${datasetInfo.name}`
+                  : 'Выберите набор данных для визуализации'}
+              </div>
             </div>
           </div>
         );
-      case 'map':
+      }
+      case 'map': {
+        const columns = Array.isArray(datasetInfo?.columns)
+          ? datasetInfo.columns
+          : [];
         return (
-          <div className="h-32 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg p-4 flex items-center justify-center">
-            <div className="text-center text-purple-600">
-              <IconComponent className="w-12 h-12 mx-auto mb-2" />
-              <div className="text-sm">Интерактивная карта</div>
+          <div className="space-y-4">
+            {renderDatasetSelector(widget, {
+              label: 'Набор данных для карты',
+              onDatasetChange: () => ({ locationField: '', valueField: '' }),
+            })}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Тип отображения
+                </Label>
+                <Select
+                  value={widget.mapVariant || 'heatmap'}
+                  onValueChange={(value) => updateWidget(widget.id, { mapVariant: value })}
+                >
+                  <SelectTrigger className="text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mapVariants.map((variant) => (
+                      <SelectItem key={variant.value} value={variant.value}>
+                        {variant.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Регион
+                </Label>
+                <Select
+                  value={widget.mapRegion || 'world'}
+                  onValueChange={(value) => updateWidget(widget.id, { mapRegion: value })}
+                >
+                  <SelectTrigger className="text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mapRegions.map((region) => (
+                      <SelectItem key={region.value} value={region.value}>
+                        {region.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {columns.length > 0 && (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Поле с локациями
+                  </Label>
+                  <Select
+                    value={widget.locationField || ''}
+                    onValueChange={(value) => updateWidget(widget.id, { locationField: value })}
+                  >
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder="Авто" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Авто</SelectItem>
+                      {columns.map((column) => (
+                        <SelectItem key={column.name} value={column.name}>
+                          {column.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Показатель интенсивности
+                  </Label>
+                  <Select
+                    value={widget.valueField || ''}
+                    onValueChange={(value) => updateWidget(widget.id, { valueField: value })}
+                  >
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder="Авто" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Авто</SelectItem>
+                      {columns.map((column) => (
+                        <SelectItem key={column.name} value={column.name}>
+                          {column.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+            <div className="rounded-xl border border-purple-100 bg-gradient-to-br from-purple-50 via-indigo-50 to-slate-50 p-6 text-center">
+              <IconComponent className="w-10 h-10 mx-auto text-purple-500 mb-3" />
+              <div className="text-sm font-semibold text-purple-700">
+                {datasetInfo?.name
+                  ? `Карта по набору ${datasetInfo.name}`
+                  : 'Выберите данные для отображения на карте'}
+              </div>
+              <div className="text-xs text-purple-600 mt-1">
+                {widget.locationField
+                  ? `Локации: ${widget.locationField}`
+                  : 'Поле локаций определяется автоматически'}
+              </div>
             </div>
           </div>
         );
-      case 'forecast':
+      }
+      case 'forecast': {
+        const columns = Array.isArray(datasetInfo?.columns)
+          ? datasetInfo.columns
+          : [];
         return (
-          <div className="h-32 bg-gradient-to-r from-orange-50 to-red-50 rounded-lg p-4 flex items-center justify-center">
-            <div className="text-center text-orange-600">
-              <IconComponent className="w-12 h-12 mx-auto mb-2" />
-              <div className="text-sm">Локальный прогноз</div>
+          <div className="space-y-4">
+            {renderDatasetSelector(widget, {
+              label: 'Данные для прогноза',
+              onDatasetChange: () => ({ targetField: '' }),
+            })}
+            {columns.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Целевая метрика
+                </Label>
+                <Select
+                  value={widget.targetField || ''}
+                  onValueChange={(value) => updateWidget(widget.id, { targetField: value })}
+                >
+                  <SelectTrigger className="text-sm">
+                    <SelectValue placeholder="Выберите показатель" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {columns.map((column) => (
+                      <SelectItem key={column.name} value={column.name}>
+                        {column.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Горизонт (периодов)
+              </Label>
+              <Input
+                type="number"
+                min={1}
+                value={widget.forecastHorizon ?? 12}
+                onChange={(event) => {
+                  const parsed = Number.parseInt(event.target.value, 10);
+                  updateWidget(widget.id, {
+                    forecastHorizon: Number.isNaN(parsed)
+                      ? 1
+                      : Math.max(1, parsed),
+                  });
+                }}
+                className="text-sm"
+              />
+            </div>
+            <div className="rounded-xl border border-orange-100 bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 p-6 text-center">
+              <IconComponent className="w-10 h-10 mx-auto text-orange-500 mb-3" />
+              <div className="text-sm font-semibold text-orange-700">
+                {datasetInfo?.name
+                  ? `Прогноз по набору ${datasetInfo.name}`
+                  : 'Выберите набор данных для прогноза'}
+              </div>
+              <div className="text-xs text-orange-600 mt-1">
+                Горизонт: {widget.forecastHorizon ?? 12} периодов
+              </div>
+              {widget.targetField && (
+                <div className="text-xs text-orange-600 mt-1">
+                  Целевая метрика: {widget.targetField}
+                </div>
+              )}
             </div>
           </div>
         );
+      }
+      case 'correlation': {
+        const columns = Array.isArray(datasetInfo?.columns)
+          ? datasetInfo.columns
+          : [];
+        const selectedColumns = Array.isArray(widget.selectedColumns)
+          ? widget.selectedColumns
+          : [];
+        return (
+          <div className="space-y-4">
+            {renderDatasetSelector(widget, {
+              label: 'Набор данных',
+              onDatasetChange: () => ({ selectedColumns: [] }),
+            })}
+            {datasetInfo && columns.length === 0 && (
+              <p className="text-xs text-slate-500">
+                В выбранном наборе пока нет описания столбцов. Добавьте метаданные, чтобы построить матрицу.
+              </p>
+            )}
+            {columns.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Показатели для анализа
+                </Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {columns.map((column) => {
+                    const checked = selectedColumns.includes(column.name);
+                    return (
+                      <label
+                        key={column.name}
+                        className="flex items-center gap-2 rounded-md border border-slate-200/80 bg-slate-50/60 px-2 py-2 text-sm text-slate-600"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(value) =>
+                            toggleWidgetColumn(widget, column.name, Boolean(value))
+                          }
+                        />
+                        <span className="flex-1">
+                          {column.name}
+                          {column.type ? (
+                            <span className="ml-1 text-xs uppercase tracking-wide text-slate-400">
+                              {column.type}
+                            </span>
+                          ) : null}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-slate-500">
+                  Выбрано: {selectedColumns.length} / {columns.length}
+                </p>
+              </div>
+            )}
+            <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 p-6 text-center">
+              <IconComponent className="w-10 h-10 mx-auto text-slate-600 mb-3" />
+              <div className="text-sm font-semibold text-slate-700">
+                {datasetInfo?.name
+                  ? `Матрица корреляции по набору ${datasetInfo.name}`
+                  : 'Выберите набор данных для анализа корреляций'}
+              </div>
+              <div className="text-xs text-slate-600 mt-1">
+                {selectedColumns.length > 1
+                  ? `Будет рассчитано ${selectedColumns.length ** 2} значений корреляции`
+                  : 'Выберите минимум два показателя для расчёта'}
+              </div>
+            </div>
+          </div>
+        );
+      }
+      case 'report': {
+        return (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Название раздела
+              </Label>
+              <Input
+                value={widget.customTitle || ''}
+                onChange={(event) => updateWidget(widget.id, { customTitle: event.target.value })}
+                placeholder="Например: Итоги квартала"
+                className="text-sm"
+              />
+            </div>
+            {renderDatasetSelector(widget, {
+              label: 'Источник (опционально)',
+            })}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Формат блока
+                </Label>
+                <Select
+                  value={widget.reportLayout || 'text'}
+                  onValueChange={(value) => updateWidget(widget.id, { reportLayout: value })}
+                >
+                  <SelectTrigger className="text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {reportLayouts.map((layout) => (
+                      <SelectItem key={layout.value} value={layout.value}>
+                        {layout.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Ключевые выводы
+              </Label>
+              <Textarea
+                value={widget.notes || ''}
+                onChange={(event) => updateWidget(widget.id, { notes: event.target.value })}
+                placeholder="Опишите основные выводы, гипотезы или рекомендации"
+                className="min-h-[120px] text-sm"
+              />
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-blue-50 p-6">
+              <div className="text-sm font-semibold text-slate-700">
+                {(widget.customTitle && widget.customTitle.trim()) || 'Новый раздел отчёта'}
+              </div>
+              <div className="mt-2 text-xs text-slate-500 leading-relaxed">
+                {widget.notes?.trim()
+                  ? widget.notes
+                  : 'Добавьте описание, чтобы подготовить автоматический отчёт.'}
+              </div>
+              {datasetInfo?.name && (
+                <div className="mt-3 text-xs text-slate-400">
+                  Источник данных: {datasetInfo.name}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
       case 'dataset': {
         const columnsCount = datasetInfo?.columns?.length;
         const tags = datasetInfo?.tags?.length ? datasetInfo.tags : widget.tags;
@@ -522,44 +1050,52 @@ export default function DashboardBuilder({
                     >
                       {selectedWidgets.map((widget, index) => (
                         <Draggable key={widget.id} draggableId={widget.id} index={index}>
-                          {(provided, snapshot) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              className={`relative group transition-shadow ${
-                                snapshot.isDragging ? 'shadow-lg shadow-blue-100' : ''
-                              }`}
-                            >
-                              <Card className="overflow-hidden">
-                                <CardHeader className="p-3 bg-slate-50 border-b">
-                                  <div className="flex items-center justify-between">
-                                    <CardTitle className="text-sm font-medium">
-                                      {widget.title}
-                                    </CardTitle>
-                                    <div className="flex items-center gap-1">
-                                      <div
-                                        {...provided.dragHandleProps}
-                                        className="p-1 hover:bg-slate-200 rounded cursor-move"
-                                      >
-                                        <Grip className="w-3 h-3 text-slate-400" />
+                          {(provided, snapshot) => {
+                            const displayTitle =
+                              (widget.customTitle && widget.customTitle.trim()) ||
+                              (widget.type === 'stats' && widget.metricLabel
+                                ? widget.metricLabel
+                                : widget.title);
+
+                            return (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                className={`relative group transition-shadow ${
+                                  snapshot.isDragging ? 'shadow-lg shadow-blue-100' : ''
+                                }`}
+                              >
+                                <Card className="overflow-hidden">
+                                  <CardHeader className="p-3 bg-slate-50 border-b">
+                                    <div className="flex items-center justify-between">
+                                      <CardTitle className="text-sm font-medium">
+                                        {displayTitle}
+                                      </CardTitle>
+                                      <div className="flex items-center gap-1">
+                                        <div
+                                          {...provided.dragHandleProps}
+                                          className="p-1 hover:bg-slate-200 rounded cursor-move"
+                                        >
+                                          <Grip className="w-3 h-3 text-slate-400" />
+                                        </div>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => removeWidget(widget.id)}
+                                          className="h-6 w-6 p-0 hover:bg-red-100 hover:text-red-600"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </Button>
                                       </div>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => removeWidget(widget.id)}
-                                        className="h-6 w-6 p-0 hover:bg-red-100 hover:text-red-600"
-                                      >
-                                        <X className="w-3 h-3" />
-                                      </Button>
                                     </div>
-                                  </div>
-                                </CardHeader>
-                                <CardContent className="p-4">
-                                  {renderWidget(widget)}
-                                </CardContent>
-                              </Card>
-                            </div>
-                          )}
+                                  </CardHeader>
+                                  <CardContent className="p-4">
+                                    {renderWidget(widget)}
+                                  </CardContent>
+                                </Card>
+                              </div>
+                            );
+                          }}
                         </Draggable>
                       ))}
                       {provided.placeholder}
