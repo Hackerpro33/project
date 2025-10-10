@@ -28,6 +28,13 @@ export default function Dashboard() {
   const [visualizations, setVisualizations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const formatNumber = (value, options = {}) => {
+    if (value === null || value === undefined || Number.isNaN(value)) {
+      return "—";
+    }
+    return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1, ...options }).format(value);
+  };
+
   useEffect(() => {
     loadData();
   }, []);
@@ -47,7 +54,7 @@ export default function Dashboard() {
       setIsLoading(false);
     }
   };
-     
+
 
   const sampleTrendData = [
     { name: 'Jan', value: 400, growth: 240 },
@@ -56,6 +63,59 @@ export default function Dashboard() {
     { name: 'Apr', value: 800, growth: 780 },
     { name: 'May', value: 700, growth: 890 },
     { name: 'Jun', value: 900, growth: 1200 }
+  ];
+
+  const now = new Date();
+  const datasetsWithDates = datasets
+    .map((dataset) => {
+      const createdAt = dataset.created_date || dataset.created_at || dataset.createdAt;
+      return createdAt ? new Date(createdAt) : null;
+    })
+    .filter((date) => date instanceof Date && !Number.isNaN(date.valueOf()));
+
+  const averageDatasetAgeDays = datasetsWithDates.length
+    ? datasetsWithDates.reduce((sum, date) => sum + (now - date) / (1000 * 60 * 60 * 24), 0) / datasetsWithDates.length
+    : null;
+
+  const recentUpdatesCount = [...datasets, ...visualizations].filter((item) => {
+    const createdAt = item?.created_date || item?.created_at || item?.createdAt;
+    if (!createdAt) return false;
+    const created = new Date(createdAt);
+    if (Number.isNaN(created.valueOf())) return false;
+    return (now - created) / (1000 * 60 * 60) <= 24;
+  }).length;
+
+  const totalRecords = datasets.reduce(
+    (sum, dataset) => sum + (dataset.row_count || dataset.rows || dataset.record_count || 0),
+    0
+  );
+
+  const forecastVisualizations = visualizations.filter((v) => v.type === "forecast");
+  const forecastShare = visualizations.length
+    ? (forecastVisualizations.length / visualizations.length) * 100
+    : null;
+
+  const heroMetrics = [
+    {
+      label: "Активные обновления",
+      value: formatNumber(recentUpdatesCount),
+      description: "действий за последние 24 часа",
+    },
+    {
+      label: "Объем записей",
+      value: formatNumber(totalRecords, { notation: "compact" }),
+      description: "обработанных локально строк",
+    },
+    {
+      label: "Возраст данных",
+      value: averageDatasetAgeDays !== null ? `${formatNumber(averageDatasetAgeDays)} дн.` : "—",
+      description: "средний срок актуальности",
+    },
+    {
+      label: "Прогнозные модели",
+      value: forecastShare !== null ? `${formatNumber(forecastShare)}%` : "0%",
+      description: "доля от всех визуализаций",
+    },
   ];
 
   return (
@@ -82,6 +142,18 @@ export default function Dashboard() {
                     <Zap className="w-4 h-4 text-yellow-400" />
                     <span className="text-slate-300">Локальный ассистент</span>
                   </div>
+                </div>
+                <div className="mt-8 grid grid-cols-2 gap-4 text-left">
+                  {heroMetrics.map((metric) => (
+                    <div
+                      key={metric.label}
+                      className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-md"
+                    >
+                      <div className="text-xs uppercase tracking-wide text-slate-300">{metric.label}</div>
+                      <div className="mt-2 text-2xl font-semibold text-white">{metric.value}</div>
+                      <div className="mt-1 text-xs text-slate-300/80">{metric.description}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
               <div className="flex-shrink-0">
