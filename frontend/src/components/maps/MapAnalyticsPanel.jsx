@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BarChart3, MapPin, TrendingUp, Activity } from "lucide-react";
+import { BarChart3, MapPin, TrendingUp, Activity, ShieldAlert, Flame } from "lucide-react";
 import { computeMapAnalytics } from "@/utils/mapAnalytics";
 import samplePoints from "./sampleData";
 
@@ -19,6 +19,14 @@ const formatNumber = (value) => {
   }
 
   return value;
+};
+
+const formatPercent = (value) => {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "—";
+  }
+
+  return `${(value * 100).toFixed(Math.abs(value) < 0.1 ? 1 : 0)}%`;
 };
 
 const buildInsights = (analytics) => {
@@ -52,6 +60,28 @@ const buildInsights = (analytics) => {
     insights.push(
       `Чаще всего встречается категория «${topCategory.name}» — ${topCategory.count} точек.`
     );
+  }
+
+  if (analytics.risk?.hasRisk) {
+    const highRisk = analytics.risk.distribution.find((item) => item.level === "Высокий");
+    if (highRisk) {
+      insights.push(
+        `Выделено ${highRisk.count} точек с высоким уровнем криминогенного риска — рекомендуется приоритизировать эти зоны.`
+      );
+    }
+
+    if (analytics.risk.hotspots?.length) {
+      const topHotspot = analytics.risk.hotspots[0];
+      insights.push(
+        `${topHotspot.name} демонстрирует наибольшую концентрацию инцидентов (${formatNumber(topHotspot.value)}), что указывает на необходимость оперативных мер.`
+      );
+    }
+
+    if (analytics.risk.pressureIndex !== null) {
+      insights.push(
+        `Индекс криминогенной нагрузки ${formatPercent(analytics.risk.pressureIndex)} отражает разницу между средним уровнем происшествий и наиболее проблемными районами.`
+      );
+    }
   }
 
   return insights.slice(0, 3);
@@ -148,6 +178,71 @@ export default function MapAnalyticsPanel({ data, config, datasets, isLoading })
                     </Badge>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {analytics.risk?.hasRisk && (
+              <div className="space-y-3 rounded-xl border border-rose-200 bg-rose-50/70 p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-rose-700">
+                    <ShieldAlert className="h-4 w-4" />
+                    Индекс криминогенной нагрузки
+                  </div>
+                  {analytics.risk.pressureIndex !== null && (
+                    <span className="text-xs font-semibold text-rose-600">
+                      {formatPercent(analytics.risk.pressureIndex)}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {analytics.risk.distribution.map((item) => (
+                    <Badge
+                      key={item.level}
+                      variant="secondary"
+                      className={`rounded-full border ${
+                        item.level === "Высокий"
+                          ? "border-rose-300 bg-rose-100 text-rose-700"
+                          : item.level === "Средний"
+                          ? "border-amber-200 bg-amber-50 text-amber-700"
+                          : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      }`}
+                    >
+                      {item.level}
+                      <span className="ml-2 text-xs text-slate-600">{item.count}</span>
+                    </Badge>
+                  ))}
+                </div>
+
+                {analytics.risk.hotspots.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-rose-600">
+                      <Flame className="h-3 w-3" />
+                      Точки повышенного риска
+                    </div>
+                    <ul className="space-y-2">
+                      {analytics.risk.hotspots.map((hotspot, index) => (
+                        <li
+                          key={`${hotspot.name}-${index}`}
+                          className="flex items-center justify-between rounded-lg bg-white/80 px-3 py-2 text-sm text-slate-600"
+                        >
+                          <div>
+                            <div className="font-semibold text-slate-900">{hotspot.name}</div>
+                            <div className="text-xs text-slate-500">{hotspot.riskLevel} риск</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-semibold text-rose-600">{formatNumber(hotspot.value)}</div>
+                            {(hotspot.lat !== null && hotspot.lon !== null) && (
+                              <div className="text-[11px] text-slate-400">
+                                {hotspot.lat.toFixed(2)}, {hotspot.lon.toFixed(2)}
+                              </div>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
 

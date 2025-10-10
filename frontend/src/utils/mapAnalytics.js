@@ -2,7 +2,20 @@ import { findFirstValue, findNameField, parseCoordinate, parseNumericValue } fro
 
 const LAT_CANDIDATES = ["lat", "latitude", "Lat", "Latitude"];
 const LON_CANDIDATES = ["lon", "lng", "long", "longitude", "Lon", "Lng"];
-const VALUE_CANDIDATES = ["value", "metric", "amount", "total", "count"];
+const VALUE_CANDIDATES = [
+  "value",
+  "metric",
+  "amount",
+  "total",
+  "count",
+  "crime",
+  "crimes",
+  "incidents",
+  "incident_count",
+  "crime_rate",
+  "severity",
+  "violations",
+];
 const FORECAST_CANDIDATES = ["forecast", "prediction", "expected"];
 const CORRELATION_CANDIDATES = ["correlation", "corr", "r", "pearson"];
 const CATEGORY_CANDIDATES = ["category", "segment", "type", "class"];
@@ -69,6 +82,90 @@ const calcAverage = (values) => {
   return sum / values.length;
 };
 
+const percentile = (values, q) => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const pos = (sorted.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  if (sorted[base + 1] !== undefined) {
+    return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
+  }
+  return sorted[base];
+};
+
+const buildRiskProfile = (points) => {
+  if (!points.length) {
+    return { hasRisk: false, distribution: [], hotspots: [], pressureIndex: null };
+  }
+
+  const values = points.map((point) => point.value).filter((value) => value !== null);
+  if (!values.length) {
+    return { hasRisk: false, distribution: [], hotspots: [], pressureIndex: null };
+  }
+
+  const highThreshold = percentile(values, 0.75);
+  const mediumThreshold = percentile(values, 0.5);
+
+  const classify = (value) => {
+    if (value === null) return "Не определено";
+    if (highThreshold !== null && value >= highThreshold) return "Высокий";
+    if (mediumThreshold !== null && value >= mediumThreshold) return "Средний";
+    return "Низкий";
+  };
+
+  const distributionMap = new Map();
+  const highValues = [];
+  const enrichedPoints = points.map((point) => {
+    const riskLevel = classify(point.value);
+    distributionMap.set(riskLevel, (distributionMap.get(riskLevel) || 0) + 1);
+    if (riskLevel === "Высокий" && point.value !== null) {
+      highValues.push(point.value);
+    }
+    return {
+      ...point,
+      riskLevel,
+    };
+  });
+
+  const hotspots = enrichedPoints
+    .filter((point) => point.riskLevel === "Высокий")
+    .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
+    .slice(0, 5)
+    .map((point) => ({
+      name: point.name || "Без названия",
+      value: point.value,
+      riskLevel: point.riskLevel,
+      lat: point.lat,
+      lon: point.lon,
+    }));
+
+  const averageValue = calcAverage(values);
+  const averageHigh = calcAverage(highValues);
+  const pressureIndex =
+    averageValue && averageHigh
+      ? (averageHigh - averageValue) / Math.abs(averageValue)
+      : null;
+
+  const distribution = Array.from(distributionMap.entries())
+    .map(([level, count]) => ({ level, count }))
+    .sort((a, b) => {
+      const order = ["Высокий", "Средний", "Низкий", "Не определено"];
+      return order.indexOf(a.level) - order.indexOf(b.level);
+    });
+
+  return {
+    hasRisk: hotspots.length > 0,
+    distribution,
+    hotspots,
+    pressureIndex,
+    thresholds: {
+      high: highThreshold,
+      medium: mediumThreshold,
+    },
+  };
+};
+
 const pickExtremePoint = (points, comparator) => {
   return points.reduce((acc, point) => {
     if (!point.value && point.value !== 0) return acc;
@@ -112,6 +209,7 @@ export const computeMapAnalytics = (rawData, config, options = {}) => {
   const maxPoint = pickExtremePoint(numericPoints, (next, current) => next > current);
   const minPoint = pickExtremePoint(numericPoints, (next, current) => next < current);
   const categories = aggregateCategories(validPoints);
+  const risk = buildRiskProfile(numericPoints);
 
   const forecastPoints = normalizedPoints.filter((point) => point.forecast !== null);
   const forecastValues = forecastPoints.map((point) => point.forecast);
@@ -162,5 +260,6 @@ export const computeMapAnalytics = (rawData, config, options = {}) => {
       strongestPositive,
       strongestNegative,
     },
+    risk,
   };
 };
