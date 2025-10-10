@@ -26,6 +26,8 @@ const STORAGE_KEY = 'dashboard-builder-state';
 
 const NONE_DATASET_VALUE = '__none__';
 
+const WIDGET_DRAG_TYPE = 'application/x-dashboard-widget';
+
 const widgetDefaultsByType = {
   stats: { datasetId: '', metricLabel: 'Всего записей' },
   chart: { datasetId: '', chartVariant: 'line', xField: '', yField: '' },
@@ -134,6 +136,7 @@ export default function DashboardBuilder({
   const [dashboardName, setDashboardName] = useState('Мой дашборд');
   const [selectedWidgets, setSelectedWidgets] = useState([]);
   const [librarySearch, setLibrarySearch] = useState('');
+  const [isCanvasDragOver, setIsCanvasDragOver] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -196,6 +199,90 @@ export default function DashboardBuilder({
       return haystack.includes(query);
     });
   }, [availableWidgets, librarySearch]);
+
+  const availableWidgetMap = useMemo(() => {
+    const map = new Map();
+    availableWidgets.forEach((widget) => {
+      if (widget?.id) {
+        map.set(widget.id, widget);
+      }
+    });
+    return map;
+  }, [availableWidgets]);
+
+  const isWidgetDragEvent = (event) => {
+    const types = event?.dataTransfer?.types;
+    if (!types) {
+      return false;
+    }
+
+    if (typeof types.includes === 'function') {
+      return types.includes(WIDGET_DRAG_TYPE);
+    }
+
+    if (typeof types.contains === 'function') {
+      return types.contains(WIDGET_DRAG_TYPE);
+    }
+
+    return Array.from(types).includes(WIDGET_DRAG_TYPE);
+  };
+
+  const handleLibraryDragStart = (event, widgetId) => {
+    if (!event.dataTransfer) {
+      return;
+    }
+    event.dataTransfer.effectAllowed = 'copy';
+    try {
+      event.dataTransfer.setData(WIDGET_DRAG_TYPE, widgetId);
+    } catch (error) {
+      console.warn('Не удалось инициировать перетаскивание виджета', error);
+    }
+  };
+
+  const handleLibraryDragEnd = () => {
+    setIsCanvasDragOver(false);
+  };
+
+  const handleCanvasDragOver = (event) => {
+    if (!isWidgetDragEvent(event)) {
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+    if (!isCanvasDragOver) {
+      setIsCanvasDragOver(true);
+    }
+  };
+
+  const handleCanvasDragLeave = (event) => {
+    if (!isWidgetDragEvent(event)) {
+      return;
+    }
+    const relatedTarget = event.relatedTarget;
+    if (!relatedTarget || !event.currentTarget.contains(relatedTarget)) {
+      setIsCanvasDragOver(false);
+    }
+  };
+
+  const handleCanvasDrop = (event) => {
+    if (!isWidgetDragEvent(event)) {
+      return;
+    }
+    event.preventDefault();
+    setIsCanvasDragOver(false);
+
+    const widgetId = event.dataTransfer?.getData(WIDGET_DRAG_TYPE);
+    if (!widgetId) {
+      return;
+    }
+
+    const widgetToAdd = availableWidgetMap.get(widgetId);
+    if (widgetToAdd) {
+      addWidget(widgetToAdd);
+    }
+  };
 
   const updateWidget = (widgetId, updates) => {
     setSelectedWidgets((prev) =>
@@ -937,7 +1024,10 @@ export default function DashboardBuilder({
                       <button
                         type="button"
                         onClick={() => addWidget(widget)}
-                        className="w-full text-left"
+                        className="w-full text-left cursor-grab active:cursor-grabbing"
+                        draggable
+                        onDragStart={(event) => handleLibraryDragStart(event, widget.id)}
+                        onDragEnd={handleLibraryDragEnd}
                       >
                         <div className="flex items-start gap-3">
                           <IconComponent className="w-5 h-5 text-slate-600 mt-1" />
@@ -1030,13 +1120,26 @@ export default function DashboardBuilder({
               </Badge>
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent
+            onDragOver={handleCanvasDragOver}
+            onDragLeave={handleCanvasDragLeave}
+            onDrop={handleCanvasDrop}
+            className={`transition-colors ${
+              isCanvasDragOver ? 'bg-blue-50/40 rounded-xl' : ''
+            }`}
+          >
             {isCanvasEmpty ? (
-              <div className="text-center py-16 text-slate-500">
+              <div
+                className={`text-center py-16 text-slate-500 rounded-xl border-2 border-dashed transition-colors ${
+                  isCanvasDragOver
+                    ? 'border-blue-400 bg-blue-50/50 text-slate-600'
+                    : 'border-slate-200/60 bg-slate-50/40'
+                }`}
+              >
                 <Layout className="w-16 h-16 mx-auto mb-4 opacity-30" />
                 <h3 className="font-bold text-slate-700 mb-2">Пустой дашборд</h3>
                 <p className="text-sm">
-                  Выберите виджеты из библиотеки слева, чтобы начать создание дашборда
+                  Перетащите или выберите виджеты из библиотеки слева, чтобы начать создание дашборда
                 </p>
               </div>
             ) : (
@@ -1046,7 +1149,11 @@ export default function DashboardBuilder({
                     <div
                       {...provided.droppableProps}
                       ref={provided.innerRef}
-                      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                      className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 rounded-xl transition-shadow ${
+                        isCanvasDragOver
+                          ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-blue-50 bg-blue-50/40'
+                          : ''
+                      }`}
                     >
                       {selectedWidgets.map((widget, index) => (
                         <Draggable key={widget.id} draggableId={widget.id} index={index}>
