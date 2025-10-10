@@ -1,9 +1,17 @@
 
 ## Running the frontend
 
+Some dev-container configurations fail to resolve the `frontend/` folder when
+running shell tasks (for example `npm install`) from the repository root. The
+helper script below resolves the folder using an absolute path before executing
+`npm`, which avoids the "no filesystem provider for folder frontend" error.
+
 ```bash
+# install dependencies without leaving the repo root
+./scripts/install_frontend_deps.sh
+
+# start the Vite dev server
 cd frontend
-npm install
 npm run dev
 ```
 
@@ -33,6 +41,9 @@ The backend tests cover file uploads, dataset and visualisation CRUD flows, anal
 ## Building the frontend
 
 ```bash
+# ensure dependencies are present (safe to re-run)
+./scripts/install_frontend_deps.sh
+
 cd frontend
 npm run build
 ```
