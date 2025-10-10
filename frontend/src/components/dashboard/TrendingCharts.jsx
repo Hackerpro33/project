@@ -20,7 +20,7 @@ const formatNumber = (value) => {
   return value.toString();
 };
 
-export default function TrendingCharts({ data = [], summary = {}, isLoading = false }) {
+function TrendingCharts({ data = [], summary = {}, isLoading = false }) {
   const hasData = Array.isArray(data) && data.some((item) => (item?.datasets || 0) > 0 || (item?.visualizations || 0) > 0);
 
   const numberFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
@@ -170,4 +170,6 @@ export default function TrendingCharts({ data = [], summary = {}, isLoading = fa
     </Card>
   );
 }
+
+export default TrendingCharts;
 
