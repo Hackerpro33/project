@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,10 +26,14 @@ import {
   BrainCircuit,
   Binary,
   Calculator,
-  CheckCircle2
+  CheckCircle2,
+  LayoutDashboard,
+  Map
 } from "lucide-react";
 
 export default function ChartTypeSelector({ onSelectType, datasets }) {
+  const navigate = useNavigate();
+
   const chartTypes = [
     {
       id: 'line',
@@ -141,6 +146,59 @@ export default function ChartTypeSelector({ onSelectType, datasets }) {
     }
   ];
 
+  const analysisSuites = [
+    {
+      id: 'forecasting',
+      title: 'Лаборатория прогнозов',
+      description: 'Сценарные прогнозы, ансамбль моделей и оценка чувствительности к внешним факторам.',
+      icon: TrendingUp,
+      accent: 'from-sky-500 to-blue-600',
+      features: ['ARIMA/SARIMAX', 'Сценарии оптимист/база/пессимист', 'Анализ чувствительности'],
+      actionLabel: 'Перейти к прогнозу',
+      onClick: () => navigate('/Forecasting')
+    },
+    {
+      id: 'causal',
+      title: 'Причинно-следственная аналитика',
+      description: 'Исследуйте связи между объектами, проверяйте гипотезы и тестируйте эффекты вмешательств.',
+      icon: BrainCircuit,
+      accent: 'from-violet-500 to-fuchsia-600',
+      features: ['Граф зависимостей', 'Difference-in-Differences', 'GMM и тесты причинности'],
+      actionLabel: 'Исследовать связи',
+      onClick: () => navigate('/NetworkGraphs')
+    },
+    {
+      id: 'data-lab',
+      title: 'Мастерская данных',
+      description: 'Готовьте данные к анализу: очистка, обогащение, конструктор признаков и автоматизация.',
+      icon: Sigma,
+      accent: 'from-emerald-500 to-lime-500',
+      features: ['Очистка и нормализация', 'Автогенерация признаков', 'Валидация качеств'],
+      actionLabel: 'Открыть трансформацию',
+      onClick: () => navigate('/DataTransformation')
+    },
+    {
+      id: 'reporting',
+      title: 'Конструктор отчётов',
+      description: 'Собирайте дашборды, комбинируйте виджеты и генерируйте автоматические отчёты.',
+      icon: LayoutDashboard,
+      accent: 'from-orange-500 to-amber-500',
+      features: ['Дашборды и виджеты', 'Автогенерация отчётов', 'Кросс-датасет визуализации'],
+      actionLabel: 'Перейти в конструктор',
+      onClick: () => navigate('/Constructor')
+    },
+    {
+      id: 'geo',
+      title: 'Геоаналитика',
+      description: 'Анализируйте пространственные данные, тепловые карты и маршруты.',
+      icon: Map,
+      accent: 'from-teal-500 to-cyan-500',
+      features: ['Тепловые карты', 'Региональные сравнения', 'Анализ маршрутов'],
+      actionLabel: 'Работать с картами',
+      onClick: () => navigate('/Maps')
+    }
+  ];
+
   const renderToolkitSection = (section) => (
     <div
       key={section.title}
@@ -242,6 +300,23 @@ export default function ChartTypeSelector({ onSelectType, datasets }) {
                   </Badge>
                 ))}
               </div>
+              <div className="space-y-3 pt-2">
+                {econometricsTools.slice(0, 2).map((tool) => (
+                  <div
+                    key={tool.title}
+                    className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3 shadow-inner">
+                    <div className="flex items-start gap-3">
+                      <div className={`rounded-lg bg-gradient-to-r ${tool.accent} p-2 shadow-md`}>
+                        <tool.icon className="h-4 w-4 text-white" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-indigo-50 heading-text">{tool.title}</p>
+                        <p className="text-xs text-indigo-100/80 elegant-text">{tool.description}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
               <Sheet>
                 <SheetTrigger asChild>
                   <Button className="w-full bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white gap-2 elegant-text">
@@ -293,6 +368,23 @@ export default function ChartTypeSelector({ onSelectType, datasets }) {
                   </Badge>
                 ))}
               </div>
+              <div className="space-y-3 pt-2">
+                {mathTools.slice(0, 2).map((tool) => (
+                  <div
+                    key={tool.title}
+                    className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 shadow-inner">
+                    <div className="flex items-start gap-3">
+                      <div className={`rounded-lg bg-gradient-to-r ${tool.accent} p-2 shadow-md`}>
+                        <tool.icon className="h-4 w-4 text-white" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-emerald-50 heading-text">{tool.title}</p>
+                        <p className="text-xs text-emerald-100/80 elegant-text">{tool.description}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
               <Sheet>
                 <SheetTrigger asChild>
                   <Button className="w-full bg-gradient-to-r from-emerald-500 to-lime-500 hover:from-emerald-600 hover:to-lime-600 text-white gap-2 elegant-text">
@@ -337,6 +429,53 @@ export default function ChartTypeSelector({ onSelectType, datasets }) {
               <div key={item} className="flex items-start gap-3 rounded-2xl bg-white/5 p-4">
                 <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-300" />
                 <p className="text-sm text-indigo-100/90 elegant-text">{item}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-0 bg-white/70 backdrop-blur-md shadow-xl">
+        <CardHeader className="space-y-2">
+          <CardTitle className="text-xl font-semibold text-slate-900 heading-text flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-purple-500" /> Витрина аналитических инструментов
+          </CardTitle>
+          <p className="text-sm text-slate-600 elegant-text max-w-3xl">
+            Быстрые переходы к специализированным модулям платформы: от прогностических сценариев до геоаналитики и автоматического формирования отчётов.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {analysisSuites.map((suite) => (
+              <div
+                key={suite.id}
+                className="flex h-full flex-col justify-between rounded-2xl border border-slate-200/70 bg-white/80 p-5 shadow-inner">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`rounded-xl bg-gradient-to-r ${suite.accent} p-3 shadow-md`}>
+                      <suite.icon className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900 heading-text">{suite.title}</h3>
+                      <p className="text-sm text-slate-600 elegant-text">{suite.description}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {suite.features.map((feature) => (
+                      <Badge
+                        key={feature}
+                        variant="secondary"
+                        className="border-slate-200 bg-slate-100 text-slate-700">
+                        {feature}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+                <Button
+                  onClick={suite.onClick}
+                  className={`mt-6 w-full bg-gradient-to-r ${suite.accent} text-white hover:opacity-90 gap-2 heading-text`}>
+                  <Sparkles className="h-4 w-4" /> {suite.actionLabel}
+                </Button>
               </div>
             ))}
           </div>
