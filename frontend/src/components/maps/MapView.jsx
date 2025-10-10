@@ -1,13 +1,56 @@
-
 import React, { useEffect, useMemo } from 'react';
-import { MapContainer, Popup, CircleMarker, useMap } from 'react-leaflet';
+import { MapContainer, Popup, CircleMarker, Marker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { parseCoordinate, parseNumericValue } from "@/utils/mapUtils";
-import samplePoints from "./sampleData";
+import { parseCoordinate, parseNumericValue, findNameField, findFirstValue } from "@/utils/mapUtils";
+import samplePoints, { sampleTimeSeries } from "./sampleData";
 
 import L from 'leaflet';
+
+const DEFAULT_POSITION = [55.7558, 37.6173];
+
+const formatValue = (value) => {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "—";
+  }
+
+  if (typeof value === "number") {
+    return value.toLocaleString("ru-RU", {
+      maximumFractionDigits: Math.abs(value) < 10 ? 2 : 0,
+    });
+  }
+
+  return value;
+};
+
+const formatPercent = (value) => {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "—";
+  }
+
+  return `${(value * 100).toFixed(Math.abs(value) < 0.1 ? 1 : 0)}%`;
+};
+
+const getCategoryColor = (category) => {
+  const colors = {
+    'Мегаполис': 'bg-red-100 text-red-700',
+    'Культурный центр': 'bg-purple-100 text-purple-700',
+    'Промышленный': 'bg-orange-100 text-orange-700',
+    'Научный': 'bg-blue-100 text-blue-700',
+    'Региональный': 'bg-green-100 text-green-700',
+    'Образовательный': 'bg-indigo-100 text-indigo-700',
+    'Торговый': 'bg-yellow-100 text-yellow-700'
+  };
+  return colors[category] || 'bg-gray-100 text-gray-700';
+};
+
+const buildSquareIcon = (color, size) =>
+  L.divIcon({
+    html: `<div style="width:${size}px;height:${size}px;background:${color};border:2px solid rgba(15,23,42,0.15);box-shadow:0 8px 16px rgba(15,23,42,0.25);border-radius:8px;"></div>`,
+    className: 'map-square-icon',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
 
 function LocalTileLayer() {
   const map = useMap();
@@ -58,10 +101,17 @@ function LocalTileLayer() {
   return null;
 }
 
-export default function MapView({ data, config, forecastOverlay, correlationOverlay }) {
-  const position = [55.7558, 37.6173]; // Default position (Moscow)
+export default function MapView({ data, config }) {
+  const timeComparisonActive = useMemo(() => {
+    return Boolean(
+      config?.time_column &&
+      config?.base_period &&
+      config?.comparison_period &&
+      config.base_period !== config.comparison_period
+    );
+  }, [config?.time_column, config?.base_period, config?.comparison_period]);
 
-  const pointsToRender = useMemo(() => {
+  const defaultPoints = useMemo(() => {
     if (Array.isArray(data) && data.length > 0) {
       return data;
     }
@@ -71,42 +121,160 @@ export default function MapView({ data, config, forecastOverlay, correlationOver
     return samplePoints;
   }, [data, config?.dataset_id]);
 
+  const comparisonSource = useMemo(() => {
+    if (!timeComparisonActive) {
+      return [];
+    }
+    if (Array.isArray(data) && data.length > 0) {
+      return data;
+    }
+    if (config?.dataset_id === 'sample') {
+      return sampleTimeSeries;
+    }
+    return [];
+  }, [timeComparisonActive, data, config?.dataset_id]);
+
+  const comparisonPoints = useMemo(() => {
+    if (!timeComparisonActive || comparisonSource.length === 0) {
+      return [];
+    }
+
+    const latColumn = config?.lat_column || 'lat';
+    const lonColumn = config?.lon_column || 'lon';
+    const valueColumn = config?.value_column || 'value';
+    const timeColumn = config?.time_column;
+    const basePeriod = config?.base_period ? String(config.base_period) : '';
+    const comparisonPeriod = config?.comparison_period ? String(config.comparison_period) : '';
+
+    const locations = new Map();
+
+    comparisonSource.forEach((row, index) => {
+      const latValue = parseCoordinate(
+        findFirstValue(row, [latColumn, 'lat', 'latitude', 'Lat', 'LAT'])
+      );
+      const lonValue = parseCoordinate(
+        findFirstValue(row, [lonColumn, 'lon', 'longitude', 'Lng', 'LON'])
+      );
+      const rawValue = findFirstValue(row, [valueColumn, 'value', 'amount', 'metric', 'measure']);
+      const value = parseNumericValue(rawValue);
+      const periodValue = row?.[timeColumn];
+      const period = periodValue !== null && periodValue !== undefined ? String(periodValue) : null;
+
+      if (latValue === null || lonValue === null || value === null || period === null) {
+        return;
+      }
+
+      const name = findNameField(row) || row?.name || row?.city || `Локация ${index + 1}`;
+      const key = `${latValue.toFixed(6)}_${lonValue.toFixed(6)}_${name}`;
+
+      if (!locations.has(key)) {
+        locations.set(key, {
+          lat: latValue,
+          lon: lonValue,
+          name,
+          category: row?.category,
+          description: row?.description,
+          baseValue: null,
+          comparisonValue: null,
+          history: {},
+          rawPoints: [],
+        });
+      }
+
+      const entry = locations.get(key);
+      entry.history[period] = value;
+      entry.rawPoints.push({ period, value, original: row });
+
+      if (period === basePeriod) {
+        entry.baseValue = value;
+      }
+
+      if (period === comparisonPeriod) {
+        entry.comparisonValue = value;
+      }
+
+      if (!entry.category && row?.category) {
+        entry.category = row.category;
+      }
+
+      if (!entry.description && row?.description) {
+        entry.description = row.description;
+      }
+    });
+
+    return Array.from(locations.values())
+      .filter((entry) => entry.baseValue !== null && entry.comparisonValue !== null)
+      .map((entry) => {
+        const change = entry.comparisonValue - entry.baseValue;
+        const changePercent = entry.baseValue !== 0 ? change / entry.baseValue : null;
+        return {
+          ...entry,
+          change,
+          changePercent,
+          basePeriod,
+          comparisonPeriod,
+        };
+      });
+  }, [timeComparisonActive, comparisonSource, config?.lat_column, config?.lon_column, config?.value_column, config?.time_column, config?.base_period, config?.comparison_period]);
+
+  const pointsToRender = timeComparisonActive && comparisonPoints.length > 0 ? comparisonPoints : defaultPoints;
+
   const shouldShowEmptyState = useMemo(() => {
+    if (timeComparisonActive) {
+      return comparisonPoints.length === 0;
+    }
+
     if (!config?.dataset_id || config.dataset_id === 'sample') {
       return false;
     }
+
     return !Array.isArray(data) || data.length === 0;
-  }, [config?.dataset_id, data]);
+  }, [timeComparisonActive, comparisonPoints.length, config?.dataset_id, data]);
 
   const firstValidPoint = useMemo(() => {
-    return pointsToRender.find((point) => {
+    if (timeComparisonActive && comparisonPoints.length > 0) {
+      return comparisonPoints[0];
+    }
+
+    return defaultPoints.find((point) => {
       const latValue = config?.lat_column ? parseCoordinate(point[config.lat_column]) : parseCoordinate(point.lat);
       const lonValue = config?.lon_column ? parseCoordinate(point[config.lon_column]) : parseCoordinate(point.lon);
       return latValue !== null && lonValue !== null;
     });
-  }, [pointsToRender, config]);
+  }, [timeComparisonActive, comparisonPoints, defaultPoints, config?.lat_column, config?.lon_column]);
 
   const mapCenter = firstValidPoint
     ? [
-        config?.lat_column ? parseCoordinate(firstValidPoint[config.lat_column]) : parseCoordinate(firstValidPoint.lat),
-        config?.lon_column ? parseCoordinate(firstValidPoint[config.lon_column]) : parseCoordinate(firstValidPoint.lon),
+        timeComparisonActive && comparisonPoints.length > 0
+          ? firstValidPoint.lat
+          : config?.lat_column
+            ? parseCoordinate(firstValidPoint[config.lat_column])
+            : parseCoordinate(firstValidPoint.lat),
+        timeComparisonActive && comparisonPoints.length > 0
+          ? firstValidPoint.lon
+          : config?.lon_column
+            ? parseCoordinate(firstValidPoint[config.lon_column])
+            : parseCoordinate(firstValidPoint.lon),
       ]
     : (() => {
         if (!pointsToRender.length) {
-          return position;
+          return DEFAULT_POSITION;
         }
-        const fallbackLat = config?.lat_column
-          ? parseCoordinate(pointsToRender[0][config.lat_column])
-          : parseCoordinate(pointsToRender[0].lat);
-        const fallbackLon = config?.lon_column
-          ? parseCoordinate(pointsToRender[0][config.lon_column])
-          : parseCoordinate(pointsToRender[0].lon);
+        const fallbackLat = timeComparisonActive && comparisonPoints.length > 0
+          ? comparisonPoints[0].lat
+          : config?.lat_column
+            ? parseCoordinate(pointsToRender[0][config.lat_column])
+            : parseCoordinate(pointsToRender[0].lat);
+        const fallbackLon = timeComparisonActive && comparisonPoints.length > 0
+          ? comparisonPoints[0].lon
+          : config?.lon_column
+            ? parseCoordinate(pointsToRender[0][config.lon_column])
+            : parseCoordinate(pointsToRender[0].lon);
         if (fallbackLat !== null && fallbackLon !== null) {
           return [fallbackLat, fallbackLon];
         }
-        return position;
+        return DEFAULT_POSITION;
       })();
-
 
   const getMarkerColor = (point) => {
     const rawValue = config?.value_column ? point[config.value_column] : point.value;
@@ -115,17 +283,16 @@ export default function MapView({ data, config, forecastOverlay, correlationOver
     const correlationValue = parseNumericValue(point.correlation);
 
     if (config?.overlay_type === 'forecast' && forecastValue !== null) {
-      const intensity = forecastValue / 1000; // Normalize to 0-1
-      return `hsl(${120 - intensity * 120}, 70%, 50%)`; // Green to red
+      const intensity = forecastValue / 1000;
+      return `hsl(${120 - intensity * 120}, 70%, 50%)`;
     }
     if (config?.overlay_type === 'correlation' && correlationValue !== null) {
       const intensity = Math.abs(correlationValue);
-      return `hsl(${correlationValue > 0 ? 240 : 0}, 70%, ${50 + intensity * 30}%)`; // Blue for positive, red for negative
+      return `hsl(${correlationValue > 0 ? 240 : 0}, 70%, ${50 + intensity * 30}%)`;
     }
 
-    // Default color based on value
-    const intensity = value ? value / 850 : 0; // Normalize based on max sample value
-    return `hsl(${240 - intensity * 60}, 70%, ${45 + intensity * 15}%)`; // Blue to purple gradient
+    const intensity = value ? value / 850 : 0;
+    return `hsl(${240 - intensity * 60}, 70%, ${45 + intensity * 15}%)`;
   };
 
   const getMarkerRadius = (point) => {
@@ -144,19 +311,6 @@ export default function MapView({ data, config, forecastOverlay, correlationOver
     return baseRadius + ((value || 0) / 100);
   };
 
-  const getCategoryColor = (category) => {
-    const colors = {
-      'Мегаполис': 'bg-red-100 text-red-700',
-      'Культурный центр': 'bg-purple-100 text-purple-700',
-      'Промышленный': 'bg-orange-100 text-orange-700',
-      'Научный': 'bg-blue-100 text-blue-700',
-      'Региональный': 'bg-green-100 text-green-700',
-      'Образовательный': 'bg-indigo-100 text-indigo-700',
-      'Торговый': 'bg-yellow-100 text-yellow-700'
-    };
-    return colors[category] || 'bg-gray-100 text-gray-700';
-  };
-
   return (
     <div className="relative h-[70vh] w-full">
       <MapContainer
@@ -166,84 +320,155 @@ export default function MapView({ data, config, forecastOverlay, correlationOver
         style={{ height: '100%', width: '100%', borderRadius: '0.75rem' }}
       >
         <LocalTileLayer />
-        {pointsToRender.map((point, index) => {
-          const lat = config?.lat_column ? parseCoordinate(point[config.lat_column]) : parseCoordinate(point.lat);
-          const lon = config?.lon_column ? parseCoordinate(point[config.lon_column]) : parseCoordinate(point.lon);
-          const rawValue = config?.value_column ? point[config.value_column] : point.value;
-          const value = parseNumericValue(rawValue);
-          const name = point[Object.keys(point).find(k => k.toLowerCase().includes('name') || k.toLowerCase().includes('region'))] || `Точка ${index + 1}`;
+        {timeComparisonActive && comparisonPoints.length > 0
+          ? comparisonPoints.map((point) => {
+              const magnitude = Math.abs(point.change);
+              const size = 24 + Math.min(22, Math.log(magnitude + 1) * 8);
+              const color = point.change > 0
+                ? '#ef4444'
+                : point.change < 0
+                  ? '#22c55e'
+                  : '#f97316';
+              const icon = buildSquareIcon(color, size);
 
-          if (lat === null || lon === null) {
-            return null;
-          }
+              return (
+                <Marker
+                  key={`${point.lat}-${point.lon}-${point.basePeriod}-${point.comparisonPeriod}`}
+                  position={[point.lat, point.lon]}
+                  icon={icon}
+                >
+                  <Popup>
+                    <div className="space-y-3 min-w-64">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-bold text-slate-900 heading-text text-lg">
+                          {point.name}
+                        </h3>
+                        {point.category && (
+                          <Badge className={getCategoryColor(point.category)}>
+                            {point.category}
+                          </Badge>
+                        )}
+                      </div>
 
-          return (
-            <CircleMarker
-              key={index}
-              center={[lat, lon]}
-              radius={getMarkerRadius(point)}
-              pathOptions={{ 
-                color: getMarkerColor(point), 
-                fillColor: getMarkerColor(point), 
-                fillOpacity: 0.7,
-                weight: 2
-              }}
-            >
-              <Popup>
-                <div className="space-y-3 min-w-64">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-slate-900 heading-text text-lg">
-                      {name}
-                    </h3>
-                    {point.category && (
-                      <Badge className={getCategoryColor(point.category)}>
-                        {point.category}
-                      </Badge>
-                    )}
-                  </div>
-                  
-                  {point.description && (
-                    <p className="text-sm text-slate-600 elegant-text">
-                      {point.description}
-                    </p>
-                  )}
-                  
-                  <div className="grid grid-cols-2 gap-2">
-                    {value !== null && value !== undefined && (
-                      <div className="text-center p-2 bg-slate-50 rounded">
-                        <div className="text-sm font-semibold text-slate-700">{typeof value === 'number' ? value.toLocaleString() : value}</div>
-                        <div className="text-xs text-slate-500">{config?.value_column || 'Значение'}</div>
+                      {point.description && (
+                        <p className="text-sm text-slate-600 elegant-text">
+                          {point.description}
+                        </p>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="text-center p-2 bg-slate-50 rounded">
+                          <div className="text-sm font-semibold text-slate-700">
+                            {formatValue(point.baseValue)}
+                          </div>
+                          <div className="text-xs text-slate-500">{point.basePeriod}</div>
+                        </div>
+                        <div className="text-center p-2 bg-slate-50 rounded">
+                          <div className="text-sm font-semibold text-slate-700">
+                            {formatValue(point.comparisonValue)}
+                          </div>
+                          <div className="text-xs text-slate-500">{point.comparisonPeriod}</div>
+                        </div>
                       </div>
-                    )}
-                    
-                    {config?.overlay_type === 'forecast' && point.forecast && (
-                      <div className="text-center p-2 bg-green-50 rounded">
-                        <div className="text-sm font-semibold text-green-700">{point.forecast}</div>
-                        <div className="text-xs text-green-600">Прогноз</div>
+
+                      <div className="rounded bg-white/70 border border-slate-200 p-2">
+                        <div className="text-xs uppercase text-slate-500">Динамика</div>
+                        <div className={`text-lg font-semibold ${point.change > 0 ? 'text-red-600' : point.change < 0 ? 'text-green-600' : 'text-slate-600'}`}>
+                          {point.change > 0 ? '+' : ''}{formatValue(point.change)}
+                          {point.changePercent !== null && (
+                            <span className="ml-2 text-sm text-slate-500">
+                              {point.changePercent > 0 ? '+' : ''}{formatPercent(point.changePercent)}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    )}
-                    
-                    {config?.overlay_type === 'correlation' && point.correlation !== undefined && (
-                      <div className="text-center p-2 bg-blue-50 rounded">
-                        <div className="text-sm font-semibold text-blue-700">{point.correlation.toFixed(2)}</div>
-                        <div className="text-xs text-blue-600">Корреляция</div>
+
+                      <div className="text-xs text-slate-400 border-t pt-2 elegant-text">
+                        Координаты: {point.lat.toFixed(4)}°, {point.lon.toFixed(4)}°
                       </div>
-                    )}
-                  </div>
-                  
-                  <div className="text-xs text-slate-400 border-t pt-2 elegant-text">
-                    Координаты: {lat.toFixed(4)}°, {lon.toFixed(4)}°
-                  </div>
-                </div>
-              </Popup>
-            </CircleMarker>
-          )
-        })}
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })
+          : pointsToRender.map((point, index) => {
+              const lat = config?.lat_column ? parseCoordinate(point[config.lat_column]) : parseCoordinate(point.lat);
+              const lon = config?.lon_column ? parseCoordinate(point[config.lon_column]) : parseCoordinate(point.lon);
+              const rawValue = config?.value_column ? point[config.value_column] : point.value;
+              const value = parseNumericValue(rawValue);
+              const name = findNameField(point) || point.name || point.city || `Точка ${index + 1}`;
+
+              if (lat === null || lon === null) {
+                return null;
+              }
+
+              return (
+                <CircleMarker
+                  key={`${lat}-${lon}-${index}`}
+                  center={[lat, lon]}
+                  radius={getMarkerRadius(point)}
+                  pathOptions={{
+                    color: getMarkerColor(point),
+                    fillColor: getMarkerColor(point),
+                    fillOpacity: 0.7,
+                    weight: 2
+                  }}
+                >
+                  <Popup>
+                    <div className="space-y-3 min-w-64">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-bold text-slate-900 heading-text text-lg">
+                          {name}
+                        </h3>
+                        {point.category && (
+                          <Badge className={getCategoryColor(point.category)}>
+                            {point.category}
+                          </Badge>
+                        )}
+                      </div>
+
+                      {point.description && (
+                        <p className="text-sm text-slate-600 elegant-text">
+                          {point.description}
+                        </p>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-2">
+                        {value !== null && value !== undefined && (
+                          <div className="text-center p-2 bg-slate-50 rounded">
+                            <div className="text-sm font-semibold text-slate-700">{typeof value === 'number' ? value.toLocaleString('ru-RU') : value}</div>
+                            <div className="text-xs text-slate-500">{config?.value_column || 'Значение'}</div>
+                          </div>
+                        )}
+
+                        {config?.overlay_type === 'forecast' && point.forecast && (
+                          <div className="text-center p-2 bg-green-50 rounded">
+                            <div className="text-sm font-semibold text-green-700">{point.forecast}</div>
+                            <div className="text-xs text-green-600">Прогноз</div>
+                          </div>
+                        )}
+
+                        {config?.overlay_type === 'correlation' && point.correlation !== undefined && (
+                          <div className="text-center p-2 bg-blue-50 rounded">
+                            <div className="text-sm font-semibold text-blue-700">{point.correlation.toFixed(2)}</div>
+                            <div className="text-xs text-blue-600">Корреляция</div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="text-xs text-slate-400 border-t pt-2 elegant-text">
+                        Координаты: {lat.toFixed(4)}°, {lon.toFixed(4)}°
+                      </div>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              );
+            })}
       </MapContainer>
       {shouldShowEmptyState && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="rounded-xl bg-white/80 px-4 py-2 text-sm text-slate-600 shadow-md">
-            Нет данных для отображения. Проверьте выбранные столбцы координат.
+            Нет данных для отображения. Проверьте выбранные столбцы и периоды.
           </div>
         </div>
       )}

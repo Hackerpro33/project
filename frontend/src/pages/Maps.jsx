@@ -21,7 +21,10 @@ export default function Maps() {
     lat_column: 'latitude',
     lon_column: 'longitude',
     value_column: 'value',
-    overlay_type: 'none'
+    overlay_type: 'none',
+    time_column: 'period',
+    base_period: '2023-Q1',
+    comparison_period: '2023-Q3'
   });
   const [isDatasetLoading, setIsDatasetLoading] = useState(false);
 
@@ -162,7 +165,10 @@ export default function Maps() {
       lat_column: '',
       lon_column: '',
       value_column: '',
-      overlay_type: 'none'
+      overlay_type: 'none',
+      time_column: '',
+      base_period: '',
+      comparison_period: ''
     });
     setMapData([]);
     setShowConfigurator(true);

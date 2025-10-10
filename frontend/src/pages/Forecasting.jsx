@@ -26,7 +26,10 @@ export default function Forecasting() {
     lat_column: '',
     lon_column: '',
     value_column: '',
-    overlay_type: 'none'
+    overlay_type: 'none',
+    time_column: '',
+    base_period: '',
+    comparison_period: ''
   };
   const [mapConfig, setMapConfig] = useState(defaultMapConfig);
   const [mapData, setMapData] = useState([]);
