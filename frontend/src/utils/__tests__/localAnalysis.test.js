@@ -248,17 +248,20 @@ describe("convertDataset", () => {
     columns: [
       { name: "city", type: "string" },
       { name: "sales", type: "number" },
+      { name: "notes with space", type: "string" },
     ],
     sample_data: [
-      { city: "Paris", sales: 120 },
-      { city: "Berlin", sales: 80 },
+      { city: "Paris", sales: 120, "notes with space": "ACME, Inc." },
+      { city: "Berlin", sales: 80, "notes with space": "Line1\nLine2" },
+      { city: "Rome", sales: 100, "notes with space": "<script>alert(1)</script>" },
     ],
   };
 
   it("converts to SQL with sanitized identifiers", () => {
     const result = convertDataset({ dataset, format: "sql" });
     expect(result.converted_data).toContain("CREATE TABLE Retail_Data");
-    expect(result.converted_data).toContain("INSERT INTO Retail_Data VALUES ('Paris', 120);");
+    expect(result.converted_data).toContain("notes_with_space TEXT");
+    expect(result.converted_data).toContain("INSERT INTO Retail_Data VALUES ('Paris', 120, 'ACME, Inc.');");
   });
 
   it("adds compatibility notes for virtual Excel export", () => {
@@ -266,6 +269,59 @@ describe("convertDataset", () => {
     expect(result.compatibility_notes).toContain(
       "Формат сгенерирован в виде текстового представления для локальной загрузки."
     );
+  });
+
+  it("quotes CSV values that include delimiters or newlines", () => {
+    const result = convertDataset({ dataset, format: "csv" });
+    expect(result.converted_data).toContain('"ACME, Inc."');
+    expect(result.converted_data).toContain('"Line1\nLine2"');
+  });
+
+  it("supports disabling CSV headers via options", () => {
+    const result = convertDataset({ dataset, format: "csv", options: { includeHeaders: false } });
+    expect(result.converted_data.startsWith('Paris,120,"ACME, Inc."')).toBe(true);
+  });
+
+  it("serializes JSON in a parseable structure", () => {
+    const result = convertDataset({ dataset, format: "json" });
+    expect(() => JSON.parse(result.converted_data)).not.toThrow();
+  });
+
+  it("sanitizes XML tags and escapes special characters", () => {
+    const result = convertDataset({ dataset, format: "xml" });
+    expect(result.converted_data).toContain("<notes_with_space>ACME, Inc.</notes_with_space>");
+    expect(result.converted_data).toContain(
+      "<notes_with_space>&lt;script&gt;alert(1)&lt;/script&gt;</notes_with_space>"
+    );
+  });
+
+  it("escapes HTML table content", () => {
+    const result = convertDataset({ dataset, format: "html" });
+    expect(result.converted_data).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(result.converted_data).toContain("<th>notes with space</th>");
+  });
+
+  it("formats plain text tables with padded columns", () => {
+    const result = convertDataset({ dataset, format: "txt" });
+    expect(result.converted_data.split("\n")[0]).toContain("city");
+    expect(result.converted_data).toContain("Line1 Line2");
+  });
+
+  it("falls back to CSV-like output for parquet with compatibility note", () => {
+    const result = convertDataset({ dataset, format: "parquet" });
+    expect(result.converted_data).toContain('"ACME, Inc."');
+    expect(result.compatibility_notes).toContain(
+      "Формат сгенерирован в виде текстового представления для локальной загрузки."
+    );
+  });
+
+  it("derives columns from sample data when metadata is missing", () => {
+    const minimalDataset = {
+      name: "Dynamic",
+      sample_data: [{ dynamic: 1, value: "ok" }],
+    };
+    const result = convertDataset({ dataset: minimalDataset, format: "csv" });
+    expect(result.converted_data.startsWith("dynamic,value")).toBe(true);
   });
 });
 

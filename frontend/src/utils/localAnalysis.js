@@ -740,55 +740,190 @@ export function analyzeDataset(dataset = {}) {
   };
 }
 
+const toDisplayString = (value) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+};
+
+const escapeCsvValue = (value, delimiter) => {
+  const raw = toDisplayString(value);
+  const escapedQuotes = raw.replace(/"/g, '""');
+  const needsEscaping =
+    escapedQuotes.includes("\n") ||
+    escapedQuotes.includes("\r") ||
+    escapedQuotes.includes(delimiter) ||
+    /(^\s|\s$)/.test(escapedQuotes);
+  return needsEscaping ? `"${escapedQuotes}"` : escapedQuotes;
+};
+
+const escapeXmlValue = (value) =>
+  toDisplayString(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+
+const escapeHtmlValue = (value) =>
+  toDisplayString(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const sanitizeIdentifier = (value, fallback) => {
+  const base = (value ?? "").toString().trim().replace(/[^a-zA-Z0-9_:-]+/g, "_");
+  return base || fallback;
+};
+
+const deriveColumns = (dataset = {}) => {
+  const declared = Array.isArray(dataset.columns) ? dataset.columns : [];
+  if (declared.length) {
+    return declared.map((column, index) => ({
+      name: column?.name ?? `column_${index + 1}`,
+      ...column,
+    }));
+  }
+
+  const sampleRow = Array.isArray(dataset.sample_data) ? dataset.sample_data[0] : undefined;
+  if (sampleRow && typeof sampleRow === "object") {
+    return Object.keys(sampleRow).map((name) => ({ name }));
+  }
+
+  return [];
+};
+
+const buildUniqueFieldMap = (columns = []) => {
+  const used = new Set();
+  return columns.map((column, index) => {
+    const fallback = `field_${index + 1}`;
+    const candidate = sanitizeIdentifier(column?.name, fallback);
+    let unique = candidate;
+    let counter = 1;
+    while (used.has(unique)) {
+      counter += 1;
+      unique = `${candidate}_${counter}`;
+    }
+    used.add(unique);
+    return { original: column?.name ?? fallback, safe: unique };
+  });
+};
+
+const computePlainTextWidths = (headers, rows) =>
+  headers.map((header, columnIndex) => {
+    const values = rows.map((row) => row[columnIndex] ?? "");
+    const all = [header, ...values];
+    return all.reduce((width, value) => Math.max(width, value.length), 0);
+  });
+
 const formatGenerators = {
   csv: ({ dataset, options }) => {
     const delimiter = options?.delimiter ?? ",";
-    const headers = (dataset.columns || []).map((column) => column.name);
-    const rows = (dataset.sample_data || []).map((row) => headers.map((header) => row?.[header] ?? ""));
-    return [headers.join(delimiter), ...rows.map((row) => row.join(delimiter))].join("\\n");
+    const includeHeaders = options?.includeHeaders !== false;
+    const columns = deriveColumns(dataset);
+    const fieldNames = columns.map((column) => column.name ?? "");
+    const rows = dataset.sample_data || [];
+
+    const lines = [];
+    if (includeHeaders && fieldNames.length) {
+      lines.push(fieldNames.map((header) => escapeCsvValue(header, delimiter)).join(delimiter));
+    }
+
+    rows.forEach((row) => {
+      const values = fieldNames.map((header) => escapeCsvValue(row?.[header], delimiter));
+      lines.push(values.join(delimiter));
+    });
+
+    return lines.join("\\n");
   },
   json: ({ dataset }) => JSON.stringify(dataset.sample_data || [], null, 2),
   xml: ({ dataset }) => {
     const rows = dataset.sample_data || [];
-    const fields = (dataset.columns || []).map((column) => column.name);
+    const fields = buildUniqueFieldMap(deriveColumns(dataset));
+
+    if (!rows.length) {
+      return "<dataset />";
+    }
+
     const body = rows
-      .map((row) =>
-        ["  <row>", ...fields.map((field) => `    <${field}>${row?.[field] ?? ""}</${field}>`), "  </row>"].join("\\n")
-      )
+      .map((row) => {
+        const cells = fields
+          .map((field) => `    <${field.safe}>${escapeXmlValue(row?.[field.original])}</${field.safe}>`)
+          .join("\\n");
+        return `  <row>\\n${cells}\\n  </row>`;
+      })
       .join("\\n");
+
     return `<dataset>\\n${body}\\n</dataset>`;
   },
   html: ({ dataset }) => {
-    const headers = (dataset.columns || []).map((column) => column.name);
+    const columns = deriveColumns(dataset);
+    const fieldNames = columns.map((column) => column.name ?? "");
     const rows = dataset.sample_data || [];
-    const headerHtml = headers.map((header) => `<th>${header}</th>`).join("");
+    const headerHtml = fieldNames.map((header) => `<th>${escapeHtmlValue(header)}</th>`).join("");
     const body = rows
-      .map((row) => `<tr>${headers.map((header) => `<td>${row?.[header] ?? ""}</td>`).join("")}</tr>`)
+      .map(
+        (row) =>
+          `    <tr>${fieldNames
+            .map((header) => `<td>${escapeHtmlValue(row?.[header])}</td>`)
+            .join("")}</tr>`
+      )
       .join("\\n");
-    return `<!DOCTYPE html>\\n<table>\\n  <thead><tr>${headerHtml}</tr></thead>\\n  <tbody>\\n${body}\\n  </tbody>\\n</table>`;
+
+    const bodySection = body ? `\\n${body}\\n  ` : "";
+
+    return `<!DOCTYPE html>\\n<table>\\n  <thead>\\n    <tr>${headerHtml}</tr>\\n  </thead>\\n  <tbody>${bodySection}</tbody>\\n</table>`;
   },
   txt: ({ dataset }) => {
-    const headers = (dataset.columns || []).map((column) => column.name);
-    const rows = dataset.sample_data || [];
-    const headerRow = headers.join(" | ");
-    const divider = headers.map((header) => "-".repeat(header.length || 3)).join("-+-");
-    const body = rows.map((row) => headers.map((header) => String(row?.[header] ?? "")).join(" | "));
-    return [headerRow, divider, ...body].join("\\n");
+    const columns = deriveColumns(dataset);
+    const fieldNames = columns.map((column) => column.name ?? "");
+    const headerLabels = fieldNames.map((name) => toDisplayString(name));
+    const rows = (dataset.sample_data || []).map((row) =>
+      fieldNames.map((header) => toDisplayString(row?.[header]).replace(/[\r\n]+/g, " "))
+    );
+
+    if (!fieldNames.length && !rows.length) {
+      return "";
+    }
+
+    if (!fieldNames.length) {
+      return rows.map((row) => row.join(" | ")).join("\\n");
+    }
+
+    const widths = computePlainTextWidths(headerLabels, rows);
+    const formatRow = (values) =>
+      values
+        .map((value, index) => value.padEnd(widths[index], " "))
+        .join(" | ")
+        .trimEnd();
+
+    const divider = widths.map((width) => "-".repeat(width)).join("-+-");
+    const lines = [formatRow(headerLabels), divider, ...rows.map((row) => formatRow(row))];
+    return lines.join("\\n");
   },
 };
 
 formatGenerators.sql = ({ dataset }) => {
   const tableName = dataset.name?.replace(/[^a-zA-Z0-9_]+/g, "_") || "dataset";
-  const columns = dataset.columns || [];
-  const createTable = `CREATE TABLE ${tableName} (\\n${columns
-    .map((column) => `  ${column.name.replace(/[^a-zA-Z0-9_]+/g, "_")} ${column.type === "number" ? "NUMERIC" : "TEXT"}`)
+  const columns = deriveColumns(dataset);
+  const fields = buildUniqueFieldMap(columns);
+  const createTable = `CREATE TABLE ${tableName} (\\n${fields
+    .map((field, index) => {
+      const column = columns[index];
+      const type = column?.type === "number" ? "NUMERIC" : "TEXT";
+      return `  ${field.safe} ${type}`;
+    })
     .join(",\\n")}\\n);`;
   const rows = dataset.sample_data || [];
   const inserts = rows
     .map((row) => {
-      const values = columns
-        .map((column) => {
-          const value = row?.[column.name];
+      const values = fields
+        .map((field) => {
+          const original = field.original;
+          const value = original ? row?.[original] : undefined;
           if (value === null || value === undefined) return "NULL";
           return typeof value === "number" ? value : `'${String(value).replace(/'/g, "''")}'`;
         })

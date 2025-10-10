@@ -38,7 +38,11 @@ export default function ExportCenter({ datasets, supportedFormats, isLoading }) 
     setExportResult(null);
 
     try {
-      const dataset = datasets.find(d => d.id === selectedDataset);
+      const dataset = datasets.find(d => String(d.id) === selectedDataset);
+
+      if (!dataset) {
+        throw new Error('Выбранный набор данных не найден.');
+      }
       
       const result = convertDataset({ dataset, format: exportFormat, options: exportOptions });
 
@@ -106,7 +110,7 @@ export default function ExportCenter({ datasets, supportedFormats, isLoading }) 
                 </SelectTrigger>
                 <SelectContent>
                   {datasets.map(dataset => (
-                    <SelectItem key={dataset.id} value={dataset.id}>
+                    <SelectItem key={dataset.id} value={String(dataset.id)}>
                       <div className="flex items-center gap-2">
                         <Database className="w-4 h-4" />
                         {dataset.name}
@@ -142,7 +146,7 @@ export default function ExportCenter({ datasets, supportedFormats, isLoading }) 
             <div className="p-4 bg-slate-50 rounded-lg">
               <h4 className="font-semibold text-slate-900 mb-2">Предпросмотр данных</h4>
               {(() => {
-                const dataset = datasets.find(d => d.id === selectedDataset);
+                const dataset = datasets.find(d => String(d.id) === selectedDataset);
                 return dataset ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-4 text-sm text-slate-600">
