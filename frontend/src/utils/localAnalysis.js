@@ -46,6 +46,24 @@ const pearsonCorrelation = (seriesA, seriesB) => {
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+const normalizeColumnType = (type) => {
+  if (!type) return "string";
+  const lower = String(type).toLowerCase();
+  if (["int", "integer", "float", "double", "number", "numeric"].includes(lower)) {
+    return "number";
+  }
+  if (["bool", "boolean"].includes(lower)) {
+    return "boolean";
+  }
+  if (lower.includes("date") || lower.includes("time")) {
+    return "datetime";
+  }
+  return "string";
+};
+
+const createRowFingerprint = (row, columns) =>
+  JSON.stringify(columns.map((column) => (row?.[column] ?? null)));
+
 export function generateForecastReport({ historical, horizon, externalFactors = [] }) {
   const horizonDays = Math.max(1, Math.floor(horizon ?? 7));
   const timeline = Array.isArray(historical) ? historical : [];
@@ -260,6 +278,127 @@ export function buildNetworkGraph({ datasetName, columns, rows, graphType }) {
   return {
     nodes,
     links,
+    insights,
+  };
+}
+
+export function compareTables({ left, right, keyColumns }) {
+  const leftColumns = new Map(
+    (left?.columns || []).map((column) => [column.name, normalizeColumnType(column.type)])
+  );
+  const rightColumns = new Map(
+    (right?.columns || []).map((column) => [column.name, normalizeColumnType(column.type)])
+  );
+
+  const commonColumns = (keyColumns && keyColumns.length
+    ? keyColumns.filter((column) => leftColumns.has(column) && rightColumns.has(column))
+    : [...leftColumns.keys()].filter((column) => rightColumns.has(column)));
+
+  const matchingColumns = commonColumns.filter(
+    (column) => leftColumns.get(column) === rightColumns.get(column)
+  );
+  const typeMismatches = commonColumns
+    .filter((column) => leftColumns.get(column) !== rightColumns.get(column))
+    .map((column) => ({
+      column,
+      left_type: leftColumns.get(column),
+      right_type: rightColumns.get(column),
+    }));
+  const leftOnlyColumns = [...leftColumns.keys()].filter((column) => !rightColumns.has(column));
+  const rightOnlyColumns = [...rightColumns.keys()].filter((column) => !leftColumns.has(column));
+
+  const rowsToCompare = matchingColumns.length ? matchingColumns : commonColumns;
+  const leftRows = (left?.sample_data || []).map((row) => ({
+    raw: row,
+    fingerprint: createRowFingerprint(row, rowsToCompare),
+  }));
+  const rightRows = (right?.sample_data || []).map((row) => ({
+    raw: row,
+    fingerprint: createRowFingerprint(row, rowsToCompare),
+  }));
+
+  const leftRowCounts = new Map();
+  leftRows.forEach((entry) => {
+    leftRowCounts.set(entry.fingerprint, (leftRowCounts.get(entry.fingerprint) ?? 0) + 1);
+  });
+  const rightRowCounts = new Map();
+  rightRows.forEach((entry) => {
+    rightRowCounts.set(entry.fingerprint, (rightRowCounts.get(entry.fingerprint) ?? 0) + 1);
+  });
+
+  let matchingRowsCount = 0;
+  for (const [fingerprint, count] of leftRowCounts.entries()) {
+    if (rightRowCounts.has(fingerprint)) {
+      matchingRowsCount += Math.min(count, rightRowCounts.get(fingerprint));
+    }
+  }
+
+  const leftOnlyRows = [];
+  for (const [fingerprint, count] of leftRowCounts.entries()) {
+    const rightCount = rightRowCounts.get(fingerprint) ?? 0;
+    if (count > rightCount) {
+      const samples = leftRows
+        .filter((entry) => entry.fingerprint === fingerprint)
+        .slice(0, 3)
+        .map((entry) => entry.raw);
+      leftOnlyRows.push({ fingerprint, count: count - rightCount, samples });
+    }
+  }
+
+  const rightOnlyRows = [];
+  for (const [fingerprint, count] of rightRowCounts.entries()) {
+    const leftCount = leftRowCounts.get(fingerprint) ?? 0;
+    if (count > leftCount) {
+      const samples = rightRows
+        .filter((entry) => entry.fingerprint === fingerprint)
+        .slice(0, 3)
+        .map((entry) => entry.raw);
+      rightOnlyRows.push({ fingerprint, count: count - leftCount, samples });
+    }
+  }
+
+  const insights = [];
+  if (!commonColumns.length) {
+    insights.push("Таблицы не имеют общих столбцов — автоматическое сравнение невозможно.");
+  } else {
+    insights.push(
+      `Совпадающих столбцов: ${matchingColumns.length} из ${commonColumns.length}.` +
+        (typeMismatches.length
+          ? ` Для ${typeMismatches.length} столбцов обнаружены различия типов данных.`
+          : " Типы данных идентичны для общих столбцов.")
+    );
+
+    if (rowsToCompare.length) {
+      insights.push(
+        `По общим столбцам найдено ${matchingRowsCount} совпадающих строк из ${
+          Math.max(leftRows.length, rightRows.length)
+        } проверенных.`
+      );
+    }
+
+    if (leftOnlyColumns.length) {
+      insights.push(`У первой таблицы есть уникальные столбцы: ${leftOnlyColumns.join(", ")}.`);
+    }
+    if (rightOnlyColumns.length) {
+      insights.push(`У второй таблицы есть уникальные столбцы: ${rightOnlyColumns.join(", ")}.`);
+    }
+  }
+
+  return {
+    column_comparison: {
+      matching_columns: matchingColumns,
+      type_mismatches: typeMismatches,
+      left_only: leftOnlyColumns,
+      right_only: rightOnlyColumns,
+    },
+    row_comparison: {
+      compared_columns: rowsToCompare,
+      matching_rows: matchingRowsCount,
+      left_only_rows: leftOnlyRows,
+      right_only_rows: rightOnlyRows,
+      left_sampled_total: leftRows.length,
+      right_sampled_total: rightRows.length,
+    },
     insights,
   };
 }
