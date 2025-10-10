@@ -93,19 +93,39 @@ export default function MapAnalyticsPanel({ data, config, datasets, isLoading })
     [datasets, config?.dataset_id]
   );
 
+  const datasetLabel = useMemo(() => {
+    if (selectedDataset?.name) {
+      return selectedDataset.name;
+    }
+
+    if (config?.dataset_id === "sample") {
+      return "Образец данных";
+    }
+
+    return "";
+  }, [selectedDataset?.name, config?.dataset_id]);
+
+  const fallbackSample = useMemo(
+    () => (config?.dataset_id === "sample" ? samplePoints : undefined),
+    [config?.dataset_id]
+  );
+
   const analytics = useMemo(
     () =>
       computeMapAnalytics(data, config, {
         datasetSample: selectedDataset?.sample_data,
         datasetId: config?.dataset_id,
-        datasetName:
-          selectedDataset?.name ||
-          (config?.dataset_id === "sample" || !config?.dataset_id
-            ? "Образец данных"
-            : ""),
-        fallbackSample: samplePoints,
+        datasetName: datasetLabel,
+        fallbackSample,
       }),
-    [data, config, selectedDataset?.sample_data, selectedDataset?.name]
+    [
+      data,
+      config,
+      selectedDataset?.sample_data,
+      config?.dataset_id,
+      datasetLabel,
+      fallbackSample,
+    ]
   );
 
   const insights = useMemo(() => buildInsights(analytics), [analytics]);

@@ -165,7 +165,7 @@ export default function DatasetPreview({ dataset, onClose }) {
                   <p className="text-sm text-slate-600 mt-2">{aiSuggestions.summary}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {aiSuggestions.focus_areas.map((area) => (
+                  {(aiSuggestions.focus_areas ?? []).map((area) => (
                     <Badge key={area} variant="secondary" className="text-[11px] bg-white text-slate-700 border border-slate-200">
                       {area}
                     </Badge>
@@ -173,14 +173,18 @@ export default function DatasetPreview({ dataset, onClose }) {
                 </div>
               </div>
               <ul className="mt-4 space-y-2 list-disc list-inside text-sm text-slate-700">
-                {aiSuggestions.suggestions.map((item, index) => (
+                {(aiSuggestions.suggestions ?? []).map((item, index) => (
                   <li key={index}>{item}</li>
                 ))}
               </ul>
               <div className="mt-4 text-xs text-slate-500">
-                <p>{aiSuggestions.context_note}</p>
-                <p className="mt-1">{aiSuggestions.local_execution_note}</p>
+                {aiSuggestions.context_note && <p>{aiSuggestions.context_note}</p>}
+                {aiSuggestions.local_execution_note && (
+                  <p className="mt-1">{aiSuggestions.local_execution_note}</p>
+                )}
               </div>
+            </div>
+          )}
           {/* AI Insights */}
           {aiSummary && (
             <div className="space-y-4">
