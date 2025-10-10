@@ -18,6 +18,8 @@ import Settings from "./Settings";
 
 import DataTransformation from "./DataTransformation";
 
+import Assistant from "./Assistant";
+
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 
 const PAGES = {
@@ -39,6 +41,8 @@ const PAGES = {
     Settings: Settings,
     
     DataTransformation: DataTransformation,
+
+    Assistant: Assistant,
     
 }
 
@@ -82,9 +86,11 @@ function PagesContent() {
                 <Route path="/Constructor" element={<Constructor />} />
                 
                 <Route path="/Settings" element={<Settings />} />
-                
+
                 <Route path="/DataTransformation" element={<DataTransformation />} />
-                
+
+                <Route path="/Assistant" element={<Assistant />} />
+
             </Routes>
         </Layout>
     );
