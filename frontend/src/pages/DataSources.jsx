@@ -66,8 +66,27 @@ export default function DataSources() {
     let uploadedFileUrl = null;
 
     try {
-      const { file_url } = await uploadFile({ file });
+      const { file_url, quick_extraction } = await uploadFile({ file });
       uploadedFileUrl = file_url;
+
+      if (quick_extraction?.columns?.length) {
+        const normalizedColumns = quick_extraction.columns.map((column) => ({
+          name: column.name,
+          type: column.type || 'string',
+        }));
+
+        setPendingDataset({
+          name: file.name.replace(/\.[^/.]+$/, ""),
+          description: `Автоматически распознанный набор данных из ${file.name}`,
+          file_url: uploadedFileUrl,
+          columns: normalizedColumns,
+          row_count: quick_extraction.row_count || 0,
+          sample_data: quick_extraction.sample_data || [],
+          insights: quick_extraction.insights || [],
+        });
+        setShowImportPreview(true);
+        return;
+      }
 
       // Проверяем тип файла
       const fileExtension = file.name.split('.').pop().toLowerCase();
@@ -147,8 +166,9 @@ export default function DataSources() {
       } else {
         alert("Произошла непредвиденная ошибка при загрузке файла. Пожалуйста, проверьте подключение к локальной сети и попробуйте снова.");
       }
+    } finally {
+      setIsUploading(false);
     }
-    setIsUploading(false);
   };
 
   const handleFallbackImport = (file, file_url) => {
