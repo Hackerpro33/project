@@ -23,6 +23,42 @@ const formatNumber = (value) => {
 export default function TrendingCharts({ data = [], summary = {}, isLoading = false }) {
   const hasData = Array.isArray(data) && data.some((item) => (item?.datasets || 0) > 0 || (item?.visualizations || 0) > 0);
 
+export default function TrendingCharts({ data }) {
+  const numberFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
+  const totalValue = data.reduce((sum, point) => sum + (point.value || 0), 0);
+  const totalGrowth = data.reduce((sum, point) => sum + (point.growth || 0), 0);
+  const averageValue = data.length ? totalValue / data.length : 0;
+  const averageGrowth = data.length ? totalGrowth / data.length : 0;
+  const firstPoint = data[0] || {};
+  const lastPoint = data[data.length - 1] || {};
+  const growthMomentum = (lastPoint.value || 0) - (firstPoint.value || 0);
+  const stabilityIndex = data.length > 1
+    ? Math.max(0, 100 - (Math.abs(growthMomentum) / Math.max(lastPoint.value || 1, 1)) * 35)
+    : 100;
+
+  const summaryMetrics = [
+    {
+      value: `${numberFormatter.format(averageValue)}`,
+      label: "Средняя нагрузка",
+      description: "обработка данных за период",
+    },
+    {
+      value: `${numberFormatter.format(averageGrowth)}`,
+      label: "Средний рост",
+      description: "увеличение метрик день к дню",
+    },
+    {
+      value: `${numberFormatter.format(growthMomentum)} ед.`,
+      label: "Импульс",
+      description: "изменение от начала периода",
+    },
+    {
+      value: `${numberFormatter.format(stabilityIndex)}%`,
+      label: "Индекс стабильности",
+      description: "колебания процессов обработки",
+    },
+  ];
+
   return (
     <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-xl">
       <CardHeader>
@@ -100,6 +136,15 @@ export default function TrendingCharts({ data = [], summary = {}, isLoading = fa
                 </p>
               </div>
 
+        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
+          {summaryMetrics.map((metric) => (
+            <div key={metric.label} className="rounded-xl bg-slate-50/70 p-3 text-center">
+              <div className="text-xl font-semibold text-slate-900">{metric.value}</div>
+              <div className="text-xs font-medium text-slate-600">{metric.label}</div>
+              <div className="mt-1 text-[11px] text-slate-500">{metric.description}</div>
+            </div>
+          ))}
+        </div>
               <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-4">
                 <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Визуализации</p>
                 <p className="text-2xl font-bold text-slate-900 mt-2">{summary.visualizationCount ?? 0}</p>
