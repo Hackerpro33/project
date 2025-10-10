@@ -8,6 +8,7 @@ import { Compass, Save, X, RefreshCw } from "lucide-react";
 
 const LAT_KEYWORDS = ['lat', 'latitude', 'широт', 'широта', 'y_coord', 'y coordinate'];
 const LON_KEYWORDS = ['lon', 'lng', 'longitude', 'долгот', 'долгота', 'x_coord', 'x coordinate'];
+const TIME_KEYWORDS = ['date', 'time', 'period', 'год', 'месяц', 'квартал', 'недел', 'timestamp', 'year', 'month', 'quarter'];
 
 const DEFAULT_CONFIG = {
   title: '',
@@ -16,6 +17,9 @@ const DEFAULT_CONFIG = {
   lon_column: '',
   value_column: '',
   overlay_type: 'none',
+  time_column: '',
+  base_period: '',
+  comparison_period: '',
 };
 
 const parseNumber = (value) => {
@@ -34,6 +38,11 @@ const parseNumber = (value) => {
 const isNumericType = (type) => {
   const normalized = (type || '').toLowerCase();
   return ['number', 'float', 'double', 'decimal', 'integer', 'int', 'long'].includes(normalized);
+};
+
+const isTemporalType = (type) => {
+  const normalized = (type || '').toLowerCase();
+  return ['date', 'datetime', 'timestamp', 'time', 'year', 'month'].some((token) => normalized.includes(token));
 };
 
 export default function MapConfigurator({
@@ -71,6 +80,52 @@ export default function MapConfigurator({
     });
   }, [selectedDataset, datasetSamples]);
 
+  const timeColumns = useMemo(() => {
+    if (!selectedDataset) return [];
+    const rows = datasetSamples;
+    return (selectedDataset.columns || []).filter((col) => {
+      const lowerName = (col.name || '').toLowerCase();
+      const hasKeyword = TIME_KEYWORDS.some((kw) => lowerName.includes(kw));
+      if (isTemporalType(col.type) || hasKeyword) {
+        return true;
+      }
+      if (!rows.length) {
+        return false;
+      }
+      const values = rows
+        .map((row) => row?.[col.name])
+        .filter((value) => value !== null && value !== undefined && value !== '');
+      if (!values.length) {
+        return false;
+      }
+      const stringRatio = values.filter((value) => typeof value === 'string' || typeof value === 'number').length / values.length;
+      return stringRatio >= 0.6;
+    });
+  }, [selectedDataset, datasetSamples]);
+
+  const availablePeriods = useMemo(() => {
+    if (!selectedDataset || !config.time_column) {
+      return [];
+    }
+
+    const seen = new Set();
+    const periods = [];
+    datasetSamples.forEach((row) => {
+      const rawValue = row?.[config.time_column];
+      if (rawValue === null || rawValue === undefined || rawValue === '') {
+        return;
+      }
+      const key = String(rawValue);
+      if (!seen.has(key)) {
+        seen.add(key);
+        periods.push(key);
+      }
+    });
+
+    periods.sort((a, b) => a.localeCompare(b, 'ru-RU', { numeric: true, sensitivity: 'base' }));
+    return periods;
+  }, [selectedDataset, datasetSamples, config.time_column]);
+
   useEffect(() => {
     const incomingConfig = initialConfig || DEFAULT_CONFIG;
     setConfig((prev) => ({ ...prev, ...incomingConfig }));
@@ -93,6 +148,51 @@ export default function MapConfigurator({
       return nextConfig;
     });
   };
+
+  useEffect(() => {
+    if (!config.time_column && (config.base_period || config.comparison_period)) {
+      emitConfig({
+        ...config,
+        base_period: '',
+        comparison_period: '',
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.time_column, config.base_period, config.comparison_period]);
+
+  useEffect(() => {
+    if (!config.time_column || availablePeriods.length === 0) {
+      return;
+    }
+
+    let changed = false;
+    const nextConfig = { ...config };
+
+    if (!config.base_period || !availablePeriods.includes(config.base_period)) {
+      nextConfig.base_period = availablePeriods[0];
+      changed = true;
+    }
+
+    const currentComparison = config.comparison_period;
+    const needsComparisonUpdate =
+      !currentComparison ||
+      !availablePeriods.includes(currentComparison) ||
+      currentComparison === nextConfig.base_period;
+
+    if (needsComparisonUpdate) {
+      const fallback = [...availablePeriods].reverse().find((period) => period !== nextConfig.base_period);
+      const resolvedFallback = fallback || '';
+      if (resolvedFallback !== currentComparison) {
+        nextConfig.comparison_period = resolvedFallback;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      emitConfig(nextConfig);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.time_column, availablePeriods, config.base_period, config.comparison_period]);
 
   const detectCoordinateColumns = (dataset, currentConfig = {}) => {
     if (!dataset) {
@@ -177,17 +277,99 @@ export default function MapConfigurator({
     };
   };
 
+  const detectTimeColumn = (dataset, currentConfig = {}) => {
+    if (!dataset) {
+      return '';
+    }
+
+    if (currentConfig.time_column) {
+      return currentConfig.time_column;
+    }
+
+    const rows = dataset.sample_data || [];
+    const columns = dataset.columns || [];
+
+    let bestCandidate = '';
+    let bestScore = 0;
+
+    columns.forEach((col) => {
+      const lowerName = (col.name || '').toLowerCase();
+      const hasKeyword = TIME_KEYWORDS.some((kw) => lowerName.includes(kw));
+      const temporalType = isTemporalType(col.type);
+
+      const values = rows
+        .map((row) => row?.[col.name])
+        .filter((value) => value !== null && value !== undefined && value !== '');
+
+      let score = 0;
+      if (temporalType) {
+        score += 2;
+      }
+      if (hasKeyword) {
+        score += 1.5;
+      }
+      if (values.length) {
+        const uniqueRatio = new Set(values.map((value) => String(value))).size / values.length;
+        if (uniqueRatio >= 0.5) {
+          score += 0.5;
+        }
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestCandidate = col.name;
+      }
+    });
+
+    return bestCandidate;
+  };
+
+  const extractUniquePeriods = (rows, column) => {
+    if (!column) {
+      return [];
+    }
+
+    const seen = new Set();
+    const periods = [];
+
+    rows.forEach((row) => {
+      const value = row?.[column];
+      if (value === null || value === undefined || value === '') {
+        return;
+      }
+      const key = String(value);
+      if (!seen.has(key)) {
+        seen.add(key);
+        periods.push(key);
+      }
+    });
+
+    periods.sort((a, b) => a.localeCompare(b, 'ru-RU', { numeric: true, sensitivity: 'base' }));
+    return periods;
+  };
+
   const handleDatasetChange = (datasetId, incomingConfig) => {
     const dataset = datasets.find((d) => d.id === datasetId);
     setSelectedDataset(dataset || null);
 
     if (!dataset) {
+      if (datasetId === 'sample') {
+        emitConfig({
+          ...(incomingConfig || config),
+          dataset_id: datasetId,
+        });
+        return;
+      }
+
       const resetConfig = {
         ...(incomingConfig || config),
         dataset_id: datasetId,
         lat_column: '',
         lon_column: '',
         value_column: '',
+        time_column: '',
+        base_period: '',
+        comparison_period: '',
       };
       emitConfig(resetConfig);
       return;
@@ -203,11 +385,36 @@ export default function MapConfigurator({
     }
 
     const detected = detectCoordinateColumns(dataset, nextConfig);
+    const detectedTimeColumn = detectTimeColumn(dataset, nextConfig);
+    const uniquePeriods = extractUniquePeriods(dataset.sample_data || [], detectedTimeColumn);
+
+    const basePeriod =
+      nextConfig.base_period && uniquePeriods.includes(nextConfig.base_period)
+        ? nextConfig.base_period
+        : uniquePeriods[0] || '';
+
+    const latestPeriod = uniquePeriods.length ? uniquePeriods[uniquePeriods.length - 1] : '';
+
+    let comparisonPeriod =
+      nextConfig.comparison_period && uniquePeriods.includes(nextConfig.comparison_period)
+        ? nextConfig.comparison_period
+        : latestPeriod;
+
+    if (comparisonPeriod === basePeriod && uniquePeriods.length > 1) {
+      comparisonPeriod = uniquePeriods[uniquePeriods.length - 1];
+      if (comparisonPeriod === basePeriod) {
+        comparisonPeriod = uniquePeriods.find((period) => period !== basePeriod) || '';
+      }
+    }
+
     const mergedConfig = {
       ...nextConfig,
       lat_column: detected.lat,
       lon_column: detected.lon,
       value_column: detected.value,
+      time_column: detectedTimeColumn || '',
+      base_period: detectedTimeColumn ? basePeriod : '',
+      comparison_period: detectedTimeColumn ? comparisonPeriod : '',
     };
 
     emitConfig(mergedConfig);
@@ -317,6 +524,82 @@ export default function MapConfigurator({
                 </SelectContent>
               </Select>
             </div>
+
+            {(timeColumns.length > 0 || config.time_column) && (
+              <div className="space-y-2">
+                <Label className="elegant-text">Столбец периода (для сравнения по времени)</Label>
+                <Select
+                  onValueChange={(value) => handleInputChange('time_column', value)}
+                  value={config.time_column || '__none__'}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите столбец времени" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__" className="elegant-text">Без периода</SelectItem>
+                    {timeColumns.map((col) => (
+                      <SelectItem key={col.name} value={col.name} className="elegant-text">
+                        {col.name}
+                      </SelectItem>
+                    ))}
+                    {config.time_column && !timeColumns.some((col) => col.name === config.time_column) && (
+                      <SelectItem value={config.time_column} className="elegant-text">
+                        {config.time_column}
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500">
+                  Укажите поле с датами, периодами или временными метками, чтобы видеть рост и снижение на карте.
+                </p>
+              </div>
+            )}
+
+            {config.time_column && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="elegant-text">Базовый период</Label>
+                  <Select
+                    onValueChange={(value) => handleInputChange('base_period', value)}
+                    value={config.base_period || undefined}
+                    disabled={!availablePeriods.length}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Выберите период" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availablePeriods.map((period) => (
+                        <SelectItem key={period} value={period} className="elegant-text">
+                          {period}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="elegant-text">Сравниваемый период</Label>
+                  <Select
+                    onValueChange={(value) => handleInputChange('comparison_period', value)}
+                    value={config.comparison_period || undefined}
+                    disabled={availablePeriods.length <= 1}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={availablePeriods.length > 1 ? 'Выберите период' : 'Недостаточно значений'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availablePeriods
+                        .filter((period) => availablePeriods.length === 1 || period !== config.base_period)
+                        .map((period) => (
+                          <SelectItem key={period} value={period} className="elegant-text">
+                            {period}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
 
             {(forecastData || correlationData) && (
               <div className="space-y-2">
