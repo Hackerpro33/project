@@ -184,11 +184,17 @@ export const computeMapAnalytics = (rawData, config, options = {}) => {
 
   let dataset = Array.isArray(rawData) ? rawData : [];
 
-  if (!dataset.length && Array.isArray(datasetSample) && datasetSample.length) {
+  const shouldUseDatasetSample =
+    datasetId === "sample" && Array.isArray(datasetSample) && datasetSample.length;
+
+  if (!dataset.length && shouldUseDatasetSample) {
     dataset = datasetSample;
   }
 
-  if (!dataset.length && (!datasetId || datasetId === "sample")) {
+  const shouldUseFallback =
+    datasetId === "sample" && Array.isArray(fallbackSample) && fallbackSample.length;
+
+  if (!dataset.length && shouldUseFallback) {
     dataset = fallbackSample;
   }
 
@@ -197,6 +203,25 @@ export const computeMapAnalytics = (rawData, config, options = {}) => {
       hasData: false,
       datasetLabel: datasetName,
       valueLabel: config?.value_column || "Значение",
+      totalPoints: 0,
+      validPoints: 0,
+      averageValue: null,
+      maxPoint: null,
+      minPoint: null,
+      categories: [],
+      forecast: {
+        hasForecast: false,
+        average: null,
+        deltaFromValue: null,
+        highestGrowthPoint: null,
+      },
+      correlation: {
+        hasCorrelation: false,
+        average: null,
+        strongestPositive: null,
+        strongestNegative: null,
+      },
+      risk: { ...buildRiskProfile([]), thresholds: { high: null, medium: null } },
     };
   }
 
