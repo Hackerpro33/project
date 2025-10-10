@@ -14,6 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
+import PageContainer from "@/components/layout/PageContainer";
 
 const STORAGE_KEY = "insight-assistant-user-id";
 
@@ -152,7 +153,7 @@ export default function Assistant() {
   const conversation = useMemo(() => state?.messages || [], [state]);
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-6">
+    <PageContainer className="space-y-6" maxWidth="max-w-6xl">
       <Card className="border-none shadow-xl bg-white/70 backdrop-blur">
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
@@ -267,6 +268,6 @@ export default function Assistant() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }

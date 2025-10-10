@@ -11,6 +11,7 @@ import CorrelationMatrix from "../components/forecasting/CorrelationMatrix";
 import MapView from "../components/maps/MapView";
 import MapConfigurator from "../components/maps/MapConfigurator";
 import { generateForecastReport } from "@/utils/localAnalysis";
+import PageContainer from "@/components/layout/PageContainer";
 
 export default function Forecasting() {
   const [datasets, setDatasets] = useState([]);
@@ -218,9 +219,8 @@ export default function Forecasting() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
-      <div className="max-w-7xl mx-auto space-y-8">
-        <div className="text-center space-y-4">
+    <PageContainer className="space-y-8">
+      <div className="text-center space-y-4">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
             Прогнозирование и анализ
           </h1>
@@ -278,26 +278,25 @@ export default function Forecasting() {
           />
         )}
 
-        {activeTab === 'map' && (
-          <div className="grid lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-1">
-              <MapConfigurator
-                datasets={datasets}
-                onSave={handleMapConfigApply}
-                onCancel={() => {}}
-                initialConfig={mapConfig}
-                onConfigChange={handleMapConfigChange}
-                forecastData={forecastResult}
-                correlationData={correlationResult}
-                isEmbedded={true}
-              />
-            </div>
-            <div className="lg:col-span-2">
-              <MapView data={mapData} config={mapConfig}/>
-            </div>
+      {activeTab === 'map' && (
+        <div className="grid lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-1">
+            <MapConfigurator
+              datasets={datasets}
+              onSave={handleMapConfigApply}
+              onCancel={() => {}}
+              initialConfig={mapConfig}
+              onConfigChange={handleMapConfigChange}
+              forecastData={forecastResult}
+              correlationData={correlationResult}
+              isEmbedded={true}
+            />
           </div>
-        )}
-      </div>
-    </div>
+          <div className="lg:col-span-2">
+            <MapView data={mapData} config={mapConfig}/>
+          </div>
+        </div>
+      )}
+    </PageContainer>
   );
 }

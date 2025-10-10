@@ -3,6 +3,7 @@ import { Dataset, Visualization } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Map as MapIcon, Globe, Compass, Settings, Plus } from "lucide-react";
+import PageContainer from "@/components/layout/PageContainer";
 
 import MapConfigurator from "../components/maps/MapConfigurator";
 import MapView from "../components/maps/MapView";
@@ -173,10 +174,9 @@ export default function Maps() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="text-center space-y-4">
+    <PageContainer className="space-y-8">
+      {/* Header */}
+      <div className="text-center space-y-4">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
             Географические инсайты
           </h1>
@@ -333,7 +333,6 @@ export default function Maps() {
             />
           </>
         )}
-      </div>
-    </div>
+    </PageContainer>
   );
 }

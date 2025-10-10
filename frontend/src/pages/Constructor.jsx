@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import PageContainer from "@/components/layout/PageContainer";
 import {
   BrainCircuit,
   Database,
@@ -148,9 +149,8 @@ export default function Constructor() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
-      <div className="max-w-7xl mx-auto space-y-8">
-        <div className="text-center space-y-4">
+    <PageContainer className="space-y-8">
+      <div className="text-center space-y-4">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-900 via-blue-900 to-purple-900 bg-clip-text text-transparent heading-text">
             Конструктор отчетов и связей
           </h1>
@@ -262,7 +262,6 @@ export default function Constructor() {
             ))}
           </CardContent>
         </Card>
-      </div>
-    </div>
+    </PageContainer>
   );
 }
