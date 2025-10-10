@@ -1,7 +1,27 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer } from 'recharts';
-import { TrendingUp, Activity } from "lucide-react";
+import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from 'recharts';
+import { Activity } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+
+const formatNumber = (value) => {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "—";
+  }
+
+  if (value >= 1000000) {
+    return `${(value / 1000000).toFixed(1)}M`;
+  }
+
+  if (value >= 1000) {
+    return value.toLocaleString("ru-RU");
+  }
+
+  return value.toString();
+};
+
+export default function TrendingCharts({ data = [], summary = {}, isLoading = false }) {
+  const hasData = Array.isArray(data) && data.some((item) => (item?.datasets || 0) > 0 || (item?.visualizations || 0) > 0);
 
 export default function TrendingCharts({ data }) {
   const numberFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
@@ -44,71 +64,77 @@ export default function TrendingCharts({ data }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-slate-900">
           <Activity className="w-5 h-5 text-green-500" />
-          Growth Trends
+          Динамика активности
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="space-y-4">
-          <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-medium text-slate-700">Data Processing</span>
-              <div className="flex items-center gap-1 text-emerald-600">
-                <TrendingUp className="w-3 h-3" />
-                <span className="text-xs font-medium">+24%</span>
-              </div>
-            </div>
-            <div className="h-16">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data}>
-                  <defs>
-                    <linearGradient id="gradientGreen" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10B981" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#10B981" stopOpacity={0.05} />
-                    </linearGradient>
-                  </defs>
-                  <Area 
-                    type="monotone" 
-                    dataKey="value" 
-                    stroke="#10B981" 
-                    strokeWidth={2}
-                    fill="url(#gradientGreen)" 
-                    dot={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+        {isLoading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-48 w-full" />
+            <div className="grid grid-cols-2 gap-4">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-20 w-full col-span-2" />
             </div>
           </div>
+        ) : (
+          <>
+            <div className="h-56">
+              {hasData ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="datasetsGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#6366F1" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="#6366F1" stopOpacity={0.05} />
+                      </linearGradient>
+                      <linearGradient id="visualizationsGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#0EA5E9" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="#0EA5E9" stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#CBD5F5" />
+                    <XAxis dataKey="period" tickLine={false} axisLine={false} stroke="#94A3B8" />
+                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} stroke="#94A3B8" width={32} />
+                    <Tooltip
+                      formatter={(value, name) => [value, name === 'datasets' ? 'Наборы данных' : 'Визуализации']}
+                      contentStyle={{ borderRadius: '12px', border: '1px solid #E2E8F0' }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="datasets"
+                      name="Наборы данных"
+                      stroke="#6366F1"
+                      strokeWidth={2}
+                      fill="url(#datasetsGradient)"
+                      dot={false}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="visualizations"
+                      name="Визуализации"
+                      stroke="#0EA5E9"
+                      strokeWidth={2}
+                      fill="url(#visualizationsGradient)"
+                      dot={false}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                  Недостаточно данных для отображения динамики
+                </div>
+              )}
+            </div>
 
-          <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-100">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-medium text-slate-700">Локальные прогнозы</span>
-              <div className="flex items-center gap-1 text-blue-600">
-                <TrendingUp className="w-3 h-3" />
-                <span className="text-xs font-medium">+31%</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4">
+                <p className="text-xs font-medium text-emerald-600 uppercase tracking-wide">Наборы данных</p>
+                <p className="text-2xl font-bold text-slate-900 mt-2">{summary.datasetCount ?? 0}</p>
+                <p className="text-xs text-slate-600 mt-1">
+                  Новых за 7 дней: {summary.weeklyNewDatasets ?? 0}
+                </p>
               </div>
-            </div>
-            <div className="h-16">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data}>
-                  <defs>
-                    <linearGradient id="gradientBlue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0EA5E9" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#0EA5E9" stopOpacity={0.05} />
-                    </linearGradient>
-                  </defs>
-                  <Area 
-                    type="monotone" 
-                    dataKey="growth" 
-                    stroke="#0EA5E9" 
-                    strokeWidth={2}
-                    fill="url(#gradientBlue)" 
-                    dot={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
 
         <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
           {summaryMetrics.map((metric) => (
@@ -119,6 +145,27 @@ export default function TrendingCharts({ data }) {
             </div>
           ))}
         </div>
+              <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-4">
+                <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Визуализации</p>
+                <p className="text-2xl font-bold text-slate-900 mt-2">{summary.visualizationCount ?? 0}</p>
+                <p className="text-xs text-slate-600 mt-1">
+                  Новых за 7 дней: {summary.weeklyNewVisualizations ?? 0}
+                </p>
+              </div>
+
+              <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-2">
+                <div className="text-sm text-slate-600">
+                  <span className="font-semibold text-slate-700">Общее количество строк: </span>
+                  {formatNumber(typeof summary.totalRows === "number" ? summary.totalRows : Number.NaN)}
+                </div>
+                <div className="text-sm text-slate-600">
+                  <span className="font-semibold text-slate-700">Последнее обновление: </span>
+                  {summary.lastUpdate || "Не зафиксировано"}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

@@ -599,8 +599,42 @@ export function convertDataset({ dataset, format, options = {} }) {
 export function buildProjectReport({ datasets, visualizations }) {
   const datasetCount = datasets?.length ?? 0;
   const visualizationCount = visualizations?.length ?? 0;
-  const datasetsSummary = (datasets || []).map((dataset) => `${dataset.name} — ${dataset.columns?.length || 0} полей`);
-  const visualizationSummary = (visualizations || []).map((viz) => `${viz.title} (${viz.type || "visualization"})`);
+
+  const datasetCoverage = (datasets || []).map((dataset) => {
+    const name = (dataset?.name || "Набор без названия").trim();
+    const columns = dataset?.columns?.length ?? 0;
+    const rows = dataset?.row_count ?? dataset?.sample_data?.length ?? 0;
+    const hasSample = Array.isArray(dataset?.sample_data) && dataset.sample_data.length > 0;
+
+    return {
+      name: name || "Набор без названия",
+      columns,
+      rows,
+      hasSample,
+    };
+  });
+
+  const visualizationCoverage = (visualizations || []).map((viz) => {
+    const title = (viz?.title || "Визуализация").trim() || "Визуализация";
+    const type = viz?.type || "visualization";
+    const datasetName = datasets?.find((dataset) => dataset.id === viz?.dataset_id)?.name;
+
+    return {
+      title,
+      type,
+      dataset: datasetName,
+    };
+  });
+
+  const datasetsSummary = datasetCoverage.map(
+    ({ name, columns, rows, hasSample }) =>
+      `${name} — ${columns} полей, ${rows || "0"} строк${hasSample ? "" : " (нет примеров)"}`
+  );
+
+  const visualizationSummary = visualizationCoverage.map((item) => {
+    const datasetInfo = item.dataset ? ` для набора «${item.dataset}»` : "";
+    return `${item.title} (${item.type}${datasetInfo})`;
+  });
 
   return {
     executive_summary:
@@ -615,6 +649,18 @@ export function buildProjectReport({ datasets, visualizations }) {
         : "Визуализации отсутствуют — начните с базового графика или карты.",
       "Все выводы построены локальными эвристиками без обращения к внешним моделям.",
     ],
+    dataset_overview: {
+      total: datasetCount,
+      coverage_summary: datasetCoverage.length
+        ? datasetsSummary
+        : ["Данные не загружены — добавьте наборы для анализа."],
+    },
+    visualization_overview: {
+      total: visualizationCount,
+      highlights: visualizationCoverage.length
+        ? visualizationSummary
+        : ["Визуализации отсутствуют — создайте первую диаграмму."],
+    },
     risk_zones: unusedDatasetsReport(datasets),
     recommendations: [
       "Регулярно обновляйте локальные данные и проверяйте качество источников.",
@@ -634,12 +680,23 @@ function unusedDatasetsReport(datasets = []) {
     ];
   }
 
-  return datasets
+  const issues = datasets
     .filter((dataset) => !dataset.sample_data || dataset.sample_data.length === 0)
     .map((dataset) => ({
-      area: dataset.name,
+      area: dataset.name || "Набор без названия",
       risk_description: "Набор данных загружен без примеров строк — проверьте источник.",
     }));
+
+  if (issues.length) {
+    return issues;
+  }
+
+  return [
+    {
+      area: "Использование данных",
+      risk_description: "Все наборы данных содержат примеры строк — критических рисков не обнаружено.",
+    },
+  ];
 }
 
 export function summarizeEmailBody(summary) {

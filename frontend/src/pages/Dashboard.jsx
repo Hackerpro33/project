@@ -1,22 +1,8 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { getDatasets, getVisualizations } from "@/api/entities";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
-import { 
-  Database, 
-  BarChart3, 
-  Map, 
-  TrendingUp, 
-  Plus,
-  Activity,
-  Eye,
-  Calendar,
-  Zap
-} from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { Activity, Zap } from "lucide-react";
+import { LineChart, Line, ResponsiveContainer } from 'recharts';
 
 import StatsGrid from "../components/dashboard/StatsGrid";
 import QuickActions from "../components/dashboard/QuickActions";
@@ -56,14 +42,160 @@ export default function Dashboard() {
   };
 
 
-  const sampleTrendData = [
-    { name: 'Jan', value: 400, growth: 240 },
-    { name: 'Feb', value: 300, growth: 456 },
-    { name: 'Mar', value: 600, growth: 590 },
-    { name: 'Apr', value: 800, growth: 780 },
-    { name: 'May', value: 700, growth: 890 },
-    { name: 'Jun', value: 900, growth: 1200 }
-  ];
+  const metrics = useMemo(() => {
+    const parseDate = (item) => {
+      if (!item) return null;
+      if (item.created_date) {
+        const date = new Date(item.created_date);
+        if (!Number.isNaN(date.getTime())) {
+          return date;
+        }
+      }
+      if (item.created_at) {
+        const date = new Date(item.created_at * 1000);
+        if (!Number.isNaN(date.getTime())) {
+          return date;
+        }
+      }
+      return null;
+    };
+
+    const calculateWeeklyChange = (items, filterFn = () => true) => {
+      const now = new Date();
+      const startCurrent = new Date(now);
+      startCurrent.setDate(startCurrent.getDate() - 7);
+      const startPrevious = new Date(startCurrent);
+      startPrevious.setDate(startPrevious.getDate() - 7);
+
+      let current = 0;
+      let previous = 0;
+
+      items.forEach((item) => {
+        if (!filterFn(item)) return;
+        const itemDate = parseDate(item);
+        if (!itemDate) return;
+        if (itemDate >= startCurrent) {
+          current += 1;
+          return;
+        }
+        if (itemDate >= startPrevious && itemDate < startCurrent) {
+          previous += 1;
+        }
+      });
+
+      let text = "Нет данных";
+      let trend = "neutral";
+
+      if (current === 0 && previous === 0) {
+        text = "Без изменений";
+      } else if (current === previous) {
+        text = "Без изменений";
+      } else {
+        const diff = current - previous;
+        trend = diff > 0 ? "up" : "down";
+        const sign = diff > 0 ? "+" : "−";
+        text = `${sign}${Math.abs(diff)} за 7 дней`;
+      }
+
+      return { text, trend, current, previous };
+    };
+
+    const buildTrendData = (datasetsList, visualizationsList, monthsCount = 6) => {
+      const formatter = new Intl.DateTimeFormat("ru-RU", { month: "short" });
+      const result = [];
+      const now = new Date();
+
+      for (let offset = monthsCount - 1; offset >= 0; offset -= 1) {
+        const monthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
+        const start = new Date(Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth(), 1));
+        const end = new Date(Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1, 1));
+
+        const datasetsCount = datasetsList.reduce((acc, item) => {
+          const itemDate = parseDate(item);
+          if (!itemDate) return acc;
+          if (itemDate >= start && itemDate < end) {
+            return acc + 1;
+          }
+          return acc;
+        }, 0);
+
+        const visualizationsCount = visualizationsList.reduce((acc, item) => {
+          const itemDate = parseDate(item);
+          if (!itemDate) return acc;
+          if (itemDate >= start && itemDate < end) {
+            return acc + 1;
+          }
+          return acc;
+        }, 0);
+
+        result.push({
+          period: formatter.format(monthDate).replace(".", ""),
+          datasets: datasetsCount,
+          visualizations: visualizationsCount,
+        });
+      }
+
+      return result;
+    };
+
+    const datasetsChange = calculateWeeklyChange(datasets);
+    const visualizationsChange = calculateWeeklyChange(visualizations);
+    const mapChange = calculateWeeklyChange(visualizations, (item) => item?.type === "map");
+    const forecastChange = calculateWeeklyChange(visualizations, (item) => item?.type === "forecast");
+
+    const totalRows = datasets.reduce((acc, dataset) => {
+      if (typeof dataset?.row_count === "number" && Number.isFinite(dataset.row_count)) {
+        return acc + dataset.row_count;
+      }
+      return acc;
+    }, 0);
+
+    const combinedItems = [...datasets, ...visualizations];
+    const latestDate = combinedItems
+      .map(parseDate)
+      .filter((date) => date instanceof Date && !Number.isNaN(date.getTime()))
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+
+    const lastUpdate = latestDate
+      ? new Intl.DateTimeFormat("ru-RU", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }).format(latestDate)
+      : null;
+
+    const trendData = buildTrendData(datasets, visualizations);
+
+    return {
+      changes: {
+        dataset: datasetsChange,
+        visualization: visualizationsChange,
+        map: mapChange,
+        forecast: forecastChange,
+      },
+      trendData,
+      summary: {
+        datasetCount: datasets.length,
+        visualizationCount: visualizations.length,
+        totalRows,
+        lastUpdate,
+        weeklyNewDatasets: datasetsChange.current,
+        weeklyNewVisualizations: visualizationsChange.current,
+        hasTrendData: trendData.some((item) => item.datasets > 0 || item.visualizations > 0),
+      },
+    };
+  }, [datasets, visualizations]);
+
+  const heroChartData = useMemo(() => {
+    const data = metrics.trendData || [];
+    const prepared = data.slice(-4).map((item, index) => ({
+      name: item?.period || `${index + 1}`,
+      value: (item?.datasets || 0) + (item?.visualizations || 0),
+    }));
+    if (prepared.length === 0) {
+      return [{ name: "—", value: 0 }];
+    }
+    return prepared;
+  }, [metrics.trendData]);
 
   const now = new Date();
   const datasetsWithDates = datasets
@@ -159,7 +291,7 @@ export default function Dashboard() {
               <div className="flex-shrink-0">
                 <div className="w-32 h-32 rounded-2xl bg-gradient-to-r from-blue-500/20 to-purple-500/20 backdrop-blur-xl border border-white/10 flex items-center justify-center">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={sampleTrendData.slice(0, 4)}>
+                    <LineChart data={heroChartData}>
                       <Line 
                         type="monotone" 
                         dataKey="value" 
@@ -182,10 +314,11 @@ export default function Dashboard() {
         </div>
 
         {/* Stats Grid */}
-        <StatsGrid 
+        <StatsGrid
           datasets={datasets}
           visualizations={visualizations}
           isLoading={isLoading}
+          changes={metrics.changes}
         />
 
         {/* Quick Actions */}
@@ -203,7 +336,11 @@ export default function Dashboard() {
 
           {/* Trending Charts */}
           <div>
-            <TrendingCharts data={sampleTrendData} />
+            <TrendingCharts
+              data={metrics.trendData}
+              summary={metrics.summary}
+              isLoading={isLoading}
+            />
           </div>
         </div>
       </div>

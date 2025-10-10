@@ -283,6 +283,10 @@ describe("buildProjectReport and summarizeEmailBody", () => {
 
     expect(report.executive_summary).toContain("Локальный анализ проекта");
     expect(report.key_insights.length).toBe(3);
+    expect(report.dataset_overview.total).toBe(2);
+    expect(report.dataset_overview.coverage_summary.length).toBeGreaterThan(0);
+    expect(report.visualization_overview.highlights[0]).toContain("KPI");
+    expect(report.risk_zones.length).toBeGreaterThan(0);
 
     const email = summarizeEmailBody(report);
     expect(email).toContain("Краткое описание локального анализа:");

@@ -387,6 +387,15 @@ def _make_wide_csv(rows: int, columns: int) -> bytes:
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
+def _criminogenic_factors_csv() -> bytes:
+    return """region,year,crime_rate,unemployment_rate,poverty_index,police_presence
+Central,2020,12.5,5.1,18.4,220
+Central,2021,13.9,5.3,18.9,215
+Central,2022,15.8,5.6,19.5,208
+Central,2023,16.7,5.4,19.8,200
+""".encode("utf-8")
+
+
 def test_upload_multiple_tables_near_limit(monkeypatch, client):
     limit = 5 * 1024  # 5 KB per file
     _set_upload_limit(monkeypatch, limit)
@@ -538,6 +547,78 @@ def test_upload_rejects_empty_payload(client):
     )
     assert response.status_code == 400
 
+
+def test_crime_factor_dataset_workflow(client):
+    csv_bytes = _criminogenic_factors_csv()
+
+    upload_response = client.post(
+        "/api/upload",
+        files={"file": ("crime_factors.csv", csv_bytes, "text/csv")},
+        headers=HEADERS,
+    )
+    assert upload_response.status_code == 200
+    upload_payload = upload_response.json()
+    extraction = upload_payload["quick_extraction"]
+
+    assert extraction["row_count"] == 4
+    assert any(col["name"] == "crime_rate" and col["type"] == "number" for col in extraction["columns"])
+    assert any("crime indicator" in insight.lower() for insight in extraction["insights"])
+    assert any("risk factor" in insight.lower() for insight in extraction["insights"])
+
+    extract_response = client.post(
+        "/api/extract",
+        json={"file_url": upload_payload["file_url"]},
+        headers=HEADERS,
+    )
+    assert extract_response.status_code == 200
+    extract_payload = extract_response.json()["output"]
+    assert extract_payload["row_count"] == 4
+    assert any("policing resource" in insight.lower() for insight in extract_payload["insights"])
+
+    dataset_response = client.post(
+        "/api/dataset/create",
+        json={
+            "name": "Criminogenic Factors Central District",
+            "description": "Multi-year monitoring of criminogenic indicators.",
+            "tags": ["crime-analysis", "trend"],
+            "columns": extract_payload["columns"],
+            "row_count": extract_payload["row_count"],
+            "sample_data": extract_payload["sample_data"],
+        },
+        headers=HEADERS,
+    )
+    assert dataset_response.status_code == 200
+    dataset_id = dataset_response.json()["id"]
+
+    update_response = client.put(
+        f"/api/dataset/{dataset_id}",
+        json={"description": "Updated with criminogenic insights", "tags": ["crime-analysis", "hotspot"]},
+        headers=HEADERS,
+    )
+    assert update_response.status_code == 200
+    assert "hotspot" in update_response.json()["dataset"]["tags"]
+
+    viz_response = client.post(
+        "/api/visualization/create",
+        json={
+            "title": "Crime vs Policing Trend",
+            "type": "line",
+            "dataset_id": dataset_id,
+            "config": {"x": "year", "y": ["crime_rate", "police_presence"]},
+            "tags": ["crime-analysis"],
+        },
+        headers=HEADERS,
+    )
+    assert viz_response.status_code == 200
+    viz_id = viz_response.json()["id"]
+
+    filtered_viz = client.post(
+        "/api/visualization/filter",
+        json={"filters": {"type": "line"}},
+        headers=HEADERS,
+    )
+    assert filtered_viz.status_code == 200
+    assert any(item["id"] == viz_id for item in filtered_viz.json())
 
 
 def test_api_send_email_logs_errors(monkeypatch):
