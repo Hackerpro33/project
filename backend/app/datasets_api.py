@@ -86,6 +86,18 @@ APP_DIR = Path(__file__).resolve().parent
 CANDIDATE_DIRS = [APP_DIR.parent / "data", APP_DIR / "data"]
 
 
+def _ensure_store_dir() -> Path:
+    for directory in CANDIDATE_DIRS:
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            return directory
+        except Exception:
+            continue
+    fallback = APP_DIR
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
+
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
@@ -1436,8 +1448,6 @@ __all__ = [
     "_atomic_write_json",
     "_save_all",
 ]
-
-    return {"status": "deleted", "id": dataset_id}
 
 
 @router.post("/profile", response_model=DatasetProfileResponse)

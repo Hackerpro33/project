@@ -11,10 +11,11 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
+import json
 import yaml
-from pydantic import AnyHttpUrl, AnyUrl, Field, field_validator
+from pydantic import AnyHttpUrl, AnyUrl, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .utils.files import DATA_DIR, export_json_atomic
@@ -22,6 +23,7 @@ from .utils.files import DATA_DIR, export_json_atomic
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_SECRETS_FILE = BASE_DIR / "secrets" / "runtime.secrets.yaml"
+CONFIG_OVERRIDES_PATH = DATA_DIR / "settings.overrides.json"
 
 
 def _apply_sops_secrets() -> None:
@@ -117,6 +119,7 @@ class Settings(BaseSettings):
         None,
         alias="TASK_STATUS_WEBHOOK_URL",
         description="Optional endpoint notified about task status transitions.",
+    )
     frontend_static_dir: Optional[str] = Field(
         None,
         alias="FRONTEND_DIST_DIR",
@@ -151,6 +154,7 @@ class Settings(BaseSettings):
         30,
         alias="FEATURE_FLAG_CACHE_TTL",
         description="In-memory cache TTL for Unleash feature flags in seconds.",
+    )
     alert_webhook_url: Optional[AnyHttpUrl] = Field(
         None,
         alias="ALERT_WEBHOOK_URL",

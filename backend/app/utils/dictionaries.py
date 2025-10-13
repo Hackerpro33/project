@@ -1,4 +1,4 @@
-"""Utilities for persisting and retrieving data dictionaries for code values."""
+"""Utility helpers for working with lightweight dictionary stores."""
 from __future__ import annotations
 
 import json
@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .files import DATA_DIR
-
 
 DICTIONARY_JSON = DATA_DIR / "dictionaries.json"
 
@@ -43,7 +42,11 @@ def save_dictionaries(items: List[Dict[str, Any]]) -> None:
     """Persist ``items`` to :data:`DICTIONARY_JSON` atomically."""
 
     _ensure_parent(DICTIONARY_JSON)
-    fd, tmp_name = tempfile.mkstemp(prefix="dictionaries_", suffix=".json", dir=str(DICTIONARY_JSON.parent))
+    fd, tmp_name = tempfile.mkstemp(
+        prefix="dictionaries_",
+        suffix=".json",
+        dir=str(DICTIONARY_JSON.parent),
+    )
     tmp_path = Path(tmp_name)
     try:
         os.close(fd)
@@ -171,3 +174,11 @@ def search_entries(
     )
 
     return matches[:limit]
+
+
+__all__ = [
+    "load_dictionaries",
+    "save_dictionaries",
+    "get_dictionary",
+    "search_entries",
+]
