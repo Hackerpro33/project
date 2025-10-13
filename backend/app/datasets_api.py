@@ -460,6 +460,19 @@ def _ensure_dates(item: Dict[str, Any]) -> Dict[str, Any]:
         updated_at = created_at
     else:
         updated_at = int(updated_raw)
+
+    raw_created = result.get("created_at")
+    if raw_created is None:
+        created_at = int(time.time())
+    else:
+        created_at = int(raw_created)
+
+    raw_updated = result.get("updated_at")
+    if raw_updated is None:
+        updated_at = created_at
+    else:
+        updated_at = int(raw_updated)
+
     result["created_at"] = created_at
     result["updated_at"] = updated_at
     created_dt = datetime.fromtimestamp(created_at, tz=timezone.utc)
@@ -539,6 +552,79 @@ def list_datasets(
     paginated = filtered[start:end]
     total_pages = ceil(total / page_size) if total else 0
 
+def _prepare_listing(
+    *,
+    page: int,
+    page_size: int,
+    order_by: Optional[str],
+    search: Optional[str],
+    tags: Optional[Sequence[str]],
+    types: Optional[Sequence[str]],
+    owners: Optional[Sequence[str]],
+) -> Dict[str, Any]:
+    normalized_tags = _normalize_tags(tags or [])
+    normalized_types = _normalize_tags(types or [])
+    normalized_owners = _normalize_owners(owners)
+
+    page = max(page, 1)
+    page_size = max(1, min(page_size, 100))
+
+    items = [_prepare_dataset(_ensure_dates(item)) for item in _load_all()]
+
+    available_tags = sorted({tag for item in items for tag in item.get("tags", []) if tag})
+    available_types = sorted({item.get("dataset_type") for item in items if item.get("dataset_type")})
+    available_owners = sorted({owner for item in items for owner in item.get("owners", []) if owner})
+
+    filtered = items
+    if search:
+        needle = search.strip().lower()
+
+        def _matches(entry: Dict[str, Any]) -> bool:
+            haystacks = [
+                (entry.get("name") or "").lower(),
+                (entry.get("description") or "").lower(),
+            ]
+            haystacks.extend((tag or "").lower() for tag in entry.get("tags", []) or [])
+            for column in entry.get("columns", []) or []:
+                haystacks.append((column.get("name") or "").lower())
+            return any(needle in text for text in haystacks if text)
+
+        filtered = [entry for entry in filtered if _matches(entry)]
+
+    if normalized_tags:
+        tag_filter = {tag.lower() for tag in normalized_tags}
+
+        def _has_tags(entry: Dict[str, Any]) -> bool:
+            entry_tags = {tag.lower() for tag in entry.get("tags", []) or []}
+            return tag_filter.issubset(entry_tags)
+
+        filtered = [entry for entry in filtered if _has_tags(entry)]
+
+    if normalized_types:
+        type_filter = {value.lower() for value in normalized_types}
+
+        def _has_types(entry: Dict[str, Any]) -> bool:
+            dataset_type = (entry.get("dataset_type") or "").lower()
+            return dataset_type in type_filter if type_filter else True
+
+        filtered = [entry for entry in filtered if _has_types(entry)]
+
+    if normalized_owners:
+        owners_filter = {value.lower() for value in normalized_owners}
+
+        def _has_owner(entry: Dict[str, Any]) -> bool:
+            entry_owners = {owner.lower() for owner in entry.get("owners", []) or []}
+            return bool(entry_owners.intersection(owners_filter)) if owners_filter else True
+
+        filtered = [entry for entry in filtered if _has_owner(entry)]
+
+    ordered = _sort_items(filtered, order_by)
+    total = len(ordered)
+    total_pages = ceil(total / page_size) if total else 0
+    start = (page - 1) * page_size
+    end = start + page_size
+    paginated = ordered[start:end]
+
     return {
         "items": paginated,
         "page": page,
@@ -549,6 +635,56 @@ def list_datasets(
         "has_previous": page > 1,
         "available_filters": {"tags": available_tags},
     }
+        "available_filters": {
+            "tags": available_tags,
+            "types": available_types,
+            "owners": available_owners,
+        },
+        "applied_filters": {
+            "search": search,
+            "tags": normalized_tags,
+            "types": normalized_types,
+            "owners": normalized_owners,
+            "order_by": order_by,
+        },
+        "all_items": ordered,
+    }
+
+
+def list_datasets(
+    *,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    order_by: Optional[str] = "-created_at",
+    search: Optional[str] = None,
+    tags: Optional[Sequence[str]] = None,
+    types: Optional[Sequence[str]] = None,
+    owners: Optional[Sequence[str]] = None,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    listing = _prepare_listing(
+        page=page,
+        page_size=page_size,
+        order_by=order_by,
+        search=search,
+        tags=tags,
+        types=types,
+        owners=owners,
+    )
+
+    is_unfiltered = (
+        page == 1
+        and page_size == DEFAULT_PAGE_SIZE
+        and not search
+        and not (tags or types or owners)
+        and (order_by in (None, "-created_at"))
+    )
+
+    if is_unfiltered:
+        return listing["all_items"]
+
+    payload = listing.copy()
+    payload.pop("all_items", None)
+    return payload
 
 
 @router.get("/list", response_model=None)
@@ -573,6 +709,28 @@ def list_datasets_endpoint(
         search=search,
         tags=tags,
     )
+    order_by: Optional[str] = Query("-created_at", description="Поле сортировки"),
+    page: int = Query(1, ge=1, description="Номер страницы"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=100, description="Количество элементов на странице"),
+    search: Optional[str] = Query(None, description="Поисковый запрос"),
+    tags: Optional[List[str]] = Query(None, description="Фильтр по тегам"),
+    types: Optional[List[str]] = Query(None, alias="dataset_types", description="Фильтр по типам"),
+    owners: Optional[List[str]] = Query(None, description="Фильтр по владельцам"),
+    request: Request = None,  # type: ignore[assignment]
+    response: Response = None,  # type: ignore[assignment]
+):
+    listing = _prepare_listing(
+        page=page,
+        page_size=page_size,
+        order_by=order_by,
+        search=search,
+        tags=tags,
+        types=types,
+        owners=owners,
+    )
+
+    payload = listing.copy()
+    ordered_items = payload.pop("all_items")
 
     if response is not None:
         cache_payload = {
@@ -582,6 +740,10 @@ def list_datasets_endpoint(
             "search": search,
             "tags": sorted(_normalise_tags(tags or [])),
             "payload": payload,
+            "tags": tags,
+            "types": types,
+            "owners": owners,
+            "items": ordered_items,
         }
         etag = apply_cache_headers(
             response,
@@ -604,6 +766,16 @@ def list_datasets_endpoint(
 
     if compatibility_plain:
         return payload["items"]
+
+
+    if (
+        page == 1
+        and page_size == DEFAULT_PAGE_SIZE
+        and not search
+        and not (tags or types or owners)
+        and (order_by in (None, "-created_at"))
+    ):
+        return ordered_items
 
     return payload
 

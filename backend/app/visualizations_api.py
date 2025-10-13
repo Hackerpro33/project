@@ -159,6 +159,19 @@ def _ensure_dates(item: Dict[str, Any]) -> Dict[str, Any]:
         updated_at = created_at
     else:
         updated_at = int(updated_raw)
+
+    raw_created = result.get("created_at")
+    if raw_created is None:
+        created_at = int(time.time())
+    else:
+        created_at = int(raw_created)
+
+    raw_updated = result.get("updated_at")
+    if raw_updated is None:
+        updated_at = created_at
+    else:
+        updated_at = int(raw_updated)
+
     result["created_at"] = created_at
     result["updated_at"] = updated_at
     created_dt = datetime.fromtimestamp(created_at, tz=timezone.utc)
