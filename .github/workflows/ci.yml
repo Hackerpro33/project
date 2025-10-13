@@ -90,6 +90,26 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
+  secret-scan:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          version: v8.18.2
+          args: detect --source . --redact
+      - name: TruffleHog
+        uses: trufflesecurity/trufflehog@v3
+        with:
+          scan: git
+          extra_args: >-
+            --no-update
+            --fail
+            --json
   coverage-badge:
     name: Publish coverage badge
     runs-on: ubuntu-latest

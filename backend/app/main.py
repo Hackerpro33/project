@@ -1,3 +1,6 @@
+import asyncio
+import json
+import mimetypes
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
@@ -7,7 +10,29 @@ import os
 import json
 import os
 import sys
+import time
 import uuid
+from collections import defaultdict, deque
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+try:  # pragma: no cover - optional dependency guard
+    import magic  # type: ignore[import-not-found]
+except Exception:  # pragma: no cover - gracefully handle missing libmagic
+    magic = None
+
+try:  # pragma: no cover - optional dependency guard
+    import puremagic
+except Exception:  # pragma: no cover - gracefully handle missing dependency
+    puremagic = None
+
+import httpx
+from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram, generate_latest
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.responses import Response
 import hashlib
 import math
 import shutil
@@ -51,6 +76,7 @@ from .schemas import (
     TaskStatusResponse,
     UrlImportRequest,
 )
+from .utils import files as files_utils
 from .services.extraction import build_extraction
 from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
 from .utils.files import (
@@ -66,6 +92,265 @@ from .utils.files import (
 settings = get_settings()
 
 
+class RateLimiter:
+    """Async in-memory rate limiter keyed by client fingerprint."""
+
+    def __init__(self, limit: int, window_seconds: int) -> None:
+        self.limit = max(0, limit)
+        self.window = max(1, window_seconds)
+        self._hits: defaultdict[str, deque[float]] = defaultdict(deque)
+        self._lock = asyncio.Lock()
+
+    async def check(self, fingerprint: str) -> None:
+        if self.limit == 0:
+            return
+
+        now = time.monotonic()
+        async with self._lock:
+            bucket = self._hits[fingerprint]
+            while bucket and now - bucket[0] >= self.window:
+                bucket.popleft()
+            if len(bucket) >= self.limit:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Too many upload requests. Please retry later.",
+                )
+            bucket.append(now)
+
+    def reset(self) -> None:
+        self._hits.clear()
+
+
+class IdempotencyCoordinator:
+    """Coordinate idempotent request handling across concurrent workers."""
+
+    def __init__(self, ttl_seconds: int = 900, max_entries: int = 1024) -> None:
+        self._ttl = max(ttl_seconds, 0)
+        self._max_entries = max(max_entries, 0)
+        self._cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+        self._inflight: Dict[str, asyncio.Future] = {}
+        self._lock = asyncio.Lock()
+
+    async def enter(self, key: Optional[str]) -> Tuple[Optional[Dict[str, Any]], Optional[asyncio.Future], bool]:
+        if not key:
+            return None, None, True
+
+        async with self._lock:
+            now = time.monotonic()
+            self._purge_expired_locked(now)
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached[1], None, False
+
+            future = self._inflight.get(key)
+            if future is None:
+                future = asyncio.get_running_loop().create_future()
+                self._inflight[key] = future
+                return None, future, True
+
+        result = await future
+        return result, None, False
+
+    async def complete(self, key: str, future: asyncio.Future, payload: Dict[str, Any]) -> None:
+        async with self._lock:
+            if self._ttl > 0:
+                now = time.monotonic()
+                self._cache[key] = (now, payload)
+                self._enforce_cache_bounds_locked()
+            stored = self._inflight.get(key)
+            if stored is future and not stored.done():
+                stored.set_result(payload)
+            self._inflight.pop(key, None)
+
+    async def fail(self, key: str, future: asyncio.Future, exc: BaseException) -> None:
+        async with self._lock:
+            stored = self._inflight.get(key)
+            if stored is future and not stored.done():
+                stored.set_exception(exc)
+            self._inflight.pop(key, None)
+
+    def get(self, key: Optional[str]) -> Optional[Dict[str, Any]]:
+        if not key:
+            return None
+        cached = self._cache.get(key)
+        if not cached or self._ttl == 0:
+            return None
+        timestamp, payload = cached
+        if time.monotonic() - timestamp >= self._ttl:
+            self._cache.pop(key, None)
+            return None
+        return payload
+
+    def reset(self) -> None:
+        self._cache.clear()
+        self._inflight.clear()
+
+    def _purge_expired_locked(self, now: float) -> None:
+        if self._ttl == 0:
+            self._cache.clear()
+            return
+        expired = [key for key, (ts, _) in self._cache.items() if now - ts >= self._ttl]
+        for key in expired:
+            self._cache.pop(key, None)
+
+    def _enforce_cache_bounds_locked(self) -> None:
+        if self._max_entries == 0:
+            self._cache.clear()
+            return
+        while len(self._cache) > self._max_entries:
+            oldest_key = min(self._cache.items(), key=lambda item: item[1][0])[0]
+            self._cache.pop(oldest_key, None)
+
+
+UPLOAD_RATE_LIMITER = RateLimiter(
+    limit=settings.upload_rate_limit_requests,
+    window_seconds=settings.upload_rate_limit_window_seconds,
+)
+IDEMPOTENCY_COORDINATOR = IdempotencyCoordinator(
+    ttl_seconds=settings.idempotency_cache_ttl_seconds,
+    max_entries=settings.idempotency_cache_max_entries,
+)
+
+
+def _enforce_secure_cookies(response: Response) -> None:
+    rewritten: List[Tuple[bytes, bytes]] = []
+    for name, value in response.raw_headers:
+        if name.lower() != b"set-cookie":
+            rewritten.append((name, value))
+            continue
+
+        header = value.decode("latin-1")
+        segments = [segment.strip() for segment in header.split(";") if segment.strip()]
+        if not segments:
+            continue
+        cookie_value, *attributes = segments
+        lower_attrs = [attr.lower() for attr in attributes]
+        if not any(attr.startswith("samesite") for attr in lower_attrs):
+            attributes.append("SameSite=Lax")
+        if "secure" not in lower_attrs:
+            attributes.append("Secure")
+        if "httponly" not in lower_attrs:
+            attributes.append("HttpOnly")
+
+        normalized = [cookie_value]
+        seen = set()
+        for attribute in attributes:
+            key = attribute.lower()
+            if key.startswith("samesite"):
+                _, _, value_part = attribute.partition("=")
+                normalized_attr = f"SameSite={value_part.capitalize()}" if value_part else "SameSite=Lax"
+            elif key == "secure":
+                normalized_attr = "Secure"
+            elif key == "httponly":
+                normalized_attr = "HttpOnly"
+            else:
+                normalized_attr = attribute
+            if key not in seen:
+                normalized.append(normalized_attr)
+                seen.add(key)
+        rewritten.append((name, "; ".join(normalized).encode("latin-1")))
+
+    if rewritten:
+        response.raw_headers = tuple(rewritten)
+
+
+def _client_fingerprint(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        candidate = forwarded_for.split(",")[0].strip()
+        if candidate:
+            return candidate
+
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip and real_ip.strip():
+        return real_ip.strip()
+
+    forwarded = request.headers.get("forwarded")
+    if forwarded:
+        for entry in forwarded.split(","):
+            for piece in entry.split(";"):
+                piece = piece.strip()
+                if piece.lower().startswith("for="):
+                    value = piece.split("=", 1)[1].strip().strip('"')
+                    if value:
+                        # Remove IPv6 brackets if present
+                        return value.strip("[]")
+
+    return request.client.host if request.client else "anonymous"
+
+
+def _detect_mime_type(data: bytes, filename: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    sniffed: Optional[str] = None
+    if magic is not None:
+        try:
+            sniffed = magic.from_buffer(data, mime=True)  # type: ignore[call-arg]
+        except Exception:  # pragma: no cover - best effort fallback
+            sniffed = None
+    if sniffed is None and puremagic is not None:
+        try:
+            matches = puremagic.from_string(data)
+            if matches:
+                sniffed = matches[0].mime_type
+        except Exception:  # pragma: no cover - best effort fallback
+            sniffed = None
+
+    signature_map = {
+        b"\x89PNG\r\n\x1a\n": "image/png",
+        b"%PDF": "application/pdf",
+        b"PK\x03\x04": "application/zip",
+        b"MZ": "application/x-dosexec",
+    }
+    for signature, mime in signature_map.items():
+        if data.startswith(signature):
+            sniffed = sniffed or mime
+            break
+    guessed, _ = mimetypes.guess_type(filename or "")
+    return sniffed, guessed
+
+
+def _assert_allowed_mime(data: bytes, filename: Optional[str]) -> None:
+    sniffed, guessed = _detect_mime_type(data, filename)
+    ext = os.path.splitext(filename or "")[1].lower()
+    allowed_mimes = {
+        ".csv": {"text/csv", "text/plain", "application/vnd.ms-excel"},
+        ".tsv": {"text/tab-separated-values", "text/plain"},
+        ".xls": {"application/vnd.ms-excel"},
+        ".xlsx": {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/zip",
+        },
+    }.get(ext)
+
+    if not allowed_mimes:
+        return
+
+    if sniffed and sniffed not in allowed_mimes:
+        raise HTTPException(status_code=400, detail="Uploaded content signature does not match the file extension")
+
+    observed = {value for value in (sniffed, guessed) if value}
+    if not observed:
+        raise HTTPException(status_code=400, detail="Unable to determine file type for uploaded content")
+    if observed.isdisjoint(allowed_mimes):
+        raise HTTPException(status_code=400, detail="MIME type does not match allowed dataset formats")
+
+
+def _build_csp_policy(allowed_connect_origins: List[str]) -> str:
+    connect_sources = {"'self'"}
+    for origin in allowed_connect_origins:
+        connect_sources.add(origin.rstrip("/"))
+    directives = [
+        "default-src 'none'",
+        "frame-ancestors 'none'",
+        "base-uri 'none'",
+        "form-action 'self'",
+        f"connect-src {' '.join(sorted(connect_sources))}",
+        "img-src 'self' data:",
+        "font-src 'self'",
+        "style-src 'self'",
+        "script-src 'self'",
+        "object-src 'none'",
+    ]
+    return "; ".join(directives)
 API_PREFIX = "/api/v1"
 
 
@@ -85,27 +370,20 @@ app = FastAPI(
     openapi_url=f"{API_PREFIX}/openapi.json",
 )
 
-
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Attach a strict set of security-oriented HTTP headers."""
-
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        headers = {
-            "X-Content-Type-Options": "nosniff",
-            "X-Frame-Options": "DENY",
-            "Referrer-Policy": "same-origin",
-            "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
-            "Cross-Origin-Opener-Policy": "same-origin",
-            "Cross-Origin-Embedder-Policy": "require-corp",
-        }
-        for header, value in headers.items():
-            response.headers.setdefault(header, value)
-        return response
-
 # --- CORS ---
 allow_origins = {str(settings.frontend_origin), "http://127.0.0.1:5173", "http://127.0.0.1:5174"}
 allow_origins.update(settings.additional_origins)
+csp_policy = _build_csp_policy(sorted(allow_origins))
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "same-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+    "Content-Security-Policy": csp_policy,
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+}
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(allow_origins),
@@ -115,7 +393,19 @@ app.add_middleware(
 )
 
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
-app.add_middleware(SecurityHeadersMiddleware)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request, call_next):
+    response = await call_next(request)
+    for header, value in SECURITY_HEADERS.items():
+        response.headers[header] = value
+    _enforce_secure_cookies(response)
+    return response
+
+
+app.state.upload_rate_limiter = UPLOAD_RATE_LIMITER
+app.state.idempotency = IDEMPOTENCY_COORDINATOR
 
 EMAIL_LOG_PATH = DATA_DIR / "email_log.jsonl"
 
@@ -142,9 +432,6 @@ UPLOAD_SIZE = Histogram(
     registry=REGISTRY,
     buckets=(10 * 1024, 100 * 1024, 1024 * 1024, 10 * 1024 * 1024, 50 * 1024 * 1024, float("inf")),
 )
-
-_IDEMPOTENCY_CACHE: Dict[str, Dict[str, Any]] = {}
-
 
 async def _scan_for_malware(file_bytes: bytes) -> None:
     if not settings.clamav_scan_url:
@@ -306,9 +593,67 @@ def _ensure_allowed_extension(filename: Optional[str]) -> None:
     },
 )
 async def api_upload(
+    request: Request,
     file: UploadFile = File(..., description="Dataset file to upload"),
     idempotency_key: Optional[str] = Header(None, convert_underscores=False, alias="Idempotency-Key"),
 ) -> FileUploadResponse:
+    fingerprint = _client_fingerprint(request)
+    await UPLOAD_RATE_LIMITER.check(fingerprint)
+
+    cached, pending_future, should_process = await IDEMPOTENCY_COORDINATOR.enter(idempotency_key)
+    if not should_process:
+        if cached is not None:
+            return FileUploadResponse(**cached)
+        if pending_future is not None:
+            try:
+                cached_payload = await pending_future
+            except Exception as exc:  # pragma: no cover - bubble up task failure
+                raise exc
+            if cached_payload is None:
+                raise HTTPException(status_code=500, detail="Idempotent request state unavailable")
+            return FileUploadResponse(**cached_payload)
+
+    try:
+        _ensure_allowed_extension(file.filename)
+        data = await file.read()
+        if not data:
+            raise HTTPException(status_code=400, detail="Empty file")
+        if len(data) > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Max allowed size is {settings.max_upload_size_mb} MB",
+            )
+        _assert_allowed_mime(data, file.filename)
+        await _scan_for_malware(data)
+        # save
+        fid = str(uuid.uuid4())
+        safe = safe_filename(file.filename or "file")
+        upload_root = Path(UPLOAD_DIR)
+        upload_root.mkdir(parents=True, exist_ok=True)
+        path = upload_root / f"{fid}_{safe}"
+        with path.open("wb") as f:
+            f.write(data)
+        register_uploaded_file(fid, path)
+        # quick extraction for preview (optional)
+        try:
+            df = read_table_bytes(data, file.filename)
+            extraction = build_extraction(df)
+        except Exception:
+            extraction = None
+        quick = QuickExtraction.model_validate(extraction) if extraction else None
+        payload = FileUploadResponse(
+            status="success", file_url=fid, filename=file.filename, quick_extraction=quick
+        )
+        UPLOAD_COUNTER.inc()
+        UPLOAD_SIZE.observe(len(data))
+    except Exception as exc:
+        if idempotency_key and pending_future is not None:
+            await IDEMPOTENCY_COORDINATOR.fail(idempotency_key, pending_future, exc)
+        raise
+
+    if idempotency_key and pending_future is not None:
+        await IDEMPOTENCY_COORDINATOR.complete(idempotency_key, pending_future, payload.model_dump())
+    return payload
     if idempotency_key and idempotency_key in _IDEMPOTENCY_CACHE:
         return FileUploadResponse(**_IDEMPOTENCY_CACHE[idempotency_key])
 

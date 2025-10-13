@@ -53,7 +53,8 @@ uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
   `ALLOWED_UPLOAD_EXTENSIONS` (по умолчанию CSV/TSV/XLSX/XLS) и автоматически отклоняет
   превышающие лимит размера (`MAX_UPLOAD_SIZE_MB`). Для повторяющихся запросов используйте
   заголовок `Idempotency-Key`, чтобы повторно получить сохранённый результат без дублирования
-  данных.
+  данных. Кэш ответов очищается по TTL (`IDEMPOTENCY_CACHE_TTL_SECONDS`) и ограничению на число
+  записей (`IDEMPOTENCY_CACHE_MAX_ENTRIES`), что предотвращает неограниченный рост памяти.
 - При наличии переменной `CLAMAV_SCAN_URL` каждый файл отправляется на проверку ClamAV перед
   сохранением.
 - Эндпоинты документированы в интерактивной Swagger-спецификации `http://localhost:8000/docs`.
@@ -63,8 +64,9 @@ uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 
 ### Асинхронная обработка и фоновые задачи
 
-1. Включите очередь задач в `.env`: `TASK_QUEUE_ENABLED=1` и при необходимости измените
-   `TASK_QUEUE_NAME`/`TASK_DEFAULT_TIMEOUT`.
+1. Включите очередь задач в секции `env` SOPS-манифеста (см. раздел «Управление секретами»)
+   или через переменные окружения: установите `TASK_QUEUE_ENABLED=1` и при необходимости
+   измените `TASK_QUEUE_NAME`/`TASK_DEFAULT_TIMEOUT`.
 2. Поднимите Redis (можно через `docker-compose` или локально) и запустите RQ-воркер:
 
    ```bash
@@ -77,10 +79,12 @@ uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
    возвращаются в поле `error` и логируются для дальнейшего анализа.
 
 Для полноценной разработки рекомендуется использовать Postgres вместо локального файлового
-хранилища. Заполните переменные окружения из `.env.example` и примените миграции Alembic:
+хранилища. Сформируйте SOPS-файл на основе `secrets/example.secrets.yaml`, расшифруйте его при
+запуске (или экспортируйте переменные окружения вручную) и примените миграции Alembic:
 
 ```bash
-cp backend/.env.example backend/.env
+sops -d secrets/cluster.secrets.yaml | envsubst > /tmp/runtime.env
+export $(grep -v '^#' /tmp/runtime.env | xargs)
 poetry run alembic upgrade head
 ```
 
@@ -170,8 +174,23 @@ Prometheus и оркестраторами. Логи формируются в �
 
 GitHub Actions выполняют матричную сборку с Python 3.x и Node LTS. Workflow включает запуск
 `pytest`, `npm test`, сборку фронтенда, линтеры (ruff, black, mypy, eslint, prettier,
-typescript) и публикацию отчётов покрытия. Дополнительно задействованы pre-commit-hooks,
-Dependabot и CodeQL для обнаружения уязвимостей.
+typescript), публикацию отчётов покрытия и отдельный job для сканирования секретов (gitleaks
+и TruffleHog). Дополнительно задействованы pre-commit-hooks, Dependabot, CodeQL и периодический
+SCA workflow, который прогоняет `pip-audit` и `npm audit --production` по расписанию.
+
+## Управление секретами
+
+Секреты хранятся в зашифрованных файлах SOPS/age. Шаблон с описанием обязательных ключей —
+`secrets/example.secrets.yaml`. Рабочий процесс:
+
+1. Создайте файл `secrets/<environment>.secrets.yaml` из шаблона, зашифруйте его с помощью
+   `sops -e --age <recipient> ...` и храните в Git.
+2. В CI/CD пайплайнах расшифровывайте файл (например, `sops -d`), экспортируйте значения из
+   секции `env` и передавайте в приложение.
+3. Для ротации ключей используйте описанную в шаблоне схему: ежеквартальная проверка, мгновенная
+   замена при инцидентах и обязательное документирование в runbook.
+
+Подробности по процедурам ротации и интеграции с GitOps размещены в `docs/secrets.md`.
 
 ## Pre-commit
 
@@ -187,4 +206,4 @@ pre-commit install --hook-type pre-push
 
 ## Автоматизация в CI
 
-GitHub Actions запускают три независимых job'а: матричные проверки бэкенда на Python 3.10/3.11, фронтенда на Node 18/20 и прогон pre-commit. Каждая сборка публикует отчёты покрытия (pytest, Vitest) как артефакты. Дополнительно настроены CodeQL и Dependabot для поиска уязвимостей и обновления зависимостей.
+Workflow `ci.yml` включает четыре независимых job'а: матричные проверки бэкенда на Python 3.10/3.11, фронтенда на Node 18/20, прогон pre-commit и отдельный `secret-scan`, который выполняет gitleaks и TruffleHog. Каждая сборка публикует отчёты покрытия (pytest, Vitest) как артефакты. Помимо CodeQL и Dependabot настроен расписной workflow `sca.yml`, запускающий `pip-audit` и `npm audit` еженедельно.
