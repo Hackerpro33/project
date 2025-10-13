@@ -23,8 +23,8 @@
 5. Выполните автоматические тесты и линтеры (см. раздел «Проверка работоспособности»).
 
 > Подробный план развития проекта смотрите в [ROADMAP.md](ROADMAP.md), требования к
-> контрибьюторам — в [CONTRIBUTING.md](CONTRIBUTING.md), архитектурные решения описаны в
-> [docs/architecture.md](docs/architecture.md).
+> контрибьюторам — в [CONTRIBUTING.md](CONTRIBUTING.md), архитектурные решения и диаграммы —
+> в [docs/architecture.md](docs/architecture.md).
 
 ## Запуск фронтенда
 
@@ -49,7 +49,7 @@ uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 
 ### Политика загрузки и документация API
 
-- `POST /api/upload` принимает файлы с расширениями, перечисленными в переменной окружения
+- `POST /api/v1/upload` принимает файлы с расширениями, перечисленными в переменной окружения
   `ALLOWED_UPLOAD_EXTENSIONS` (по умолчанию CSV/TSV/XLSX/XLS) и автоматически отклоняет
   превышающие лимит размера (`MAX_UPLOAD_SIZE_MB`). Для повторяющихся запросов используйте
   заголовок `Idempotency-Key`, чтобы повторно получить сохранённый результат без дублирования
@@ -57,8 +57,8 @@ uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 - При наличии переменной `CLAMAV_SCAN_URL` каждый файл отправляется на проверку ClamAV перед
   сохранением.
 - Эндпоинты документированы в интерактивной Swagger-спецификации `http://localhost:8000/docs`.
-- Для тяжёлых наборов данных доступна асинхронная обработка: запрос `POST /api/extract/async`
-  ставит задачу в очередь Redis/RQ и возвращает `task_id`, а `GET /api/tasks/{task_id}` позволяет
+- Для тяжёлых наборов данных доступна асинхронная обработка: запрос `POST /api/v1/extract/async`
+  ставит задачу в очередь Redis/RQ и возвращает `task_id`, а `GET /api/v1/tasks/{task_id}` позволяет
   отслеживать статусы (`queued`, `started`, `finished`, `failed`) и получать итоговый payload.
 
 ### Асинхронная обработка и фоновые задачи
@@ -72,7 +72,7 @@ uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
    python -m app.worker
    ```
 
-3. Клиенты могут проверять статус фоновых задач через `GET /api/tasks/{task_id}` или подписаться
+3. Клиенты могут проверять статус фоновых задач через `GET /api/v1/tasks/{task_id}` или подписаться
    на обновления (например, с помощью периодического polling/SSE на фронтенде). Ошибки обработки
    возвращаются в поле `error` и логируются для дальнейшего анализа.
 
@@ -100,9 +100,24 @@ npm test
 pre-commit run --all-files
 pytest --cov=backend/app backend/app/tests
 cd frontend && npm run lint && npm run test -- --coverage
+
+# Контрактные и e2e тесты
+pytest -m contract
+npm run test:contracts
+PLAYWRIGHT_BASE_URL=http://localhost:5173 npm run test:e2e
 ```
 
 Набор тестов бэкенда охватывает загрузку файлов, CRUD-операции с наборами данных и визуализациями, генерацию аналитики и логирование писем. Тесты Vitest проверяют вспомогательные утилиты фронтенда и работу API-обёрток.
+
+Контрактные тесты Pact фиксируют схему обмена для `/api/v1/utils/send-email`, а снапшот OpenAPI (`backend/app/tests/snapshots/openapi_v1.json`) защищает общую спецификацию. E2E тест на Playwright запускается против любого стенда, базовый URL передаётся переменной `PLAYWRIGHT_BASE_URL`.
+
+## Нагрузочные проверки
+
+Базовый профиль на k6 (`tests/load/upload.js`) моделирует массовые загрузки файлов и контролирует SLO: `p(95) < 2.5s`, `error rate < 1%`. Запуск локально:
+
+```bash
+k6 run tests/load/upload.js -e K6_BASE_URL=http://localhost:8000
+```
 
 ## Дополнительные материалы
 
