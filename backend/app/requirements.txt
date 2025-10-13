@@ -3,6 +3,9 @@ uvicorn[standard]
 pandas
 numpy
 openpyxl
+pdfplumber
+pytesseract
+Pillow
 python-multipart
 python-dotenv
 pytest
@@ -13,3 +16,4 @@ prometheus-client
 pydantic-settings
 redis
 rq
+croniter
