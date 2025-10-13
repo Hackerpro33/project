@@ -1,0 +1,47 @@
+{{- if .Values.featureFlags.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "insight-sphere.unleashFullname" . }}
+  labels:
+    app: {{ include "insight-sphere.unleashFullname" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "insight-sphere.unleashFullname" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "insight-sphere.unleashFullname" . }}
+    spec:
+      containers:
+        - name: unleash
+          image: {{ .Values.featureFlags.image }}
+          env:
+            {{- range .Values.featureFlags.env }}
+            - name: {{ .name }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom: {{ toYaml .valueFrom | nindent 14 }}
+              {{- end }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.featureFlags.service.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "insight-sphere.unleashFullname" . }}
+  labels:
+    app: {{ include "insight-sphere.unleashFullname" . }}
+spec:
+  selector:
+    app: {{ include "insight-sphere.unleashFullname" . }}
+  ports:
+    - name: http
+      port: {{ .Values.featureFlags.service.port }}
+      targetPort: http
+{{- end }}

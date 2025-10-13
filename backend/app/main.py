@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 import os
@@ -74,6 +75,22 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers.setdefault(header, value)
         return response
 
+
+class CDNCacheMiddleware(BaseHTTPMiddleware):
+    """Apply CDN-friendly caching headers for frontend assets."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path.startswith("/static/"):
+            response.headers.setdefault(
+                "Cache-Control",
+                f"public, max-age={settings.cdn_cache_max_age}, immutable",
+            )
+        elif path.endswith(".html") or path == "/":
+            response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
 # --- CORS ---
 allow_origins = {str(settings.frontend_origin), "http://127.0.0.1:5173", "http://127.0.0.1:5174"}
 allow_origins.update(settings.additional_origins)
@@ -87,6 +104,7 @@ app.add_middleware(
 
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(CDNCacheMiddleware)
 
 EMAIL_LOG_PATH = DATA_DIR / "email_log.jsonl"
 
@@ -114,6 +132,12 @@ UPLOAD_SIZE = Histogram(
 )
 
 _IDEMPOTENCY_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+if settings.frontend_static_dir:
+    static_root = Path(settings.frontend_static_dir)
+    if static_root.exists():
+        app.mount("/static", StaticFiles(directory=str(static_root)), name="static")
 
 
 async def _scan_for_malware(file_bytes: bytes) -> None:
@@ -302,8 +326,7 @@ async def api_send_email(payload: EmailRequest) -> EmailResponse:
     log_path = Path(EMAIL_LOG_PATH)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(EMAIL_LOG_PATH, "a", encoding="utf-8") as log_file:
-        with open(log_path, "a", encoding="utf-8") as log_file:
+        with log_path.open("a", encoding="utf-8") as log_file:
             log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to log email: {exc}")
@@ -327,23 +350,27 @@ if __package__ in {None, ""}:
     import datasets_api as datasets_router_module
     import dictionary_api as dictionary_router_module
     import visualizations_api as visualizations_router_module
+    import feature_flags_api as feature_flags_router_module
 else:
     from . import audit_api as audit_router_module
     from . import chat_api as chat_router_module
     from . import datasets_api as datasets_router_module
     from . import dictionary_api as dictionary_router_module
     from . import visualizations_api as visualizations_router_module
+    from . import feature_flags_api as feature_flags_router_module
 
 datasets_router = datasets_router_module.router
 dictionary_router = dictionary_router_module.router
 visualizations_router = visualizations_router_module.router
 chat_router = chat_router_module.router
 audit_router = audit_router_module.router
+feature_flags_router = feature_flags_router_module.router
 
 app.include_router(datasets_router, prefix="/api/dataset")
 app.include_router(dictionary_router, prefix="/api/dictionary")
 app.include_router(visualizations_router, prefix="/api/visualization")
 app.include_router(chat_router, prefix="/api/chat")
 app.include_router(audit_router, prefix="/api/audit")
+app.include_router(feature_flags_router, prefix="/api/feature-flags")
 FILE_REGISTRY = get_file_registry()
 _safe_name = safe_filename

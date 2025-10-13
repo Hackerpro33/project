@@ -50,6 +50,11 @@ class Settings(BaseSettings):
         alias="REDIS_URL",
         description="Connection URL for the Redis instance used by background workers and caching.",
     )
+    database_url: str = Field(
+        "postgresql+psycopg://insight:insight@db:5432/insight",
+        alias="DATABASE_URL",
+        description="SQLAlchemy connection string for the primary PostgreSQL database.",
+    )
     task_queue_enabled: bool = Field(
         False,
         alias="TASK_QUEUE_ENABLED",
@@ -64,6 +69,41 @@ class Settings(BaseSettings):
         600,
         alias="TASK_DEFAULT_TIMEOUT",
         description="Default timeout for background analytics tasks in seconds.",
+    )
+    frontend_static_dir: Optional[str] = Field(
+        None,
+        alias="FRONTEND_DIST_DIR",
+        description="Optional path to pre-built frontend assets exposed as /static with CDN headers.",
+    )
+    cdn_cache_max_age: int = Field(
+        60 * 60 * 24 * 365,
+        alias="CDN_CACHE_MAX_AGE",
+        description="Cache duration in seconds for immutable frontend assets served by the API container.",
+    )
+    heavy_response_cache_seconds: int = Field(
+        60,
+        alias="HEAVY_RESPONSE_CACHE_SECONDS",
+        description="Cache duration applied to heavy API responses guarded by ETag headers.",
+    )
+    unleash_api_url: Optional[AnyHttpUrl] = Field(
+        None,
+        alias="UNLEASH_API_URL",
+        description="Base URL of the Unleash API (e.g. https://unleash.example.com/api)",
+    )
+    unleash_api_token: Optional[str] = Field(
+        None,
+        alias="UNLEASH_API_TOKEN",
+        description="API token with client access to Unleash feature toggles.",
+    )
+    unleash_environment: str = Field(
+        "development",
+        alias="UNLEASH_ENVIRONMENT",
+        description="Unleash environment name used when requesting feature toggles.",
+    )
+    feature_flag_cache_ttl_seconds: int = Field(
+        30,
+        alias="FEATURE_FLAG_CACHE_TTL",
+        description="In-memory cache TTL for Unleash feature flags in seconds.",
     )
 
     model_config = SettingsConfigDict(

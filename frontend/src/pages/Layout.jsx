@@ -1,10 +1,10 @@
 
 
-import React from "react";
+import React, { useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { 
-  BarChart3, 
+import {
+  BarChart3,
   Database, 
   Map, 
   TrendingUp, 
@@ -31,69 +31,82 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { useFeatureFlag } from "@/contexts/FeatureFlagContext.jsx";
 
 const navigationItems = [
   {
+    id: "dashboard",
     title: "Панель управления",
     url: createPageUrl("Dashboard"),
     icon: Home,
     gradient: "from-emerald-500 to-teal-600"
   },
-  { 
+  {
+    id: "assistant",
     title: "Аналитический ассистент",
     url: createPageUrl("Assistant"),
     icon: MessageSquare,
     gradient: "from-violet-500 to-purple-600"
   },
   {
+    id: "advanced-analytics",
     title: "Продвинутая аналитика",
     url: createPageUrl("AdvancedAnalytics"),
     icon: ShieldCheck,
-    gradient: "from-blue-600 to-purple-600"
+    gradient: "from-blue-600 to-purple-600",
+    featureFlag: "advanced_analytics"
   },
   {
+    id: "sources",
     title: "Источники данных",
     url: createPageUrl("DataSources"),
     icon: Database,
     gradient: "from-blue-500 to-cyan-600"
   },
   {
+    id: "transformation",
     title: "Преобразование данных",
     url: createPageUrl("DataTransformation"),
     icon: RefreshCw,
     gradient: "from-green-500 to-emerald-600"
   },
   {
+    id: "maps",
     title: "Карты",
     url: createPageUrl("Maps"),
     icon: Map,
     gradient: "from-purple-500 to-indigo-600"
   },
   {
+    id: "charts",
     title: "Графики",
     url: createPageUrl("Charts"),
     icon: BarChart3,
     gradient: "from-orange-500 to-red-600"
   },
   {
+    id: "forecasting",
     title: "Прогнозирование",
     url: createPageUrl("Forecasting"),
     icon: TrendingUp,
     gradient: "from-pink-500 to-rose-600"
   },
   {
+    id: "network",
     title: "Графы связей",
     url: createPageUrl("NetworkGraphs"),
     icon: Network,
     gradient: "from-cyan-500 to-blue-600"
   },
   {
+    id: "constructor",
     title: "Конструктор",
     url: createPageUrl("Constructor"),
     icon: Component,
     gradient: "from-slate-500 to-slate-600"
   },
   {
+    id: "settings",
     title: "Настройки",
     url: createPageUrl("Settings"),
     icon: SettingsIcon,
@@ -103,6 +116,20 @@ const navigationItems = [
 
 export default function Layout({ children, currentPageName }) {
   const location = useLocation();
+  const advancedAnalyticsEnabled = useFeatureFlag("advanced_analytics", false);
+  const filteredNavigationItems = useMemo(
+    () =>
+      navigationItems.filter((item) => {
+        if (!item.featureFlag) {
+          return true;
+        }
+        if (item.featureFlag === "advanced_analytics") {
+          return advancedAnalyticsEnabled;
+        }
+        return true;
+      }),
+    [advancedAnalyticsEnabled]
+  );
 
   return (
     <SidebarProvider>
@@ -174,7 +201,7 @@ export default function Layout({ children, currentPageName }) {
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu className="space-y-2">
-                  {navigationItems.map((item) => {
+                  {filteredNavigationItems.map((item) => {
                     const isActive = location.pathname === item.url;
                     return (
                       <SidebarMenuItem key={item.title}>

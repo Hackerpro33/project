@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-env
+  namespace: insight-prod
+data:
+  UNLEASH_ENVIRONMENT: production
+  DATABASE_URL: postgresql+psycopg://insight:insight@postgres:5432/insight
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-env
+  namespace: insight-prod
+data:
+  VITE_API_BASE: https://api.insight.example

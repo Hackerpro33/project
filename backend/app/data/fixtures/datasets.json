@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Городские происшествия",
+    "description": "Исторические данные о вызовах экстренных служб за последние 24 месяца.",
+    "tags": ["incidents", "safety", "bias-audit"],
+    "columns": [
+      {"name": "incident_type", "type": "string", "selected": true},
+      {"name": "district", "type": "string", "selected": true},
+      {"name": "response_time_min", "type": "number", "selected": true}
+    ],
+    "row_count": 128430,
+    "sample_data": [
+      {
+        "incident_type": "Theft",
+        "district": "Центральный",
+        "response_time_min": 6.2
+      }
+    ]
+  },
+  {
+    "name": "Отчёты патрулей",
+    "description": "Сводная информация о патрулировании и наблюдениях на маршрутах.",
+    "tags": ["patrol", "community"],
+    "columns": [
+      {"name": "route_id", "type": "string", "selected": true},
+      {"name": "shift", "type": "string", "selected": true},
+      {"name": "anomalies_detected", "type": "number", "selected": true}
+    ],
+    "row_count": 34120,
+    "sample_data": [
+      {
+        "route_id": "R-104",
+        "shift": "night",
+        "anomalies_detected": 4
+      }
+    ]
+  }
+]
