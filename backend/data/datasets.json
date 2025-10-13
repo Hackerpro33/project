@@ -3,7 +3,8 @@
     "name": "Demo",
     "description": "demo",
     "tags": [
-      "загружено"
+      "загружено",
+      "пример"
     ],
     "columns": [
       {
@@ -14,6 +15,10 @@
     ],
     "file_url": "demo",
     "row_count": 2,
+    "dataset_type": "operational",
+    "owners": [
+      "Demo Team"
+    ],
     "sample_data": [
       {
         "a": 1
@@ -23,6 +28,7 @@
       }
     ],
     "id": "712e98de-f2fe-44df-94e2-10f13905ac53",
-    "created_at": 1759807129
+    "created_at": 1759807129,
+    "auto_summary": "Набор данных содержит 2 строк Структура включает поля a. Тип: operational. Ответственные: Demo Team. Ключевые теги: загружено, пример. Данные актуальны."
   }
 ]

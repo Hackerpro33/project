@@ -10,7 +10,8 @@ Workflow `ci.yml` выполняет следующие шаги:
 4. Тесты: `pytest`, `npm test`, `npx playwright test`.
 5. Сборка фронтенда `npm run build` и упаковка артефактов.
 6. Загрузка отчётов покрытия в GitHub (и, опционально, в Codecov).
-7. Запуск секрет-сканера (`gitleaks`) и безопасность зависимостей.
+7. Отдельный job `secret-scan`, который прогоняет gitleaks и TruffleHog по всему репозиторию.
+8. Расписание `sca.yml` запускает `pip-audit` и `npm audit --production` еженедельно.
 
 ## Pre-commit
 

@@ -9,6 +9,7 @@ from ..utils import dictionaries as dictionary_store
 
 
 HEADERS = {"host": "localhost"}
+API_PREFIX = "/api/v1"
 
 
 @pytest.fixture(autouse=True)
@@ -61,7 +62,7 @@ def test_derive_focus_points_handles_multiple_signals():
 
 
 def test_get_state_returns_default_greeting(client):
-    response = client.get("/api/chat/state/alice", headers=HEADERS)
+    response = client.get(f"{API_PREFIX}/chat/state/alice", headers=HEADERS)
     assert response.status_code == 200
 
     payload = response.json()
@@ -72,7 +73,7 @@ def test_get_state_returns_default_greeting(client):
 
 def test_post_message_generates_reply_and_persists(client):
     response = client.post(
-        "/api/chat/message",
+        f"{API_PREFIX}/chat/message",
         json={"user_id": "bob", "message": "Покажи данные 2022 и визуализацию"},
         headers=HEADERS,
     )
@@ -97,7 +98,7 @@ def test_post_message_generates_reply_and_persists(client):
 
 def test_update_instructions_and_reset(client):
     update_response = client.post(
-        "/api/chat/instructions",
+        f"{API_PREFIX}/chat/instructions",
         json={"user_id": "carol", "instructions": "Быть кратким"},
         headers=HEADERS,
     )
@@ -105,7 +106,7 @@ def test_update_instructions_and_reset(client):
     assert update_response.json()["instructions"] == "Быть кратким"
 
     message_response = client.post(
-        "/api/chat/message",
+        f"{API_PREFIX}/chat/message",
         json={"user_id": "carol", "message": "Нужен отчет"},
         headers=HEADERS,
     )
@@ -113,7 +114,7 @@ def test_update_instructions_and_reset(client):
     assert "Быть кратким" in message_response.json()["messages"][-1]["content"]
 
     reset_response = client.post(
-        "/api/chat/reset",
+        f"{API_PREFIX}/chat/reset",
         json={"user_id": "carol"},
         headers=HEADERS,
     )
@@ -146,7 +147,7 @@ def test_dictionary_hints_are_appended(client):
     )
 
     response = client.post(
-        "/api/chat/message",
+        f"{API_PREFIX}/chat/message",
         json={"user_id": "dave", "message": "Что означает код A01 в таблице?"},
         headers=HEADERS,
     )

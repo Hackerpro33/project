@@ -5,6 +5,10 @@
     <link rel="icon" type="image/svg+xml" href="/local-favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; connect-src 'self' http://localhost:8000 https://localhost:8000; img-src 'self' data:; font-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+    />
+    <meta
       name="description"
       content="Анализатор — платформа для визуализации данных, локальной аналитики и управления источниками."
     />

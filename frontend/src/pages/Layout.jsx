@@ -59,6 +59,12 @@ const navigationItems = [
     gradient: "from-blue-500 to-cyan-600"
   },
   {
+    title: "Версии наборов",
+    url: createPageUrl("DatasetVersions"),
+    icon: FileDiff,
+    gradient: "from-indigo-500 to-blue-600",
+  },
+  {
     title: "Преобразование данных",
     url: createPageUrl("DataTransformation"),
     icon: RefreshCw,
@@ -99,6 +105,7 @@ const navigationItems = [
     url: createPageUrl("Collaboration"),
     icon: Users,
     gradient: "from-indigo-500 to-blue-600"
+    gradient: "from-sky-500 to-blue-600"
   },
   {
     title: "Настройки",

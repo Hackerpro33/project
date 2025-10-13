@@ -1,6 +1,12 @@
 """Pydantic schemas exposed by the backend."""
 from .upload import (
     ColumnPreview,
+    DatasetProfileColumn,
+    DatasetProfileRequest,
+    DatasetProfileResponse,
+    DatasetValidationIssue,
+    DatasetValidationRequest,
+    DatasetValidationResponse,
     EmailRequest,
     EmailResponse,
     ErrorResponse,
@@ -8,12 +14,23 @@ from .upload import (
     ExtractResponse,
     FileUploadResponse,
     QuickExtraction,
+    ResumableChunkAck,
+    ResumableUploadInitRequest,
+    ResumableUploadInitResponse,
     TaskEnqueueResponse,
     TaskStatusResponse,
+    UrlImportRequest,
+    ValidationRule,
 )
 
 __all__ = [
     "ColumnPreview",
+    "DatasetProfileColumn",
+    "DatasetProfileRequest",
+    "DatasetProfileResponse",
+    "DatasetValidationIssue",
+    "DatasetValidationRequest",
+    "DatasetValidationResponse",
     "EmailRequest",
     "EmailResponse",
     "ErrorResponse",
@@ -21,6 +38,11 @@ __all__ = [
     "ExtractResponse",
     "FileUploadResponse",
     "QuickExtraction",
+    "ResumableChunkAck",
+    "ResumableUploadInitRequest",
+    "ResumableUploadInitResponse",
     "TaskEnqueueResponse",
     "TaskStatusResponse",
+    "UrlImportRequest",
+    "ValidationRule",
 ]
