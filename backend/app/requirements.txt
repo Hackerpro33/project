@@ -8,6 +8,7 @@ python-dotenv
 pytest
 httpx
 pytest-cov
+polyfactory
 prometheus-client
 pydantic-settings
 redis

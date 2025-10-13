@@ -1,0 +1,50 @@
+{
+  "name": "Insight Workspace",
+  "dockerComposeFile": ["docker-compose.yml"],
+  "service": "workspace",
+  "workspaceFolder": "/workspace/project",
+  "remoteUser": "vscode",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
+  },
+  "postCreateCommand": "pip install -r backend/app/requirements.txt && ./scripts/install_frontend_deps.sh",
+  "postStartCommand": "python -m pip install --upgrade pip",
+  "forwardPorts": [5173, 8000, 5432, 6379, 9000, 9001],
+  "portsAttributes": {
+    "5173": {"label": "Vite"},
+    "8000": {"label": "FastAPI"},
+    "9000": {"label": "MinIO"},
+    "9001": {"label": "MinIO Console"}
+  },
+  "containerEnv": {
+    "POSTGRES_HOST": "postgres",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_DB": "analytics",
+    "POSTGRES_USER": "app",
+    "POSTGRES_PASSWORD": "app",
+    "REDIS_HOST": "redis",
+    "REDIS_PORT": "6379",
+    "MINIO_ENDPOINT": "http://minio:9000",
+    "MINIO_ROOT_USER": "minio",
+    "MINIO_ROOT_PASSWORD": "minio123"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python3",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-azuretools.vscode-docker",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}
