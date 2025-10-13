@@ -72,23 +72,27 @@ export function sanitizeCSVValue(value) {
   return needsQuoting ? `"${escapedValue}"` : escapedValue;
 }
 
+function extractColumnNames(columns) {
+  if (!Array.isArray(columns) || columns.length === 0) {
+    return [];
+  }
+
+  return columns
+    .map(column => column?.name)
+    .filter(name => typeof name === "string" && name.trim() !== "")
+    .map(name => String(name));
+}
+
 /**
  * Генерирует CSV-представление данных.
  */
 export function generateCSV(columns, data) {
-  if (!Array.isArray(columns) || columns.length === 0) {
+  const columnNames = extractColumnNames(columns);
+  if (columnNames.length === 0) {
     return "";
   }
 
   if (!Array.isArray(data) || data.length === 0) {
-    return "";
-  }
-
-  const columnNames = columns
-    .map(column => column?.name)
-    .filter(name => name !== undefined && name !== null);
-
-  if (columnNames.length === 0) {
     return "";
   }
 
@@ -100,6 +104,75 @@ export function generateCSV(columns, data) {
   );
 
   return [headers, ...rows].join("\n");
+}
+
+/**
+ * Генерирует JSON-представление табличных данных.
+ */
+export function generateJSON(columns, data) {
+  const rows = Array.isArray(data) ? data : [];
+  if (rows.length === 0) {
+    return "[]";
+  }
+
+  const columnNames = extractColumnNames(columns);
+  if (columnNames.length === 0) {
+    return JSON.stringify(rows, null, 2);
+  }
+
+  const normalized = rows.map(row => {
+    const result = {};
+    columnNames.forEach(columnName => {
+      result[columnName] = row?.[columnName] ?? "";
+    });
+    return result;
+  });
+
+  return JSON.stringify(normalized, null, 2);
+}
+
+/**
+ * Генерирует текстовое табличное представление данных.
+ */
+export function generatePlainText(columns, data) {
+  const columnNames = extractColumnNames(columns);
+  if (columnNames.length === 0) {
+    return "";
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  const tableMatrix = [
+    columnNames,
+    ...rows.map(row => columnNames.map(name => row?.[name] ?? "")),
+  ];
+
+  const columnWidths = columnNames.map((_, index) =>
+    tableMatrix.reduce((max, currentRow) => {
+      const cellValue = currentRow[index] ?? "";
+      return Math.max(max, String(cellValue).length);
+    }, 0)
+  );
+
+  const formatRow = values =>
+    values
+      .map((value, index) => String(value ?? "").padEnd(columnWidths[index], " "))
+      .join(" | ")
+      .trimEnd();
+
+  const header = formatRow(columnNames);
+  if (rows.length === 0) {
+    return header;
+  }
+
+  const separator = columnWidths
+    .map(width => (width === 0 ? "" : "-".repeat(width)))
+    .join(" | ");
+
+  const formattedRows = rows.map(row =>
+    formatRow(columnNames.map(name => row?.[name] ?? ""))
+  );
+
+  return [header, separator, ...formattedRows].join("\n");
 }
 
 const CONTENT_TYPES = {
@@ -127,5 +200,6 @@ export const __TEST_ONLY__ = {
   FILE_ICON_CATEGORIES,
   DEFAULT_FILE_ICON,
   CONTENT_TYPES,
+  extractColumnNames,
 };
 

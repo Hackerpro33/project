@@ -3,7 +3,11 @@ import builtins
 import itertools
 import json
 from datetime import datetime, timedelta
+import json
+from datetime import datetime
+from pathlib import Path
 
+import httpx
 import numpy as np
 import pandas as pd
 import pytest
@@ -14,8 +18,10 @@ from .. import datasets_api
 from .. import visualizations_api
 from .. import main
 from ..services import extraction
+from .factories import DatasetCreateFactory
 
 HEADERS = {"host": "localhost"}
+API_PREFIX = "/api/v1"
 
 
 @pytest.fixture(autouse=True)
@@ -72,7 +78,7 @@ def client():
 def test_upload_and_extract_roundtrip(client):
     csv_bytes = b"city,population\nParis,2148327\nBerlin,3769495\n"
     response = client.post(
-        "/api/upload",
+        f"{API_PREFIX}/upload",
         files={"file": ("cities.csv", csv_bytes, "text/csv")},
         headers=HEADERS,
     )
@@ -84,7 +90,7 @@ def test_upload_and_extract_roundtrip(client):
     assert payload["quick_extraction"]["row_count"] == 2
 
     extract_response = client.post(
-        "/api/extract",
+        f"{API_PREFIX}/extract",
         json={"file_url": payload["file_url"]},
         headers=HEADERS,
     )
@@ -97,7 +103,7 @@ def test_upload_and_extract_roundtrip(client):
 
 def test_extract_missing_file_returns_404(client):
     response = client.post(
-        "/api/extract",
+        f"{API_PREFIX}/extract",
         json={"file_url": "missing"},
         headers=HEADERS,
     )
@@ -105,23 +111,10 @@ def test_extract_missing_file_returns_404(client):
 
 
 def test_dataset_create_and_list(client):
-    dataset_payload = {
-        "name": "Extracted Sample",
-        "description": "Сгенерировано в тестах",
-        "tags": ["test"],
-        "columns": [
-            {"name": "city", "type": "string"},
-            {"name": "population", "type": "number"},
-        ],
-        "row_count": 2,
-        "sample_data": [
-            {"city": "Paris", "population": 2148327},
-            {"city": "Berlin", "population": 3769495},
-        ],
-    }
+    dataset_payload = DatasetCreateFactory.build().model_dump()
 
     create_response = client.post(
-        "/api/dataset/create",
+        f"{API_PREFIX}/dataset/create",
         json=dataset_payload,
         headers={"Content-Type": "application/json", **HEADERS},
     )
@@ -133,7 +126,7 @@ def test_dataset_create_and_list(client):
     assert created["dataset"].get("auto_summary")
 
     list_response = client.get(
-        "/api/dataset/list",
+        f"{API_PREFIX}/dataset/list",
         headers=HEADERS,
     )
     assert list_response.status_code == 200
@@ -146,7 +139,7 @@ def test_dataset_create_and_list(client):
 
 def test_dataset_update_and_delete(client):
     create_response = client.post(
-        "/api/dataset/create",
+        f"{API_PREFIX}/dataset/create",
         json={
             "name": "Initial dataset",
             "description": "До обновления",
@@ -158,7 +151,7 @@ def test_dataset_update_and_delete(client):
     dataset_id = create_response.json()["id"]
 
     update_response = client.put(
-        f"/api/dataset/{dataset_id}",
+        f"{API_PREFIX}/dataset/{dataset_id}",
         json={
             "description": "После обновления",
             "tags": ["updated"],
@@ -174,7 +167,7 @@ def test_dataset_update_and_delete(client):
     assert updated.get("auto_summary")
 
     delete_response = client.delete(
-        f"/api/dataset/{dataset_id}",
+        f"{API_PREFIX}/dataset/{dataset_id}",
         headers=HEADERS,
     )
 
@@ -182,7 +175,7 @@ def test_dataset_update_and_delete(client):
     assert delete_response.json()["status"] == "deleted"
 
     missing_response = client.get(
-        f"/api/dataset/{dataset_id}",
+        f"{API_PREFIX}/dataset/{dataset_id}",
         headers=HEADERS,
     )
     assert missing_response.status_code == 404
@@ -190,7 +183,7 @@ def test_dataset_update_and_delete(client):
 
 def test_visualization_crud_and_filter(client):
     dataset_response = client.post(
-        "/api/dataset/create",
+        f"{API_PREFIX}/dataset/create",
         json={
             "name": "Geo dataset",
             "columns": [],
@@ -200,7 +193,7 @@ def test_visualization_crud_and_filter(client):
     dataset_id = dataset_response.json()["id"]
 
     create_response = client.post(
-        "/api/visualization/create",
+        f"{API_PREFIX}/visualization/create",
         json={
             "title": "Map overview",
             "type": "map",
@@ -216,7 +209,7 @@ def test_visualization_crud_and_filter(client):
     assert viz_payload["visualization"]["title"] == "Map overview"
 
     list_response = client.get(
-        "/api/visualization/list",
+        f"{API_PREFIX}/visualization/list",
         headers=HEADERS,
     )
     assert list_response.status_code == 200
@@ -225,7 +218,7 @@ def test_visualization_crud_and_filter(client):
     assert all_items[0]["dataset_id"] == dataset_id
 
     filter_response = client.post(
-        "/api/visualization/filter",
+        f"{API_PREFIX}/visualization/filter",
         json={"filters": {"type": "map"}},
         headers=HEADERS,
     )
@@ -235,14 +228,14 @@ def test_visualization_crud_and_filter(client):
     assert filtered[0]["id"] == viz_id
 
     get_response = client.get(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         headers=HEADERS,
     )
     assert get_response.status_code == 200
     assert get_response.json()["title"] == "Map overview"
 
     update_response = client.put(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         json={"title": "Updated map", "tags": ["geo"]},
         headers=HEADERS,
     )
@@ -252,13 +245,13 @@ def test_visualization_crud_and_filter(client):
     assert updated["tags"] == ["geo"]
 
     delete_response = client.delete(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         headers=HEADERS,
     )
     assert delete_response.status_code == 200
 
     not_found = client.get(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         headers=HEADERS,
     )
     assert not_found.status_code == 404
@@ -266,7 +259,7 @@ def test_visualization_crud_and_filter(client):
 
 def test_send_email_logs_request(client, tmp_path):
     response = client.post(
-        "/api/utils/send-email",
+        f"{API_PREFIX}/utils/send-email",
         json={
             "to": "user@example.com",
             "subject": "Test",
@@ -308,6 +301,75 @@ def test_read_table_bytes_rejects_unknown_extension():
     with pytest.raises(HTTPException) as excinfo:
         main.read_table_bytes(b"", "file.txt")
     assert excinfo.value.status_code == 400
+
+
+def test_read_table_bytes_parses_pdf(monkeypatch):
+    from app.utils import files
+
+    class _FakePage:
+        def __init__(self, tables, text):
+            self._tables = tables
+            self._text = text
+
+        def extract_tables(self):
+            return self._tables
+
+        def extract_text(self):
+            return self._text
+
+    class _FakePDF:
+        def __init__(self, pages):
+            self.pages = pages
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def _fake_open(_):
+        tables = [[["col1", "col2"], ["1", "2"], ["3", "4"]]]
+        text = "col1,col2\n1,2\n3,4"
+        page = _FakePage(tables=tables, text=text)
+        return _FakePDF([page])
+
+    monkeypatch.setattr(files.pdfplumber, "open", _fake_open)
+
+    df = main.read_table_bytes(b"%PDF", "report.pdf")
+    assert df.to_dict(orient="records") == [{"col1": "1", "col2": "2"}, {"col1": "3", "col2": "4"}]
+
+
+def test_read_table_bytes_parses_image(monkeypatch):
+    from app.utils import files
+
+    class _FakeImage:
+        def convert(self, *_args, **_kwargs):
+            return self
+
+    monkeypatch.setattr(files.Image, "open", lambda *_: _FakeImage())
+    monkeypatch.setattr(files.pytesseract, "image_to_string", lambda *_args, **_kwargs: "col1,col2\n1,2")
+
+    df = main.read_table_bytes(b"", "table.png")
+    assert df.to_dict(orient="records") == [{"col1": "1", "col2": "2"}]
+
+
+def test_read_table_payload_exposes_records_and_excel(tmp_path):
+    from app.utils import files
+
+    csv_bytes = b"name,score\nAlice,95\nBob,88\n"
+    payload = files.read_table_payload(csv_bytes, "scores.csv")
+
+    assert payload.records == [
+        {"name": "Alice", "score": 95},
+        {"name": "Bob", "score": 88},
+    ]
+
+    excel_bytes = payload.to_excel_bytes()
+    excel_path = tmp_path / "scores.xlsx"
+    excel_path.write_bytes(excel_bytes)
+
+    loaded = pd.read_excel(excel_path)
+    assert loaded.to_dict(orient="records") == payload.records
 
 
 def test_detect_general_type_handles_common_series():
@@ -578,7 +640,7 @@ def test_upload_multiple_tables_near_limit(monkeypatch, client):
         assert len(csv_bytes) < limit
 
         upload_response = client.post(
-            "/api/upload",
+            f"{API_PREFIX}/upload",
             files={"file": (f"table_{idx}.csv", csv_bytes, "text/csv")},
             headers=HEADERS,
         )
@@ -588,7 +650,7 @@ def test_upload_multiple_tables_near_limit(monkeypatch, client):
         assert uploaded["quick_extraction"]["row_count"] == 50
 
         extract_response = client.post(
-            "/api/extract",
+            f"{API_PREFIX}/extract",
             json={"file_url": uploaded["file_url"]},
             headers=HEADERS,
         )
@@ -606,7 +668,7 @@ def test_upload_multiple_tables_near_limit(monkeypatch, client):
         }
 
         dataset_response = client.post(
-            "/api/dataset/create",
+            f"{API_PREFIX}/dataset/create",
             json=dataset_payload,
             headers={"Content-Type": "application/json", **HEADERS},
         )
@@ -614,7 +676,7 @@ def test_upload_multiple_tables_near_limit(monkeypatch, client):
         created_datasets.append(dataset_response.json()["id"])
 
     list_response = client.get(
-        "/api/dataset/list",
+        f"{API_PREFIX}/dataset/list",
         headers=HEADERS,
     )
     assert list_response.status_code == 200
@@ -624,22 +686,63 @@ def test_upload_multiple_tables_near_limit(monkeypatch, client):
     assert names == {"Batch 0", "Batch 1", "Batch 2"}
 
 
-def test_upload_rejects_files_over_limit(monkeypatch, client):
-    limit = 1024  # 1 KB
-    _set_upload_limit(monkeypatch, limit)
-
-    csv_bytes = _make_wide_csv(rows=80, columns=5)
-    assert len(csv_bytes) > limit
+def test_upload_rejects_files_over_limit(limit_upload_size, client, oversized_csv_payload):
+    limit_upload_size(1024)
 
     response = client.post(
-        "/api/upload",
+        f"{API_PREFIX}/upload",
         files={"file": ("too_big.csv", csv_bytes, "text/csv")},
+        "/api/upload",
+        files={"file": ("too_big.csv", oversized_csv_payload, "text/csv")},
         headers=HEADERS,
     )
 
     assert response.status_code == 413
     payload = response.json()
     assert "File too large" in payload["detail"]
+
+
+@pytest.mark.parametrize(
+    "clamav_status,clamav_payload,expected_status,expected_detail",
+    [
+        (503, {"status": "error"}, 502, "ClamAV scanning service unavailable"),
+        (200, {"status": "infected"}, 400, "File failed malware scan"),
+    ],
+)
+def test_upload_clamav_failure_paths(
+    monkeypatch,
+    client,
+    clamav_status,
+    clamav_payload,
+    expected_status,
+    expected_detail,
+    csv_bytes_factory,
+    limit_upload_size,
+):
+    limit_upload_size(2 * 1024 * 1024)
+    monkeypatch.setattr(main.settings, "clamav_scan_url", "http://clamav:3310/scan")
+
+    class _FakeResponse:
+        def __init__(self, status_code: int, payload: dict):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self) -> dict:
+            return self._payload
+
+    async def _fake_post(self, url, files):
+        return _FakeResponse(clamav_status, clamav_payload)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", _fake_post, raising=False)
+
+    response = client.post(
+        "/api/upload",
+        files={"file": ("dataset.csv", csv_bytes_factory(rows=10, columns=5), "text/csv")},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == expected_status
+    assert expected_detail in response.json()["detail"]
 
 
 def test_visualization_ensure_dates_populates_fields(monkeypatch):
@@ -713,7 +816,7 @@ def test_health_endpoint_returns_security_headers(client):
 
 def test_upload_rejects_empty_payload(client):
     response = client.post(
-        "/api/upload",
+        f"{API_PREFIX}/upload",
         files={"file": ("empty.csv", b"", "text/csv")},
         headers=HEADERS,
     )
@@ -724,7 +827,7 @@ def test_crime_factor_dataset_workflow(client):
     csv_bytes = _criminogenic_factors_csv()
 
     upload_response = client.post(
-        "/api/upload",
+        f"{API_PREFIX}/upload",
         files={"file": ("crime_factors.csv", csv_bytes, "text/csv")},
         headers=HEADERS,
     )
@@ -738,7 +841,7 @@ def test_crime_factor_dataset_workflow(client):
     assert any("risk factor" in insight.lower() for insight in extraction["insights"])
 
     extract_response = client.post(
-        "/api/extract",
+        f"{API_PREFIX}/extract",
         json={"file_url": upload_payload["file_url"]},
         headers=HEADERS,
     )
@@ -748,7 +851,7 @@ def test_crime_factor_dataset_workflow(client):
     assert any("policing resource" in insight.lower() for insight in extract_payload["insights"])
 
     dataset_response = client.post(
-        "/api/dataset/create",
+        f"{API_PREFIX}/dataset/create",
         json={
             "name": "Criminogenic Factors Central District",
             "description": "Многолетний мониторинг криминогенных показателей.",
@@ -765,7 +868,7 @@ def test_crime_factor_dataset_workflow(client):
     assert dataset_detail["row_count"] == 4
 
     dataset_list_response = client.get(
-        "/api/dataset/list",
+        f"{API_PREFIX}/dataset/list",
         headers=HEADERS,
     )
     assert dataset_list_response.status_code == 200
@@ -777,7 +880,7 @@ def test_crime_factor_dataset_workflow(client):
     assert dataset_listing["tags"] == ["crime-analysis", "trend"]
 
     dataset_get_response = client.get(
-        f"/api/dataset/{dataset_id}",
+        f"{API_PREFIX}/dataset/{dataset_id}",
         headers=HEADERS,
     )
     assert dataset_get_response.status_code == 200
@@ -786,7 +889,7 @@ def test_crime_factor_dataset_workflow(client):
     assert len(dataset_payload["sample_data"]) == 4
 
     update_response = client.put(
-        f"/api/dataset/{dataset_id}",
+        f"{API_PREFIX}/dataset/{dataset_id}",
         json={"description": "Обновлено с криминогенными инсайтами", "tags": ["crime-analysis", "hotspot"]},
         headers=HEADERS,
     )
@@ -794,7 +897,7 @@ def test_crime_factor_dataset_workflow(client):
     assert "hotspot" in update_response.json()["dataset"]["tags"]
 
     viz_response = client.post(
-        "/api/visualization/create",
+        f"{API_PREFIX}/visualization/create",
         json={
             "title": "Crime vs Policing Trend",
             "type": "line",
@@ -810,7 +913,7 @@ def test_crime_factor_dataset_workflow(client):
     assert viz_detail["config"]["y"] == ["crime_rate", "police_presence"]
 
     filtered_viz = client.post(
-        "/api/visualization/filter",
+        f"{API_PREFIX}/visualization/filter",
         json={"filters": {"type": "line"}},
         headers=HEADERS,
     )
@@ -818,7 +921,7 @@ def test_crime_factor_dataset_workflow(client):
     assert any(item["id"] == viz_id for item in filtered_viz.json())
 
     viz_get_response = client.get(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         headers=HEADERS,
     )
     assert viz_get_response.status_code == 200
@@ -826,7 +929,7 @@ def test_crime_factor_dataset_workflow(client):
     assert viz_payload["title"] == "Crime vs Policing Trend"
 
     viz_update_response = client.put(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         json={
             "title": "Crime vs Policing Trend (Updated)",
             "summary": {"crime_rate": {"latest": 16.7, "trend": "rising"}},
@@ -841,21 +944,21 @@ def test_crime_factor_dataset_workflow(client):
     assert "report" in updated_viz["tags"]
 
     viz_list_response = client.get(
-        "/api/visualization/list",
+        f"{API_PREFIX}/visualization/list",
         headers=HEADERS,
     )
     assert viz_list_response.status_code == 200
     assert any(item["id"] == viz_id for item in viz_list_response.json())
 
     viz_delete_response = client.delete(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         headers=HEADERS,
     )
     assert viz_delete_response.status_code == 200
     assert viz_delete_response.json()["status"] == "deleted"
 
     filtered_after_delete = client.post(
-        "/api/visualization/filter",
+        f"{API_PREFIX}/visualization/filter",
         json={"filters": {"type": "line"}},
         headers=HEADERS,
     )
@@ -863,14 +966,14 @@ def test_crime_factor_dataset_workflow(client):
     assert not any(item["id"] == viz_id for item in filtered_after_delete.json())
 
     dataset_delete_response = client.delete(
-        f"/api/dataset/{dataset_id}",
+        f"{API_PREFIX}/dataset/{dataset_id}",
         headers=HEADERS,
     )
     assert dataset_delete_response.status_code == 200
     assert dataset_delete_response.json()["status"] == "deleted"
 
     dataset_list_after_delete = client.get(
-        "/api/dataset/list",
+        f"{API_PREFIX}/dataset/list",
         headers=HEADERS,
     )
     assert dataset_list_after_delete.status_code == 200
@@ -881,7 +984,7 @@ def test_api_send_email_logs_errors(monkeypatch):
     def failing_open(*args, **kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(builtins, "open", failing_open)
+    monkeypatch.setattr(Path, "open", failing_open, raising=False)
 
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(

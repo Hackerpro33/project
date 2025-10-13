@@ -24,7 +24,7 @@ function buildQuery(params = {}) {
 
 export const Dataset = {
   async list(orderBy = '-created_at') {
-    return request(`/api/dataset/list${buildQuery({ order_by: orderBy })}`);
+    return request(`/api/v1/dataset/list${buildQuery({ order_by: orderBy })}`);
   },
 
   async search({
@@ -48,25 +48,39 @@ export const Dataset = {
   },
 
   async get(id) {
-    return request(`/api/dataset/${id}`);
+    return request(`/api/v1/dataset/${id}`);
   },
 
   async create(payload) {
-    return request('/api/dataset/create', {
+    return request('/api/v1/dataset/create', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async profile(payload) {
+    return request('/api/dataset/profile', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async validate(payload) {
+    return request('/api/dataset/validate', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
 
   async update(id, payload) {
-    return request(`/api/dataset/${id}`, {
+    return request(`/api/v1/dataset/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
   },
 
   async delete(id) {
-    return request(`/api/dataset/${id}`, {
+    return request(`/api/v1/dataset/${id}`, {
       method: 'DELETE',
     });
   },
@@ -91,38 +105,73 @@ export const Dataset = {
   },
 };
 
+export const DatasetVersions = {
+  async list(datasetId) {
+    if (!datasetId) {
+      throw new Error('datasetId is required');
+    }
+    return request(`/api/dataset/${datasetId}/versions`);
+  },
+
+  async create(datasetId, payload = {}) {
+    if (!datasetId) {
+      throw new Error('datasetId is required');
+    }
+    return request(`/api/dataset/${datasetId}/versions`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async diff(datasetId, currentId, previousId) {
+    if (!datasetId || !currentId || !previousId) {
+      throw new Error('datasetId, currentId и previousId обязательны');
+    }
+    return request(`/api/dataset/${datasetId}/versions/${currentId}/diff/${previousId}`);
+  },
+
+  async restore(datasetId, versionId) {
+    if (!datasetId || !versionId) {
+      throw new Error('datasetId и versionId обязательны');
+    }
+    return request(`/api/dataset/${datasetId}/versions/${versionId}/restore`, {
+      method: 'POST',
+    });
+  },
+};
+
 export const Visualization = {
   async list(orderBy = '-created_at') {
-    return request(`/api/visualization/list${buildQuery({ order_by: orderBy })}`);
+    return request(`/api/v1/visualization/list${buildQuery({ order_by: orderBy })}`);
   },
 
   async filter(filters = {}, orderBy = '-created_at') {
-    return request('/api/visualization/filter', {
+    return request('/api/v1/visualization/filter', {
       method: 'POST',
       body: JSON.stringify({ filters, order_by: orderBy }),
     });
   },
 
   async get(id) {
-    return request(`/api/visualization/${id}`);
+    return request(`/api/v1/visualization/${id}`);
   },
 
   async create(payload) {
-    return request('/api/visualization/create', {
+    return request('/api/v1/visualization/create', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
 
   async update(id, payload) {
-    return request(`/api/visualization/${id}`, {
+    return request(`/api/v1/visualization/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
   },
 
   async delete(id) {
-    return request(`/api/visualization/${id}`, {
+    return request(`/api/v1/visualization/${id}`, {
       method: 'DELETE',
     });
   },
