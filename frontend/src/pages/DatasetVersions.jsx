@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import PageContainer from "@/components/layout/PageContainer";
-import { Dataset, DatasetVersions as DatasetVersionsApi } from "@/api/entities";
+import {
+  Dataset,
+  DatasetVersions as DatasetVersionsApi,
+  getDatasets,
+} from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -138,159 +143,248 @@ function ChangesList({ title, icon: Icon, rows, emptyText }) {
   );
 }
 
+const DATASETS_QUERY_KEY = ["datasets", "ordered", "-created_at"];
+const datasetVersionsKey = (datasetId) => ["dataset-versions", datasetId];
+const datasetDiffKey = (datasetId, currentId, compareId) => [
+  "dataset-diff",
+  datasetId,
+  currentId,
+  compareId,
+];
+
 export default function DatasetVersions() {
-  const [datasets, setDatasets] = useState([]);
-  const [isLoadingDatasets, setIsLoadingDatasets] = useState(true);
-  const [selectedDataset, setSelectedDataset] = useState(null);
-  const [versions, setVersions] = useState([]);
-  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
-  const [error, setError] = useState(null);
-  const [diff, setDiff] = useState(null);
+  const queryClient = useQueryClient();
+  const [selectedDatasetId, setSelectedDatasetId] = useState(null);
   const [currentVersionId, setCurrentVersionId] = useState(null);
   const [compareWithId, setCompareWithId] = useState(null);
-  const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(false);
+  const [error, setError] = useState(null);
   const [restoreMessage, setRestoreMessage] = useState(null);
 
-  useEffect(() => {
-    const loadDatasets = async () => {
-      setIsLoadingDatasets(true);
-      try {
-        const data = await Dataset.list("-created_at");
-        setDatasets(Array.isArray(data) ? data : []);
-        if (Array.isArray(data) && data.length > 0) {
-          setSelectedDataset(data[0]);
-        }
-      } catch (err) {
-        console.error("Не удалось загрузить наборы данных", err);
-        setError("Не удалось загрузить список наборов данных");
-      } finally {
-        setIsLoadingDatasets(false);
-      }
-    };
-    loadDatasets();
-  }, []);
+  const {
+    data: datasets = [],
+    isLoading: isLoadingDatasets,
+    error: datasetsError,
+  } = useQuery({
+    queryKey: DATASETS_QUERY_KEY,
+    queryFn: async () => {
+      const items = await getDatasets({ orderBy: "-created_at" });
+      return Array.isArray(items) ? items : [];
+    },
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
-    if (!selectedDataset) {
-      setVersions([]);
+    if (datasetsError) {
+      console.error("Не удалось загрузить наборы данных", datasetsError);
+      setError("Не удалось загрузить список наборов данных");
+    }
+  }, [datasetsError]);
+
+  useEffect(() => {
+    if (datasets.length > 0 && !selectedDatasetId) {
+      setSelectedDatasetId(datasets[0].id);
+    }
+  }, [datasets, selectedDatasetId]);
+
+  useEffect(() => {
+    setRestoreMessage(null);
+    setError(null);
+    setCurrentVersionId(null);
+    setCompareWithId(null);
+  }, [selectedDatasetId]);
+
+  const selectedDataset = selectedDatasetId
+    ? datasets.find((item) => item.id === selectedDatasetId) ?? null
+    : null;
+
+  const {
+    data: versions = [],
+    isLoading: isLoadingVersions,
+    error: versionsError,
+  } = useQuery({
+    queryKey: datasetVersionsKey(selectedDatasetId),
+    enabled: Boolean(selectedDatasetId),
+    queryFn: async () => {
+      const list = await DatasetVersionsApi.list(selectedDatasetId);
+      return Array.isArray(list) ? list : [];
+    },
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (versionsError) {
+      console.error("Ошибка загрузки версий", versionsError);
+      setError("Не удалось загрузить версии выбранного набора");
+    }
+  }, [versionsError]);
+
+  useEffect(() => {
+    if (!selectedDatasetId) {
       return;
     }
-    const fetchVersions = async () => {
-      setIsLoadingVersions(true);
-      setError(null);
-      try {
-        const list = await DatasetVersionsApi.list(selectedDataset.id);
-        setVersions(Array.isArray(list) ? list : []);
-        if (list && list.length >= 2) {
-          setCurrentVersionId(list[0].id);
-          setCompareWithId(list[1].id);
-        } else if (list && list.length === 1) {
-          setCurrentVersionId(list[0].id);
-          setCompareWithId(null);
-          setDiff(null);
-        } else {
-          setCurrentVersionId(null);
-          setCompareWithId(null);
-          setDiff(null);
-        }
-        setRestoreMessage(null);
-      } catch (err) {
-        console.error("Ошибка загрузки версий", err);
-        setError("Не удалось загрузить версии выбранного набора");
-      } finally {
-        setIsLoadingVersions(false);
+
+    if (!versions.length) {
+      setCurrentVersionId(null);
+      setCompareWithId(null);
+      return;
+    }
+
+    const nextCurrentId = versions.some((item) => item.id === currentVersionId)
+      ? currentVersionId
+      : versions[0].id;
+
+    setCurrentVersionId((prev) => (prev === nextCurrentId ? prev : nextCurrentId));
+
+    if (versions.length < 2) {
+      setCompareWithId(null);
+      return;
+    }
+
+    setCompareWithId((prev) => {
+      if (
+        prev &&
+        prev !== nextCurrentId &&
+        versions.some((item) => item.id === prev)
+      ) {
+        return prev;
       }
-    };
-    fetchVersions();
-  }, [selectedDataset?.id]);
+      const fallback = versions.find((item) => item.id !== nextCurrentId);
+      return fallback ? fallback.id : null;
+    });
+  }, [versions, selectedDatasetId, currentVersionId]);
+
+  const {
+    data: diff = null,
+    isLoading: isLoadingDiff,
+    error: diffError,
+  } = useQuery({
+    queryKey: datasetDiffKey(
+      selectedDatasetId,
+      currentVersionId,
+      compareWithId
+    ),
+    enabled: Boolean(selectedDatasetId && currentVersionId && compareWithId),
+    queryFn: async () => {
+      if (!selectedDatasetId || !currentVersionId || !compareWithId) {
+        return null;
+      }
+      return DatasetVersionsApi.diff(
+        selectedDatasetId,
+        currentVersionId,
+        compareWithId
+      );
+    },
+  });
 
   useEffect(() => {
-    const loadDiff = async () => {
-      if (!selectedDataset || !currentVersionId || !compareWithId) {
-        setDiff(null);
-        return;
-      }
-      try {
-        const response = await DatasetVersionsApi.diff(
-          selectedDataset.id,
-          currentVersionId,
-          compareWithId
-        );
-        setDiff(response);
-      } catch (err) {
-        console.error("Не удалось получить diff версий", err);
-        setError("Ошибка при расчёте различий между версиями");
-      }
-    };
-    loadDiff();
-  }, [selectedDataset?.id, currentVersionId, compareWithId]);
+    if (diffError) {
+      console.error("Не удалось получить diff версий", diffError);
+      setError("Ошибка при расчёте различий между версиями");
+    }
+  }, [diffError]);
 
-  const handleCreateSnapshot = async () => {
-    if (!selectedDataset) return;
-    setIsCreatingSnapshot(true);
-    setError(null);
-    try {
-      await DatasetVersionsApi.create(selectedDataset.id, {
+  const createSnapshotMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedDatasetId) {
+        throw new Error("datasetId is required");
+      }
+      return DatasetVersionsApi.create(selectedDatasetId, {
         notes: "Снимок создан вручную из интерфейса",
         author: "web-user",
       });
-      const updated = await DatasetVersionsApi.list(selectedDataset.id);
-      setVersions(updated);
-      if (updated.length >= 2) {
-        setCurrentVersionId(updated[0].id);
-        setCompareWithId(updated[1].id);
+    },
+    onSuccess: () => {
+      if (selectedDatasetId) {
+        queryClient.invalidateQueries({
+          queryKey: datasetVersionsKey(selectedDatasetId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["dataset-diff", selectedDatasetId],
+        });
       }
       setRestoreMessage(null);
-    } catch (err) {
+    },
+    onError: (err) => {
       console.error("Не удалось создать снимок", err);
       setError("Не удалось создать новую версию. Попробуйте позже.");
-    } finally {
-      setIsCreatingSnapshot(false);
+    },
+  });
+
+  const restoreVersionMutation = useMutation({
+    mutationFn: async ({ versionId }) => {
+      if (!selectedDatasetId) {
+        throw new Error("datasetId is required");
+      }
+      await DatasetVersionsApi.restore(selectedDatasetId, versionId);
+      const refreshedDataset = await Dataset.get(selectedDatasetId);
+      return { refreshedDataset };
+    },
+    onSuccess: ({ refreshedDataset }, variables) => {
+      queryClient.setQueryData(DATASETS_QUERY_KEY, (current) => {
+        if (!Array.isArray(current)) {
+          return current;
+        }
+        const next = current.map((item) =>
+          item.id === refreshedDataset.id ? refreshedDataset : item
+        );
+        if (next.some((item) => item.id === refreshedDataset.id)) {
+          return next;
+        }
+        return [...next, refreshedDataset];
+      });
+
+      if (selectedDatasetId) {
+        queryClient.invalidateQueries({
+          queryKey: datasetVersionsKey(selectedDatasetId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["dataset-diff", selectedDatasetId],
+        });
+      }
+
+      setRestoreMessage(
+        `Данные набора обновлены до версии ${variables.versionNumber}.`
+      );
+    },
+    onError: (err) => {
+      console.error("Не удалось восстановить версию", err);
+      setError("Не удалось восстановить выбранную версию. Попробуйте позже.");
+    },
+  });
+
+  const handleCreateSnapshot = () => {
+    if (!selectedDatasetId) {
+      return;
     }
+    setError(null);
+    setRestoreMessage(null);
+    createSnapshotMutation.mutate();
   };
 
   const handleDatasetChange = (value) => {
-    const dataset = datasets.find((item) => item.id === value);
-    setSelectedDataset(dataset || null);
-    setDiff(null);
+    setSelectedDatasetId(value);
+    setError(null);
     setRestoreMessage(null);
   };
 
   const currentVersion = versions.find((item) => item.id === currentVersionId) || null;
   const compareVersion = versions.find((item) => item.id === compareWithId) || null;
 
-  const handleRestoreVersion = async () => {
+  const handleRestoreVersion = () => {
     if (!selectedDataset || !currentVersion) {
       return;
     }
 
-    setIsRestoring(true);
     setError(null);
     setRestoreMessage(null);
-
-    try {
-      await DatasetVersionsApi.restore(selectedDataset.id, currentVersion.id);
-
-      const refreshedDataset = await Dataset.get(selectedDataset.id);
-      setSelectedDataset(refreshedDataset);
-      setDatasets((items) =>
-        items.map((item) => (item.id === refreshedDataset.id ? refreshedDataset : item))
-      );
-
-      const versionsList = await DatasetVersionsApi.list(selectedDataset.id);
-      setVersions(Array.isArray(versionsList) ? versionsList : []);
-
-      setRestoreMessage(
-        `Данные набора обновлены до версии ${currentVersion.version_number}.`
-      );
-    } catch (err) {
-      console.error("Не удалось восстановить версию", err);
-      setError("Не удалось восстановить выбранную версию. Попробуйте позже.");
-    } finally {
-      setIsRestoring(false);
-    }
+    restoreVersionMutation.mutate({
+      versionId: currentVersion.id,
+      versionNumber: currentVersion.version_number,
+    });
   };
+
+  const isCreatingSnapshot = createSnapshotMutation.isPending;
+  const isRestoring = restoreVersionMutation.isPending;
 
   return (
     <PageContainer className="space-y-8">
@@ -473,6 +567,11 @@ export default function DatasetVersions() {
               <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center text-sm text-slate-500">
                 Выберите две версии, чтобы увидеть различия.
               </div>
+            ) : isLoadingDiff ? (
+              <div className="space-y-4">
+                <Skeleton className="h-32 w-full" />
+                <Skeleton className="h-64 w-full" />
+              </div>
             ) : diff ? (
               <div className="space-y-6">
                 <div className="grid md:grid-cols-2 gap-4">
@@ -522,7 +621,7 @@ export default function DatasetVersions() {
                     Автоматическое резюме
                   </div>
                   <ul className="list-disc list-inside text-sm text-emerald-700 space-y-1">
-                    {diff.highlights.map((item, index) => (
+                    {(diff.highlights ?? []).map((item, index) => (
                       <li key={index}>{item}</li>
                     ))}
                   </ul>
@@ -540,32 +639,32 @@ export default function DatasetVersions() {
                     <ChangesList
                       title="Добавленные строки"
                       icon={Plus}
-                      rows={diff.added_rows}
+                      rows={diff.added_rows ?? []}
                       emptyText="Нет новых строк"
                     />
                     <Separator />
                     <ChangesList
                       title="Удалённые строки"
                       icon={ArrowClockwise}
-                      rows={diff.removed_rows}
+                      rows={diff.removed_rows ?? []}
                       emptyText="Нет удалённых строк"
                     />
                     <Separator />
                     <ChangesList
                       title="Изменённые строки"
                       icon={Diff}
-                      rows={diff.changed_rows}
+                      rows={diff.changed_rows ?? []}
                       emptyText="Нет обновлённых строк"
                     />
                   </div>
                 </ScrollArea>
               </div>
             ) : (
-              <div className="flex justify-center">
-                <div className="h-32 w-32">
-                  <Skeleton className="h-full w-full" />
-                </div>
-              </div>
+              <Alert className="bg-slate-50 border-slate-200 text-slate-600">
+                <AlertDescription>
+                  Для выбранных версий пока нет рассчитанных различий. Попробуйте выбрать другую комбинацию.
+                </AlertDescription>
+              </Alert>
             )}
           </CardContent>
         </Card>
