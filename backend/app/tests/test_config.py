@@ -21,3 +21,16 @@ def test_apply_sops_secrets_loads_env(monkeypatch, tmp_path):
     monkeypatch.setenv("SOPS_TEST_KEY", "manual")
     config._apply_sops_secrets()
     assert os.environ["SOPS_TEST_KEY"] == "manual"
+
+
+def test_settings_exposes_idempotency_cache_tuning(monkeypatch):
+    monkeypatch.setenv("IDEMPOTENCY_CACHE_TTL_SECONDS", "60")
+    monkeypatch.setenv("IDEMPOTENCY_CACHE_MAX_ENTRIES", "5")
+
+    config.get_settings.cache_clear()
+    settings = config.get_settings()
+
+    assert settings.idempotency_cache_ttl_seconds == 60
+    assert settings.idempotency_cache_max_entries == 5
+
+    config.get_settings.cache_clear()

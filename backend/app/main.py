@@ -87,8 +87,10 @@ class RateLimiter:
 class IdempotencyCoordinator:
     """Coordinate idempotent request handling across concurrent workers."""
 
-    def __init__(self) -> None:
-        self._cache: Dict[str, Dict[str, Any]] = {}
+    def __init__(self, ttl_seconds: int = 900, max_entries: int = 1024) -> None:
+        self._ttl = max(ttl_seconds, 0)
+        self._max_entries = max(max_entries, 0)
+        self._cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
         self._inflight: Dict[str, asyncio.Future] = {}
         self._lock = asyncio.Lock()
 
@@ -97,9 +99,11 @@ class IdempotencyCoordinator:
             return None, None, True
 
         async with self._lock:
+            now = time.monotonic()
+            self._purge_expired_locked(now)
             cached = self._cache.get(key)
             if cached is not None:
-                return cached, None, False
+                return cached[1], None, False
 
             future = self._inflight.get(key)
             if future is None:
@@ -112,7 +116,10 @@ class IdempotencyCoordinator:
 
     async def complete(self, key: str, future: asyncio.Future, payload: Dict[str, Any]) -> None:
         async with self._lock:
-            self._cache[key] = payload
+            if self._ttl > 0:
+                now = time.monotonic()
+                self._cache[key] = (now, payload)
+                self._enforce_cache_bounds_locked()
             stored = self._inflight.get(key)
             if stored is future and not stored.done():
                 stored.set_result(payload)
@@ -128,18 +135,44 @@ class IdempotencyCoordinator:
     def get(self, key: Optional[str]) -> Optional[Dict[str, Any]]:
         if not key:
             return None
-        return self._cache.get(key)
+        cached = self._cache.get(key)
+        if not cached or self._ttl == 0:
+            return None
+        timestamp, payload = cached
+        if time.monotonic() - timestamp >= self._ttl:
+            self._cache.pop(key, None)
+            return None
+        return payload
 
     def reset(self) -> None:
         self._cache.clear()
         self._inflight.clear()
+
+    def _purge_expired_locked(self, now: float) -> None:
+        if self._ttl == 0:
+            self._cache.clear()
+            return
+        expired = [key for key, (ts, _) in self._cache.items() if now - ts >= self._ttl]
+        for key in expired:
+            self._cache.pop(key, None)
+
+    def _enforce_cache_bounds_locked(self) -> None:
+        if self._max_entries == 0:
+            self._cache.clear()
+            return
+        while len(self._cache) > self._max_entries:
+            oldest_key = min(self._cache.items(), key=lambda item: item[1][0])[0]
+            self._cache.pop(oldest_key, None)
 
 
 UPLOAD_RATE_LIMITER = RateLimiter(
     limit=settings.upload_rate_limit_requests,
     window_seconds=settings.upload_rate_limit_window_seconds,
 )
-IDEMPOTENCY_COORDINATOR = IdempotencyCoordinator()
+IDEMPOTENCY_COORDINATOR = IdempotencyCoordinator(
+    ttl_seconds=settings.idempotency_cache_ttl_seconds,
+    max_entries=settings.idempotency_cache_max_entries,
+)
 
 
 def _enforce_secure_cookies(response: Response) -> None:

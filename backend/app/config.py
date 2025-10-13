@@ -118,6 +118,17 @@ class Settings(BaseSettings):
         description="Size of the upload rate limiting window in seconds.",
     )
 
+    idempotency_cache_ttl_seconds: int = Field(
+        900,
+        alias="IDEMPOTENCY_CACHE_TTL_SECONDS",
+        description="Lifetime in seconds for cached idempotent responses before reprocessing.",
+    )
+    idempotency_cache_max_entries: int = Field(
+        1024,
+        alias="IDEMPOTENCY_CACHE_MAX_ENTRIES",
+        description="Maximum number of idempotent responses retained in memory.",
+    )
+
     model_config = SettingsConfigDict(
         env_file=os.getenv("INSIGHT_ENV_FILE"),
         env_file_encoding="utf-8",

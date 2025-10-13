@@ -201,3 +201,76 @@ async def test_idempotent_upload_handles_concurrent_requests(monkeypatch, tmp_pa
     assert first_body == second_body
     assert len(list(main.UPLOAD_DIR.iterdir())) == 1
     assert len(calls) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_idempotency_cache_expires_entries(monkeypatch, anyio_backend):
+    class Clock:
+        def __init__(self) -> None:
+            self.value = 0.0
+
+        def monotonic(self) -> float:
+            return self.value
+
+        def advance(self, delta: float) -> None:
+            self.value += delta
+
+    clock = Clock()
+    monkeypatch.setattr(main, "time", clock)
+
+    coordinator = main.IdempotencyCoordinator(ttl_seconds=2, max_entries=10)
+    monkeypatch.setattr(main, "IDEMPOTENCY_COORDINATOR", coordinator)
+
+    cached, future, should_process = await coordinator.enter("expiring")
+    assert cached is None
+    assert future is not None
+    assert should_process is True
+
+    payload = {"status": "ok"}
+    await coordinator.complete("expiring", future, payload)
+
+    cached, future, should_process = await coordinator.enter("expiring")
+    assert cached == payload
+    assert future is None
+    assert should_process is False
+
+    clock.advance(3)
+
+    cached, future, should_process = await coordinator.enter("expiring")
+    assert cached is None
+    assert future is not None
+    assert should_process is True
+    assert coordinator.get("expiring") is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_idempotency_cache_enforces_max_entries(monkeypatch, anyio_backend):
+    class Clock:
+        def __init__(self) -> None:
+            self.value = 0.0
+
+        def monotonic(self) -> float:
+            return self.value
+
+        def advance(self, delta: float) -> None:
+            self.value += delta
+
+    clock = Clock()
+    monkeypatch.setattr(main, "time", clock)
+
+    coordinator = main.IdempotencyCoordinator(ttl_seconds=100, max_entries=2)
+    monkeypatch.setattr(main, "IDEMPOTENCY_COORDINATOR", coordinator)
+
+    for idx in range(3):
+        cached, future, should_process = await coordinator.enter(f"key-{idx}")
+        assert cached is None
+        assert future is not None
+        assert should_process is True
+        await coordinator.complete(f"key-{idx}", future, {"value": idx})
+        clock.advance(1)
+
+    assert coordinator.get("key-0") is None
+    assert coordinator.get("key-1") == {"value": 1}
+    assert coordinator.get("key-2") == {"value": 2}
