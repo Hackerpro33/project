@@ -104,6 +104,7 @@ const navigationItems = [
     title: "Совместная работа",
     url: createPageUrl("Collaboration"),
     icon: Users,
+    gradient: "from-indigo-500 to-blue-600"
     gradient: "from-sky-500 to-blue-600"
   },
   {

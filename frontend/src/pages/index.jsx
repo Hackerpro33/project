@@ -1,3 +1,6 @@
+import Layout from './Layout.jsx'
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom'
+import { PAGES, getCurrentPage } from './pageRegistry'
 import React from 'react';
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 
@@ -17,6 +20,7 @@ function PagesContent() {
         ))}
       </Routes>
     </Layout>
+  )
   );
 }
 
