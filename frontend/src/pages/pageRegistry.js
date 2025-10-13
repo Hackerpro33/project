@@ -8,6 +8,7 @@ import Constructor from './Constructor'
 import Settings from './Settings'
 import DataTransformation from './DataTransformation'
 import Assistant from './Assistant'
+import DatasetVersions from './DatasetVersions'
 
 export const PAGES = {
   Dashboard,
@@ -20,6 +21,7 @@ export const PAGES = {
   Settings,
   DataTransformation,
   Assistant,
+  DatasetVersions,
 }
 
 export function getCurrentPage(url) {

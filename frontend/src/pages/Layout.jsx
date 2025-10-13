@@ -16,7 +16,8 @@ import {
   Settings as SettingsIcon, // Imported SettingsIcon
   RefreshCw, // Added RefreshCw icon for Data Transformation
   MessageSquare,
-  ShieldCheck
+  ShieldCheck,
+  FileDiff,
 } from "lucide-react";
 import {
   Sidebar,
@@ -56,6 +57,12 @@ const navigationItems = [
     url: createPageUrl("DataSources"),
     icon: Database,
     gradient: "from-blue-500 to-cyan-600"
+  },
+  {
+    title: "Версии наборов",
+    url: createPageUrl("DatasetVersions"),
+    icon: FileDiff,
+    gradient: "from-indigo-500 to-blue-600",
   },
   {
     title: "Преобразование данных",

@@ -41,6 +41,41 @@ export const Dataset = {
   },
 };
 
+export const DatasetVersions = {
+  async list(datasetId) {
+    if (!datasetId) {
+      throw new Error('datasetId is required');
+    }
+    return request(`/api/dataset/${datasetId}/versions`);
+  },
+
+  async create(datasetId, payload = {}) {
+    if (!datasetId) {
+      throw new Error('datasetId is required');
+    }
+    return request(`/api/dataset/${datasetId}/versions`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async diff(datasetId, currentId, previousId) {
+    if (!datasetId || !currentId || !previousId) {
+      throw new Error('datasetId, currentId и previousId обязательны');
+    }
+    return request(`/api/dataset/${datasetId}/versions/${currentId}/diff/${previousId}`);
+  },
+
+  async restore(datasetId, versionId) {
+    if (!datasetId || !versionId) {
+      throw new Error('datasetId и versionId обязательны');
+    }
+    return request(`/api/dataset/${datasetId}/versions/${versionId}/restore`, {
+      method: 'POST',
+    });
+  },
+};
+
 export const Visualization = {
   async list(orderBy = '-created_at') {
     return request(`/api/visualization/list${buildQuery({ order_by: orderBy })}`);
