@@ -710,12 +710,8 @@ def _make_wide_csv(rows: int, columns: int) -> bytes:
 
 
 def _criminogenic_factors_csv() -> bytes:
-    return """region,year,crime_rate,unemployment_rate,poverty_index,police_presence
-Central,2020,12.5,5.1,18.4,220
-Central,2021,13.9,5.3,18.9,215
-Central,2022,15.8,5.6,19.5,208
-Central,2023,16.7,5.4,19.8,200
-""".encode("utf-8")
+    data_path = Path(__file__).resolve().parent / "data" / "chicago_crime_trends.csv"
+    return data_path.read_bytes()
 
 
 def test_upload_multiple_tables_near_limit(monkeypatch, client):
@@ -922,9 +918,11 @@ def test_crime_factor_dataset_workflow(client):
     extraction = upload_payload["quick_extraction"]
 
     assert extraction["row_count"] == 4
-    assert any(col["name"] == "crime_rate" and col["type"] == "number" for col in extraction["columns"])
-    assert any("crime indicator" in insight.lower() for insight in extraction["insights"])
-    assert any("risk factor" in insight.lower() for insight in extraction["insights"])
+    assert any(col["name"] == "crime_incidents" and col["type"] == "number" for col in extraction["columns"])
+    assert any(
+        "crime indicator" in insight.lower() and "crime_incidents" in insight
+        for insight in extraction["insights"]
+    )
 
     extract_response = client.post(
         f"{API_PREFIX}/extract",
@@ -934,13 +932,16 @@ def test_crime_factor_dataset_workflow(client):
     assert extract_response.status_code == 200
     extract_payload = extract_response.json()["output"]
     assert extract_payload["row_count"] == 4
-    assert any("policing resource" in insight.lower() for insight in extract_payload["insights"])
+    assert any(
+        "crime indicator" in insight.lower() and "crime_incidents" in insight
+        for insight in extract_payload["insights"]
+    )
 
     dataset_response = client.post(
         f"{API_PREFIX}/dataset/create",
         json={
-            "name": "Criminogenic Factors Central District",
-            "description": "Многолетний мониторинг криминогенных показателей.",
+            "name": "Chicago Crime Trends 2020-2023",
+            "description": "Агрегированные годовые показатели преступности по данным портала City of Chicago.",
             "tags": ["crime-analysis", "trend"],
             "columns": extract_payload["columns"],
             "row_count": extract_payload["row_count"],
@@ -971,12 +972,15 @@ def test_crime_factor_dataset_workflow(client):
     )
     assert dataset_get_response.status_code == 200
     dataset_payload = dataset_get_response.json()
-    assert dataset_payload["description"].startswith("Многолетний")
+    assert "City of Chicago" in dataset_payload["description"]
     assert len(dataset_payload["sample_data"]) == 4
 
     update_response = client.put(
         f"{API_PREFIX}/dataset/{dataset_id}",
-        json={"description": "Обновлено с криминогенными инсайтами", "tags": ["crime-analysis", "hotspot"]},
+        json={
+            "description": "Обновлено свежими сводками Chicago Data Portal",
+            "tags": ["crime-analysis", "hotspot"],
+        },
         headers=HEADERS,
     )
     assert update_response.status_code == 200
@@ -985,10 +989,10 @@ def test_crime_factor_dataset_workflow(client):
     viz_response = client.post(
         f"{API_PREFIX}/visualization/create",
         json={
-            "title": "Crime vs Policing Trend",
+            "title": "Chicago Crime Trend Comparison",
             "type": "line",
             "dataset_id": dataset_id,
-            "config": {"x": "year", "y": ["crime_rate", "police_presence"]},
+            "config": {"x": "year", "y": ["crime_incidents", "theft_incidents"]},
             "tags": ["crime-analysis"],
         },
         headers=HEADERS,
@@ -996,7 +1000,7 @@ def test_crime_factor_dataset_workflow(client):
     assert viz_response.status_code == 200
     viz_id = viz_response.json()["id"]
     viz_detail = viz_response.json()["visualization"]
-    assert viz_detail["config"]["y"] == ["crime_rate", "police_presence"]
+    assert viz_detail["config"]["y"] == ["crime_incidents", "theft_incidents"]
 
     filtered_viz = client.post(
         f"{API_PREFIX}/visualization/filter",
@@ -1012,13 +1016,13 @@ def test_crime_factor_dataset_workflow(client):
     )
     assert viz_get_response.status_code == 200
     viz_payload = viz_get_response.json()
-    assert viz_payload["title"] == "Crime vs Policing Trend"
+    assert viz_payload["title"] == "Chicago Crime Trend Comparison"
 
     viz_update_response = client.put(
         f"{API_PREFIX}/visualization/{viz_id}",
         json={
-            "title": "Crime vs Policing Trend (Updated)",
-            "summary": {"crime_rate": {"latest": 16.7, "trend": "rising"}},
+            "title": "Chicago Crime Trend Comparison (Updated)",
+            "summary": {"crime_incidents": {"latest": 263134, "trend": "rising"}},
             "tags": ["crime-analysis", "report"],
         },
         headers=HEADERS,
@@ -1026,7 +1030,7 @@ def test_crime_factor_dataset_workflow(client):
     assert viz_update_response.status_code == 200
     updated_viz = viz_update_response.json()["visualization"]
     assert updated_viz["title"].endswith("(Updated)")
-    assert updated_viz["summary"]["crime_rate"]["trend"] == "rising"
+    assert updated_viz["summary"]["crime_incidents"]["trend"] == "rising"
     assert "report" in updated_viz["tags"]
 
     viz_list_response = client.get(
