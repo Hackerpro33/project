@@ -1,4 +1,7 @@
 """Visualization CRUD endpoints backed by JSON storage."""
+from __future__ import annotations
+
+import json
 
 from __future__ import annotations
 
@@ -10,7 +13,11 @@ import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
+from math import ceil
 from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Set, Union
+
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, params
@@ -27,8 +34,51 @@ settings = get_settings()
 APP_DIR = Path(__file__).resolve().parent
 _DATA_DIR = APP_DIR / "data"
 _DEFAULT_STORE = _DATA_DIR / "visualizations"
-_ENV_STORE = Path(os.getenv("INSIGHT_VISUALIZATIONS_DIR", _DEFAULT_STORE))
+_ENV_STORE = Path(os.environ.get("INSIGHT_VISUALIZATIONS_DIR") or _DEFAULT_STORE)
+CANDIDATE_DIRS: List[Path] = [_ENV_STORE, _DEFAULT_STORE, _DATA_DIR]
+DEFAULT_PAGE_SIZE = 20
+_ORDERABLE_FIELDS = {"created_at", "updated_at", "title", "type"}
 
+
+def _resolve_store_dir() -> Path:
+    for candidate in CANDIDATE_DIRS:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            continue
+        if candidate.exists():
+            return candidate
+    fallback = _DEFAULT_STORE
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
+
+
+STORE_DIR = _resolve_store_dir()
+VISUALIZATIONS_JSON = STORE_DIR / "visualizations.json"
+
+
+def _atomic_write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix="visualizations_",
+        suffix=".json",
+        dir=str(path.parent),
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+
+    try:
+        with tmp_path.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        shutil.move(str(tmp_path), str(path))
+    finally:
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
 CANDIDATE_DIRS: List[Path] = [_ENV_STORE, _DEFAULT_STORE, _DATA_DIR]
 
 
@@ -79,32 +129,18 @@ class VisualizationFilterRequest(BaseModel):
 def _load_all() -> List[Dict[str, Any]]:
     if not VISUALIZATIONS_JSON.exists():
         return []
-    with VISUALIZATIONS_JSON.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-        if isinstance(payload, list):
-            return [dict(item) for item in payload]
-        raise ValueError("Visualization store must contain a JSON array")
-
-
-def _atomic_write_json(target: Path, payload: Any) -> None:
-    """Persist ``payload`` to ``target`` using a temporary file."""
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = target.with_suffix(target.suffix + ".tmp")
-    with tmp_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
-        handle.flush()
-        try:
-            os.fsync(handle.fileno())
-        except OSError:
-            # Some environments (e.g. certain Docker volumes) may not support fsync.
-            pass
-    os.replace(tmp_path, target)
+    try:
+        with VISUALIZATIONS_JSON.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return []
+    if isinstance(payload, list):
+        return [dict(item) for item in payload]
+    raise ValueError("Visualization store must contain a JSON array")
 
 
 def _save_all(items: Iterable[Dict[str, Any]]) -> None:
-    payload = list(items)
-    _atomic_write_json(VISUALIZATIONS_JSON, payload)
+    _atomic_write_json(VISUALIZATIONS_JSON, list(items))
 
 
 def _format_datetime(dt: datetime) -> str:
@@ -131,8 +167,23 @@ def _ensure_dates(item: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def _normalize_tags(tags: Iterable[str]) -> List[str]:
-    return [str(tag) for tag in tags]
+def _normalize_tags(tags: Optional[Iterable[str]]) -> List[str]:
+    if not tags:
+        return []
+    seen: Set[str] = set()
+    normalized: List[str] = []
+    for tag in tags:
+        if tag is None:
+            continue
+        cleaned = str(tag).strip()
+        if not cleaned:
+            continue
+        lower = cleaned.lower()
+        if lower in seen:
+            continue
+        seen.add(lower)
+        normalized.append(cleaned)
+    return normalized
 
 
 def _sort_items(items: List[Dict[str, Any]], order_by: Optional[str]) -> List[Dict[str, Any]]:
@@ -147,7 +198,12 @@ def _sort_items(items: List[Dict[str, Any]], order_by: Optional[str]) -> List[Di
         value = item.get(normalized_field)
         if isinstance(value, (int, float)):
             return value
+        if isinstance(value, str):
+            return value.lower()
         return str(value or "")
+
+    return sorted(items, key=_sort_key, reverse=reverse)
+
 
 def _normalise_list(values: Optional[Iterable[str]]) -> Set[str]:
     if not values:
@@ -156,46 +212,17 @@ def _normalise_list(values: Optional[Iterable[str]]) -> Set[str]:
     for value in values:
         if not value:
             continue
-        result.add(value.strip().lower())
+        result.add(str(value).strip().lower())
     return result
 
 
-def _resolve_param(value):
-    if isinstance(value, params.Param):
-        return value.default
-    return value
-
-
-@router.get("/list")
-def list_visualizations(
-    order_by: Optional[str] = "-created_at",
-    page: int = Query(1, ge=1, description="Номер страницы"),
-    page_size: int = Query(20, ge=1, le=100, description="Количество элементов на странице"),
-    search: Optional[str] = Query(None, description="Поиск по названию, описанию и тегам"),
-    tags: Optional[List[str]] = Query(None, description="Фильтр по тегам"),
-    types: Optional[List[str]] = Query(None, description="Фильтр по типу визуализации"),
-):
-    raw_page = page
-    raw_page_size = page_size
-    page = _resolve_param(page) or 1
-    page_size = _resolve_param(page_size) or DEFAULT_PAGE_SIZE
-    search = _resolve_param(search)
-    tags = _resolve_param(tags)
-    types = _resolve_param(types)
-    if isinstance(tags, str):
-        tags = [tags]
-    if isinstance(types, str):
-        types = [types]
-
-    return sorted(items, key=_sort_key, reverse=reverse)
-
-
-def _list_visualizations(order_by: Optional[str] = "-created_at") -> List[Dict[str, Any]]:
-    items = [_ensure_dates(item) for item in _load_all()]
-
-    available_tags = sorted({tag for item in items for tag in item.get("tags", []) if tag})
-    available_types = sorted({item.get("type") for item in items if item.get("type")})
-
+def _apply_filters(
+    items: List[Dict[str, Any]],
+    *,
+    search: Optional[str],
+    tags: Optional[Iterable[str]],
+    types: Optional[Iterable[str]],
+) -> List[Dict[str, Any]]:
     filtered = items
 
     if search:
@@ -222,27 +249,59 @@ def _list_visualizations(order_by: Optional[str] = "-created_at") -> List[Dict[s
     type_filter = _normalise_list(types)
     if type_filter:
         filtered = [
-            item for item in filtered if (item.get("type") or "").lower() in type_filter
+            item
+            for item in filtered
+            if (item.get("type") or "").strip().lower() in type_filter
         ]
 
-    filtered = _sort_items(filtered, order_by)
+    return filtered
 
-    total = len(filtered)
-    start = (page - 1) * page_size
+
+def _list_visualizations_internal(
+    *,
+    order_by: Optional[str],
+    search: Optional[str],
+    tags: Optional[Iterable[str]],
+    types: Optional[Iterable[str]],
+) -> List[Dict[str, Any]]:
+    items = [_ensure_dates(item) for item in _load_all()]
+    items = _apply_filters(items, search=search, tags=tags, types=types)
+    return _sort_items(items, order_by)
+
+
+def _paginate_items(
+    items: List[Dict[str, Any]],
+    *,
+    page: int,
+    page_size: int,
+    request: Optional[Request],
+    search: Optional[str],
+    tag_filter: Set[str],
+    type_filter: Set[str],
+) -> Dict[str, Any]:
+    total = len(items)
+    start = max(0, (page - 1) * page_size)
     end = start + page_size
-    paginated = filtered[start:end]
+    paginated = items[start:end]
     total_pages = ceil(total / page_size) if total else 0
 
-    compatibility_plain = (
-        (isinstance(raw_page, params.Param) or page == 1)
-        and (isinstance(raw_page_size, params.Param) or page_size == DEFAULT_PAGE_SIZE)
+    user_defined_page = request is not None and "page" in request.query_params
+    user_defined_page_size = request is not None and "page_size" in request.query_params
+
+    available_tags = sorted({tag for item in items for tag in item.get("tags", []) if tag})
+    available_types = sorted({item.get("type") for item in items if item.get("type")})
+
+    if (
+        not user_defined_page
+        and not user_defined_page_size
         and not search
         and not tag_filter
         and not type_filter
-    )
-
-    if compatibility_plain:
-        return filtered
+        and page == 1
+        and page_size == DEFAULT_PAGE_SIZE
+    ):
+        paginated = items
+        total_pages = 1 if total else 0
 
     return {
         "items": paginated,
@@ -259,33 +318,111 @@ def _list_visualizations(order_by: Optional[str] = "-created_at") -> List[Dict[s
     }
 
 
+class VisualizationBase(BaseModel):
+    title: Optional[str] = None
+    type: Optional[str] = Field(default="chart")
+    dataset_id: Optional[str] = None
+    config: Dict[str, Any] = Field(default_factory=dict)
+    summary: Optional[Dict[str, Any]] = None
+    tags: List[str] = Field(default_factory=list)
+    x_axis: Optional[str] = None
+    y_axis: Optional[str] = None
+    z_axis: Optional[str] = None
+    insights: Optional[List[str]] = None
+
+
+class VisualizationCreate(VisualizationBase):
+    title: str
+    type: str = "chart"
+
+
+class VisualizationUpdate(VisualizationBase):
+    pass
+
+
+class VisualizationFilterRequest(BaseModel):
+    filters: Dict[str, Any] = Field(default_factory=dict)
+    order_by: Optional[str] = "-created_at"
+
+
 def list_visualizations(order_by: Optional[str] = "-created_at") -> List[Dict[str, Any]]:
-    return _list_visualizations(order_by=order_by)
+    return _list_visualizations_internal(order_by=order_by, search=None, tags=None, types=None)
 
 
-@router.get("/list")
+@router.get("/list", response_model=None)
 def list_visualizations_endpoint(
     order_by: Optional[str] = "-created_at",
-    request: Request = None,  # type: ignore[assignment]
-    response: Response = None,  # type: ignore[assignment]
-) -> List[Dict[str, Any]]:
-    items = _list_visualizations(order_by=order_by)
+    page: int = Query(1, ge=1, description="Номер страницы"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=100, description="Количество элементов на странице"),
+    search: Optional[str] = Query(None, description="Поиск по названию, описанию и тегам"),
+    tags: Optional[List[str]] = Query(None, description="Фильтр по тегам"),
+    types: Optional[List[str]] = Query(None, description="Фильтр по типу визуализации"),
+    *,
+    request: Request,
+    response: Response,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    items = _list_visualizations_internal(
+        order_by=order_by,
+        search=search,
+        tags=tags,
+        types=types,
+    )
 
-    if response is not None:
-        cache_payload = {"order_by": order_by, "items": items}
-        etag = apply_cache_headers(
-            response,
-            cache_payload,
-            cache_seconds=settings.heavy_response_cache_seconds,
-        )
-        if request is not None and should_return_not_modified(request, etag):
-            headers = {"ETag": etag}
-            cache_control = response.headers.get("Cache-Control")
-            if cache_control:
-                headers["Cache-Control"] = cache_control
-            return Response(status_code=304, headers=headers)  # type: ignore[return-value]
+    tag_filter = _normalise_list(tags)
+    type_filter = _normalise_list(types)
+    payload = _paginate_items(
+        items,
+        page=page,
+        page_size=page_size,
+        request=request,
+        search=search,
+        tag_filter=tag_filter,
+        type_filter=type_filter,
+    )
 
-    return items
+    explicit_paging = request is not None and any(
+        key in request.query_params for key in ("page", "page_size")
+    )
+    return_full_list = (
+        payload["page"] == 1
+        and payload["page_size"] == DEFAULT_PAGE_SIZE
+        and payload["total"] == len(items)
+        and len(payload["items"]) == len(items)
+        and not tag_filter
+        and not type_filter
+        and not search
+        and not explicit_paging
+    )
+
+    cache_payload = {
+        "order_by": order_by,
+        "page": page,
+        "page_size": page_size,
+        "search": search,
+        "tags": sorted(tag_filter),
+        "types": sorted(type_filter),
+        "payload": payload,
+    }
+    etag = apply_cache_headers(
+        response,
+        cache_payload,
+        cache_seconds=settings.heavy_response_cache_seconds,
+    )
+    if should_return_not_modified(request, etag):
+        headers = {"ETag": etag}
+        cache_control = response.headers.get("Cache-Control")
+        if cache_control:
+            headers["Cache-Control"] = cache_control
+        return Response(status_code=304, headers=headers)  # type: ignore[return-value]
+
+    return payload["items"] if return_full_list else payload
+
+
+def _find_visualization(items: List[Dict[str, Any]], viz_id: str) -> Dict[str, Any]:
+    for item in items:
+        if item.get("id") == viz_id:
+            return item
+    raise HTTPException(status_code=404, detail="Visualization not found")
 
 
 def create_visualization(payload: VisualizationCreate) -> Dict[str, Any]:
@@ -315,13 +452,6 @@ def create_visualization_endpoint(payload: VisualizationCreate) -> Dict[str, Any
     return create_visualization(payload)
 
 
-def _find_visualization(items: List[Dict[str, Any]], viz_id: str) -> Dict[str, Any]:
-    for item in items:
-        if item.get("id") == viz_id:
-            return item
-    raise HTTPException(status_code=404, detail="Visualization not found")
-
-
 def get_visualization(viz_id: str) -> Dict[str, Any]:
     items = _load_all()
     visualization = _find_visualization(items, viz_id)
@@ -339,7 +469,7 @@ def update_visualization(viz_id: str, payload: VisualizationUpdate) -> Dict[str,
 
     update_payload = payload.model_dump(exclude_unset=True)
     if "tags" in update_payload:
-        update_payload["tags"] = _normalize_tags(payload.tags)
+        update_payload["tags"] = _normalize_tags(update_payload.get("tags"))
 
     visualization.update(update_payload)
     visualization["updated_at"] = int(time.time())
@@ -369,44 +499,66 @@ def delete_visualization_endpoint(viz_id: str) -> Dict[str, Any]:
 
 
 def filter_visualizations(filter_request: VisualizationFilterRequest) -> List[Dict[str, Any]]:
-    items = _list_visualizations(order_by=filter_request.order_by)
+    items = _list_visualizations_internal(
+        order_by=filter_request.order_by,
+        search=None,
+        tags=None,
+        types=None,
+    )
     filtered: List[Dict[str, Any]] = []
     for item in items:
         matches = True
         for field, expected in filter_request.filters.items():
-            if item.get(field) != expected:
-                matches = False
-                break
+            value = item.get(field)
+            if isinstance(expected, (list, tuple, set)):
+                if isinstance(value, (list, tuple, set)):
+                    value_set = {str(v) for v in value}
+                    expected_set = {str(v) for v in expected}
+                    if not expected_set.issubset(value_set):
+                        matches = False
+                        break
+                else:
+                    if str(value) not in {str(v) for v in expected}:
+                        matches = False
+                        break
+            else:
+                if isinstance(value, list):
+                    if str(expected) not in {str(v) for v in value}:
+                        matches = False
+                        break
+                elif value != expected:
+                    matches = False
+                    break
         if matches:
             filtered.append(item)
     return filtered
 
 
-@router.post("/filter")
+@router.post("/filter", response_model=None)
 def filter_visualizations_endpoint(
     filter_request: VisualizationFilterRequest,
-    request: Request = None,  # type: ignore[assignment]
-    response: Response = None,  # type: ignore[assignment]
+    *,
+    request: Request,
+    response: Response,
 ) -> List[Dict[str, Any]]:
     items = filter_visualizations(filter_request)
 
-    if response is not None:
-        cache_payload = {
-            "filters": filter_request.filters,
-            "order_by": filter_request.order_by,
-            "items": items,
-        }
-        etag = apply_cache_headers(
-            response,
-            cache_payload,
-            cache_seconds=settings.heavy_response_cache_seconds,
-        )
-        if request is not None and should_return_not_modified(request, etag):
-            headers = {"ETag": etag}
-            cache_control = response.headers.get("Cache-Control")
-            if cache_control:
-                headers["Cache-Control"] = cache_control
-            return Response(status_code=304, headers=headers)  # type: ignore[return-value]
+    cache_payload = {
+        "filters": filter_request.filters,
+        "order_by": filter_request.order_by,
+        "items": items,
+    }
+    etag = apply_cache_headers(
+        response,
+        cache_payload,
+        cache_seconds=settings.heavy_response_cache_seconds,
+    )
+    if should_return_not_modified(request, etag):
+        headers = {"ETag": etag}
+        cache_control = response.headers.get("Cache-Control")
+        if cache_control:
+            headers["Cache-Control"] = cache_control
+        return Response(status_code=304, headers=headers)  # type: ignore[return-value]
 
     return items
 
@@ -428,4 +580,3 @@ __all__ = [
     "_atomic_write_json",
     "_save_all",
 ]
-

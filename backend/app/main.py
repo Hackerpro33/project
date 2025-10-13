@@ -4,6 +4,8 @@ import json
 import logging
 import json
 import mimetypes
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Query
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
@@ -90,6 +92,8 @@ from .schemas import (
     ResumableUploadInitRequest,
     ResumableUploadInitResponse,
     TaskEnqueueResponse,
+    TaskHistoryListResponse,
+    TaskHistoryEntry,
     TaskHistoryEntry,
     TaskHistoryListResponse,
     TaskStatusResponse,

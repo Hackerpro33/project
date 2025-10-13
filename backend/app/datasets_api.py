@@ -59,6 +59,30 @@ from .utils.cache import apply_cache_headers, should_return_not_modified
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+APP_DIR = Path(__file__).resolve().parent
+CANDIDATE_DIRS = [APP_DIR.parent / "data", APP_DIR / "data"]
+
+
+def _ensure_store_dir() -> Path:
+    for directory in CANDIDATE_DIRS:
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            return directory
+        except Exception:
+            continue
+    fallback = APP_DIR
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
+
+
+from fastapi import APIRouter, HTTPException, Request, Response
+from pydantic import BaseModel, Field
+
+from .config import get_settings
+from .utils.cache import apply_cache_headers, should_return_not_modified
+
+router = APIRouter()
 settings = get_settings()
 
 APP_DIR = Path(__file__).resolve().parent
