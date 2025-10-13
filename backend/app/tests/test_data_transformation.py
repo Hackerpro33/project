@@ -417,10 +417,15 @@ def test_dataset_listing_respects_order(monkeypatch):
     datasets_api.create_dataset(datasets_api.DatasetCreate(name="First"))
     datasets_api.create_dataset(datasets_api.DatasetCreate(name="Second"))
 
-    names_desc = [item["name"] for item in datasets_api.list_datasets()]
+    names_desc = [
+        item["name"] for item in datasets_api.list_datasets(page_size=10)["items"]
+    ]
     assert names_desc == ["Second", "First"]
 
-    names_asc = [item["name"] for item in datasets_api.list_datasets(order_by="created_at")]
+    names_asc = [
+        item["name"]
+        for item in datasets_api.list_datasets(order_by="created_at", page_size=10)["items"]
+    ]
     assert names_asc == ["First", "Second"]
 
 

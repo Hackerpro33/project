@@ -1,7 +1,9 @@
 import { Dataset } from "@/api/entities";
+import React, { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { extractDataFromUploadedFile, uploadFile } from "@/api/integrations";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,6 +28,9 @@ import DatasetCard from "../components/datasources/DatasetCard";
 import DatasetPreview from "../components/datasources/DatasetPreview";
 import DataImportPreview from "../components/datasources/DataImportPreview";
 import PageContainer from "@/components/layout/PageContainer";
+import PaginationControls from "@/components/common/PaginationControls";
+import SavedViewsManager from "@/components/common/SavedViewsManager";
+import TaskEventLog from "@/components/tasks/TaskEventLog";
 import { resumableUpload } from "@/lib/resumableUpload";
 
 const MAX_FILE_SIZE_MB = 25;
@@ -111,10 +116,15 @@ const extractErrorMessage = (error, fallback) => {
 };
 
 export default function DataSources() {
+  const { t } = useTranslation();
   const [datasets, setDatasets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [availableFilters, setAvailableFilters] = useState({ tags: [] });
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [pagination, setPagination] = useState({ page: 1, pageSize: 12 });
+  const [totalPages, setTotalPages] = useState(0);
   const [selectedDataset, setSelectedDataset] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
   const [showImportPreview, setShowImportPreview] = useState(false);
@@ -140,6 +150,75 @@ export default function DataSources() {
     [searchTerm, selectedTags, selectedTypes, selectedOwners],
   );
 
+  const loadDatasets = async ({ page, pageSize, search, tags } = {}) => {
+    const nextPage = page ?? pagination.page;
+    const nextPageSize = pageSize ?? pagination.pageSize;
+    const nextSearch = search ?? searchTerm;
+    const nextTags = tags ?? selectedTags;
+    setIsLoading(true);
+    try {
+      const response = await Dataset.list({
+        orderBy: '-created_at',
+        page: nextPage,
+        pageSize: nextPageSize,
+        search: nextSearch || undefined,
+        tags: nextTags.length ? nextTags : undefined,
+      });
+      setDatasets(Array.isArray(response.items) ? response.items : []);
+      setAvailableFilters(response.available_filters ?? { tags: [] });
+      setPagination({
+        page: response.page ?? nextPage,
+        pageSize: response.page_size ?? nextPageSize,
+      });
+      setTotalPages(response.total_pages ?? 0);
+    } catch (err) {
+      console.error('Failed to load datasets:', err);
+      setDatasets([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSearchChange = (value) => {
+    setSearchTerm(value);
+    setPagination((prev) => ({ ...prev, page: 1 }));
+    loadDatasets({ page: 1, search: value });
+  };
+
+  const handleToggleTag = (tag) => {
+    setSelectedTags((prev) => {
+      const exists = prev.includes(tag);
+      const next = exists ? prev.filter((item) => item !== tag) : [...prev, tag];
+      setPagination((state) => ({ ...state, page: 1 }));
+      loadDatasets({ page: 1, tags: next });
+      return next;
+    });
+  };
+
+  const handleClearFilters = () => {
+    setSearchTerm("");
+    setSelectedTags([]);
+    setPagination((prev) => ({ ...prev, page: 1 }));
+    loadDatasets({ page: 1, search: "", tags: [] });
+  };
+
+  const handlePageChange = (page) => {
+    setPagination((prev) => ({ ...prev, page }));
+    loadDatasets({ page });
+  };
+
+  const handleApplyView = (view) => {
+    const nextTags = view?.filters?.tags ?? [];
+    const nextSearch = view?.search ?? "";
+    const nextPageSize = view?.page_size ?? pagination.pageSize;
+    setSearchTerm(nextSearch);
+    setSelectedTags(nextTags);
+    setPagination({ page: 1, pageSize: nextPageSize });
+    loadDatasets({ page: 1, pageSize: nextPageSize, search: nextSearch, tags: nextTags });
+  };
+
+  const handleFileUpload = async (file) => {
+    setIsUploading(true);
   useEffect(() => {
     let cancelled = false;
     const requestId = activeRequestRef.current + 1;
@@ -445,6 +524,14 @@ export default function DataSources() {
     setShowPreview(true);
   };
 
+  const savedViewState = {
+    search: searchTerm,
+    filters: { tags: selectedTags },
+    orderBy: '-created_at',
+    pageSize: pagination.pageSize,
+  };
+
+  const hasActiveFilters = searchTerm || selectedTags.length > 0;
   const renderFacetGroup = (label, items, selectedValues, onToggle) => (
     <div className="space-y-2">
       <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</div>
@@ -478,10 +565,10 @@ export default function DataSources() {
       {/* Header */}
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
-          Источники данных
+          {t('datasets.title')}
         </h1>
         <p className="text-slate-600 text-lg max-w-2xl mx-auto">
-          Загружайте и управляйте вашими наборами данных. Превращайте сырые данные в мощные инсайты.
+          {t('datasets.subtitle')}
         </p>
       </div>
 
@@ -496,13 +583,53 @@ export default function DataSources() {
 
       {/* Search and Filters */}
       <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-lg">
+        <CardContent className="space-y-4 p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="relative w-full md:max-w-lg">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-slate-400" />
         <CardContent className="space-y-6 p-6">
           <div className="flex flex-col lg:flex-row gap-4 lg:items-center">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
               <Input
-                placeholder="Искать наборы данных..."
+                placeholder={t('datasets.searchPlaceholder')}
                 value={searchTerm}
+                onChange={(event) => handleSearchChange(event.target.value)}
+                className="bg-white/50 pl-10"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearFilters}
+              disabled={!hasActiveFilters}
+            >
+              <Filter className="mr-2 h-4 w-4" />
+              {t('datasets.clearFilters')}
+            </Button>
+          </div>
+
+          {availableFilters.tags.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-muted-foreground">
+                {t('datasets.filterTags')}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {availableFilters.tags.map((tag) => {
+                  const isActive = selectedTags.includes(tag);
+                  return (
+                    <Button
+                      key={tag}
+                      size="sm"
+                      variant={isActive ? 'default' : 'outline'}
+                      onClick={() => handleToggleTag(tag)}
+                    >
+                      <Tag className="mr-2 h-4 w-4" />
+                      {tag}
+                    </Button>
+                  );
+                })}
+              </div>
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 border-slate-200 focus:border-blue-500 bg-white/60"
               />
@@ -517,6 +644,14 @@ export default function DataSources() {
                 </Button>
               )}
             </div>
+          )}
+
+          <div className="flex justify-end">
+            <SavedViewsManager
+              entity="dataset"
+              state={savedViewState}
+              onApplyView={handleApplyView}
+            />
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -535,7 +670,7 @@ export default function DataSources() {
       )}
 
       {/* Datasets Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         {isLoading ? (
           Array(6).fill(0).map((_, i) => (
             <Card key={i} className="border-0 bg-white/50 backdrop-blur-xl shadow-lg animate-pulse">
@@ -561,17 +696,30 @@ export default function DataSources() {
         <Card className="border-0 bg-white/50 backdrop-blur-xl shadow-lg">
           <CardContent className="text-center py-12">
             <Database className="w-16 h-16 mx-auto text-slate-400 mb-4" />
-            <h3 className="text-lg font-semibold text-slate-700 mb-2">Наборы данных не найдены</h3>
+            <h3 className="text-lg font-semibold text-slate-700 mb-2">{t('datasets.emptyTitle')}</h3>
             <p className="text-slate-500 mb-6">
-              {searchTerm ? "Попробуйте изменить условия поиска" : "Загрузите свой первый набор данных, чтобы начать"}
+              {searchTerm
+                ? t('datasets.emptySearch')
+                : t('datasets.emptyGeneral')}
             </p>
             <Button className="gap-2 bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700">
               <Plus className="w-4 h-4" />
-              Загрузить данные
+              {t('datasets.uploadCta')}
             </Button>
           </CardContent>
         </Card>
       )}
+
+      {totalPages > 1 && (
+        <PaginationControls
+          page={pagination.page}
+          totalPages={totalPages}
+          onPageChange={handlePageChange}
+          isDisabled={isLoading}
+        />
+      )}
+
+      <TaskEventLog />
 
       {/* Dataset Preview Modal */}
       {showPreview && (

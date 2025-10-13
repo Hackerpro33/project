@@ -53,11 +53,11 @@ def test_list_datasets_sorting(tmp_path):
     }
     datasets_api._save_all([first, second])
 
-    items = datasets_api.list_datasets(order_by='created_at')
-    assert [item['id'] for item in items] == ['a', 'b']
+    asc = datasets_api.list_datasets(order_by='created_at', page_size=10)
+    assert [item['id'] for item in asc['items']] == ['a', 'b']
 
-    items_desc = datasets_api.list_datasets(order_by='-created_at')
-    assert [item['id'] for item in items_desc] == ['b', 'a']
+    desc = datasets_api.list_datasets(order_by='-created_at', page_size=10)
+    assert [item['id'] for item in desc['items']] == ['b', 'a']
 
 
 def test_get_dataset_not_found():

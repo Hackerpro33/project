@@ -19,21 +19,23 @@ describe("entities API client", () => {
   });
 
   it("lists datasets with default ordering", async () => {
+    const payload = { items: [{ id: "d1" }], total: 1, page: 1, page_size: 20 };
     global.fetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: () => Promise.resolve([{ id: "d1" }]),
+      json: () => Promise.resolve(payload),
     });
 
     const response = await Dataset.list();
 
     expect(global.fetch).toHaveBeenCalledWith(
+      "/api/dataset/list?order_by=-created_at&page=1&page_size=20",
       "/api/v1/dataset/list?order_by=-created_at",
       expect.objectContaining({
         headers: expect.objectContaining({ "Content-Type": "application/json" }),
       })
     );
-    expect(response).toEqual([{ id: "d1" }]);
+    expect(response).toEqual(payload);
   });
 
   it("performs semantic search with array filters", async () => {
@@ -139,7 +141,7 @@ describe("entities API client", () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: () => Promise.resolve([{ id: "v1" }]),
+      json: () => Promise.resolve({ items: [{ id: "v1" }] }),
     });
 
     const filters = { dataset_id: "d1" };
@@ -158,13 +160,18 @@ describe("entities API client", () => {
     global.fetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve([]),
+      json: () => Promise.resolve({ items: [] }),
     });
 
     await getDatasets();
     await getVisualizations();
 
     expect(global.fetch).toHaveBeenCalledWith(
+      "/api/dataset/list?order_by=-created_at&page=1&page_size=20",
+      expect.any(Object)
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/visualization/list?order_by=-created_at&page=1&page_size=20",
       "/api/v1/dataset/list?order_by=-created_at",
       expect.any(Object)
     );

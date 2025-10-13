@@ -1,3 +1,15 @@
+from datetime import datetime
+from math import ceil
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Set
+
+from fastapi import APIRouter, HTTPException, Query, params
+from pydantic import BaseModel, Field
+
+import json
+import os
+import shutil
+import tempfile
 """Visualization CRUD endpoints backed by JSON storage."""
 from __future__ import annotations
 
@@ -15,6 +27,9 @@ from pydantic import BaseModel, Field
 from .config import get_settings
 from .utils.cache import apply_cache_headers, should_return_not_modified
 
+STORE_DIR = _ensure_store_dir()
+VISUALIZATIONS_JSON = STORE_DIR / "visualizations.json"
+DEFAULT_PAGE_SIZE = 20
 router = APIRouter()
 settings = get_settings()
 
@@ -22,6 +37,23 @@ _DATA_DIR = Path(__file__).resolve().parent / "data"
 _DEFAULT_STORE = _DATA_DIR / "visualizations"
 _ENV_STORE = Path(os.getenv("INSIGHT_VISUALIZATIONS_DIR", _DEFAULT_STORE))
 
+def _atomic_write_json(path: Path, data: Any) -> None:
+    fd, tmp_name = tempfile.mkstemp(prefix="visualizations_", suffix=".json", dir=str(path.parent))
+    tmp_path = Path(tmp_name)
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+
+    try:
+        with tmp_path.open("w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+        shutil.move(str(tmp_path), str(path))
+    finally:
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
 CANDIDATE_DIRS: List[Path] = [_ENV_STORE, _DEFAULT_STORE, _DATA_DIR]
 
 
@@ -141,12 +173,114 @@ def _sort_items(items: List[Dict[str, Any]], order_by: Optional[str]) -> List[Di
             return value
         return str(value or "")
 
+def _normalise_list(values: Optional[Iterable[str]]) -> Set[str]:
+    if not values:
+        return set()
+    result: Set[str] = set()
+    for value in values:
+        if not value:
+            continue
+        result.add(value.strip().lower())
+    return result
+
+
+def _resolve_param(value):
+    if isinstance(value, params.Param):
+        return value.default
+    return value
+
+
+@router.get("/list")
+def list_visualizations(
+    order_by: Optional[str] = "-created_at",
+    page: int = Query(1, ge=1, description="Номер страницы"),
+    page_size: int = Query(20, ge=1, le=100, description="Количество элементов на странице"),
+    search: Optional[str] = Query(None, description="Поиск по названию, описанию и тегам"),
+    tags: Optional[List[str]] = Query(None, description="Фильтр по тегам"),
+    types: Optional[List[str]] = Query(None, description="Фильтр по типу визуализации"),
+):
+    raw_page = page
+    raw_page_size = page_size
+    page = _resolve_param(page) or 1
+    page_size = _resolve_param(page_size) or DEFAULT_PAGE_SIZE
+    search = _resolve_param(search)
+    tags = _resolve_param(tags)
+    types = _resolve_param(types)
+    if isinstance(tags, str):
+        tags = [tags]
+    if isinstance(types, str):
+        types = [types]
+
     return sorted(items, key=_sort_key, reverse=reverse)
 
 
 def _list_visualizations(order_by: Optional[str] = "-created_at") -> List[Dict[str, Any]]:
     items = [_ensure_dates(item) for item in _load_all()]
-    return _sort_items(items, order_by)
+
+    available_tags = sorted({tag for item in items for tag in item.get("tags", []) if tag})
+    available_types = sorted({item.get("type") for item in items if item.get("type")})
+
+    filtered = items
+
+    if search:
+        query = search.strip().lower()
+        if query:
+            def _matches(item: Dict[str, Any]) -> bool:
+                haystacks = [
+                    (item.get("title") or "").lower(),
+                    (item.get("type") or "").lower(),
+                ]
+                haystacks.extend((tag or "").lower() for tag in item.get("tags", []))
+                return any(query in hay for hay in haystacks if hay)
+
+            filtered = [item for item in filtered if _matches(item)]
+
+    tag_filter = _normalise_list(tags)
+    if tag_filter:
+        filtered = [
+            item
+            for item in filtered
+            if tag_filter.issubset(_normalise_list(item.get("tags", [])))
+        ]
+
+    type_filter = _normalise_list(types)
+    if type_filter:
+        filtered = [
+            item for item in filtered if (item.get("type") or "").lower() in type_filter
+        ]
+
+    filtered = _sort_items(filtered, order_by)
+
+    total = len(filtered)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paginated = filtered[start:end]
+    total_pages = ceil(total / page_size) if total else 0
+
+    compatibility_plain = (
+        (isinstance(raw_page, params.Param) or page == 1)
+        and (isinstance(raw_page_size, params.Param) or page_size == DEFAULT_PAGE_SIZE)
+        and not search
+        and not tag_filter
+        and not type_filter
+    )
+
+    if compatibility_plain:
+        return filtered
+
+    return {
+        "items": paginated,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_previous": page > 1,
+        "available_filters": {
+            "tags": available_tags,
+            "types": available_types,
+        },
+    }
 
 
 def list_visualizations(order_by: Optional[str] = "-created_at") -> List[Dict[str, Any]]:

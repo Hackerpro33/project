@@ -2,6 +2,7 @@
 
 import React, { useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { createPageUrl } from "@/utils";
 import {
   BarChart3,
@@ -33,24 +34,43 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useFeatureFlag } from "@/contexts/FeatureFlagContext.jsx";
 
-const navigationItems = [
+const navigationConfig = [
   {
+    key: "navigation.dashboard",
+    page: "Dashboard",
     id: "dashboard",
     title: "Панель управления",
     url: createPageUrl("Dashboard"),
     icon: Home,
-    gradient: "from-emerald-500 to-teal-600"
+    gradient: "from-emerald-500 to-teal-600",
   },
   {
+    key: "navigation.assistant",
+    page: "Assistant",
     id: "assistant",
     title: "Аналитический ассистент",
     url: createPageUrl("Assistant"),
     icon: MessageSquare,
-    gradient: "from-violet-500 to-purple-600"
+    gradient: "from-violet-500 to-purple-600",
   },
   {
+    key: "navigation.advanced",
+    page: "AdvancedAnalytics",
+    icon: ShieldCheck,
+    gradient: "from-blue-600 to-purple-600",
+  },
+  {
+    key: "navigation.sources",
+    page: "DataSources",
     id: "advanced-analytics",
     title: "Продвинутая аналитика",
     url: createPageUrl("AdvancedAnalytics"),
@@ -63,9 +83,11 @@ const navigationItems = [
     title: "Источники данных",
     url: createPageUrl("DataSources"),
     icon: Database,
-    gradient: "from-blue-500 to-cyan-600"
+    gradient: "from-blue-500 to-cyan-600",
   },
   {
+    key: "navigation.transformation",
+    page: "DataTransformation",
     id: "transformation",
     title: "Версии наборов",
     url: createPageUrl("DatasetVersions"),
@@ -76,9 +98,11 @@ const navigationItems = [
     title: "Преобразование данных",
     url: createPageUrl("DataTransformation"),
     icon: RefreshCw,
-    gradient: "from-green-500 to-emerald-600"
+    gradient: "from-green-500 to-emerald-600",
   },
   {
+    key: "navigation.maps",
+    page: "Maps",
     title: "История задач",
     url: createPageUrl("TaskHistory"),
     icon: History,
@@ -89,37 +113,47 @@ const navigationItems = [
     title: "Карты",
     url: createPageUrl("Maps"),
     icon: Map,
-    gradient: "from-purple-500 to-indigo-600"
+    gradient: "from-purple-500 to-indigo-600",
   },
   {
+    key: "navigation.charts",
+    page: "Charts",
     id: "charts",
     title: "Графики",
     url: createPageUrl("Charts"),
     icon: BarChart3,
-    gradient: "from-orange-500 to-red-600"
+    gradient: "from-orange-500 to-red-600",
   },
   {
+    key: "navigation.forecasting",
+    page: "Forecasting",
     id: "forecasting",
     title: "Прогнозирование",
     url: createPageUrl("Forecasting"),
     icon: TrendingUp,
-    gradient: "from-pink-500 to-rose-600"
+    gradient: "from-pink-500 to-rose-600",
   },
   {
+    key: "navigation.networks",
+    page: "NetworkGraphs",
     id: "network",
     title: "Графы связей",
     url: createPageUrl("NetworkGraphs"),
     icon: Network,
-    gradient: "from-cyan-500 to-blue-600"
+    gradient: "from-cyan-500 to-blue-600",
   },
   {
+    key: "navigation.constructor",
+    page: "Constructor",
     id: "constructor",
     title: "Конструктор",
     url: createPageUrl("Constructor"),
     icon: Component,
-    gradient: "from-slate-500 to-slate-600"
+    gradient: "from-slate-500 to-slate-600",
   },
   {
+    key: "navigation.settings",
+    page: "Settings",
     id: "settings",
     title: "Совместная работа",
     url: createPageUrl("Collaboration"),
@@ -131,12 +165,19 @@ const navigationItems = [
     title: "Настройки",
     url: createPageUrl("Settings"),
     icon: SettingsIcon,
-    gradient: "from-gray-500 to-slate-600"
-  }
+    gradient: "from-gray-500 to-slate-600",
+  },
 ];
 
 export default function Layout({ children, currentPageName }) {
   const location = useLocation();
+  const { t, i18n } = useTranslation();
+  const languageValue = i18n.language?.startsWith('en') ? 'en' : 'ru';
+  const navigationItems = navigationConfig.map((item) => ({
+    ...item,
+    title: t(item.key),
+    url: createPageUrl(item.page),
+  }));
   const advancedAnalyticsEnabled = useFeatureFlag("advanced_analytics", false);
   const filteredNavigationItems = useMemo(
     () =>
@@ -199,26 +240,42 @@ export default function Layout({ children, currentPageName }) {
       <div className="min-h-screen flex w-full bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
         <Sidebar className="border-none bg-slate-900/95 backdrop-blur-xl">
           <SidebarHeader className="border-b border-slate-700/50 p-6">
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <div className="w-10 h-10 bg-gradient-to-r from-emerald-400 to-blue-500 rounded-xl flex items-center justify-center shadow-lg">
-                  <Activity className="w-6 h-6 text-white" />
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <div className="w-10 h-10 bg-gradient-to-r from-emerald-400 to-blue-500 rounded-xl flex items-center justify-center shadow-lg">
+                      <Activity className="w-6 h-6 text-white" />
+                    </div>
+                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-r from-pink-400 to-purple-500 rounded-full flex items-center justify-center">
+                      <Sparkles className="w-2 h-2 text-white" />
+                    </div>
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-lg elegant-text text-orange-400">{t('app.brand')}</h2>
+                    <p className="text-xs text-slate-400 elegant-text">{t('app.tagline')}</p>
+                  </div>
                 </div>
-                <div className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-r from-pink-400 to-purple-500 rounded-full flex items-center justify-center">
-                  <Sparkles className="w-2 h-2 text-white" />
-                </div>
+                <Select value={languageValue} onValueChange={(value) => i18n.changeLanguage(value)}>
+                  <SelectTrigger className="w-28 bg-slate-800/70 border-slate-700 text-slate-200">
+                    <SelectValue placeholder={t('language.ru')} />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 text-slate-200">
+                    <SelectItem value="ru">{t('language.ru')}</SelectItem>
+                    <SelectItem value="en">{t('language.en')}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div>
-                <h2 className="font-bold text-lg elegant-text text-orange-400">Анализатор</h2>
-                <p className="text-xs text-slate-400 elegant-text">Платформа для аналитики</p>
+              <div className="relative">
+                <SidebarTrigger className="md:hidden" />
               </div>
             </div>
           </SidebarHeader>
-          
+
           <SidebarContent className="p-4">
             <SidebarGroup>
               <SidebarGroupLabel className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-3 py-3 elegant-text">
-                Навигация
+                {t('navigation.sectionTitle')}
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu className="space-y-2">

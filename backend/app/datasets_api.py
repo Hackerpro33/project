@@ -14,7 +14,11 @@ import tempfile
 import time
 import uuid
 from datetime import datetime
+from math import ceil
 from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Set
+
+from fastapi import APIRouter, HTTPException, Query, params
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Query
@@ -22,6 +26,10 @@ from pydantic import BaseModel, Field
 
 import json
 import os
+import shutil
+import tempfile
+import time
+import uuid
 import random
 import re
 import tempfile
@@ -88,6 +96,7 @@ router = APIRouter()
 settings = get_settings()
 STORE_DIR = _ensure_store_dir()
 DATASETS_JSON = STORE_DIR / "datasets.json"
+DEFAULT_PAGE_SIZE = 20
 REFRESH_SCHEDULES_JSON = STORE_DIR / "dataset_refresh_schedules.json"
 
 _refresh_scheduler = TaskScheduler(REFRESH_SCHEDULES_JSON)
@@ -713,6 +722,69 @@ def _ensure_summary(item: Dict[str, Any]) -> Dict[str, Any]:
     return item
 
 
+def _normalise_tags(tags: Optional[Iterable[str]]) -> Set[str]:
+    if not tags:
+        return set()
+    normalised: Set[str] = set()
+    for tag in tags:
+        if not tag:
+            continue
+        normalised.add(tag.strip().lower())
+    return normalised
+
+
+def _resolve_param(value):
+    if isinstance(value, params.Param):
+        return value.default
+    return value
+
+
+@router.get("/list")
+def list_datasets(
+    order_by: Optional[str] = "-created_at",
+    page: int = Query(1, ge=1, description="Номер страницы"),
+    page_size: int = Query(20, ge=1, le=100, description="Количество элементов на странице"),
+    search: Optional[str] = Query(None, description="Поисковый запрос по названиям, описанию и тегам"),
+    tags: Optional[List[str]] = Query(None, description="Фильтр по тегам"),
+):
+    raw_page = page
+    raw_page_size = page_size
+
+    page = _resolve_param(page) or 1
+    page_size = _resolve_param(page_size) or DEFAULT_PAGE_SIZE
+    search = _resolve_param(search)
+    tags = _resolve_param(tags)
+    if isinstance(tags, str):
+        tags = [tags]
+
+    items = [_ensure_dates(item) for item in _load_all()]
+
+    available_tags = sorted({tag for item in items for tag in item.get("tags", []) if tag})
+
+    filtered = items
+    if search:
+        query = search.strip().lower()
+        if query:
+            def _matches(item: Dict[str, Any]) -> bool:
+                haystacks = [
+                    (item.get("name") or "").lower(),
+                    (item.get("description") or "").lower(),
+                ]
+                haystacks.extend((tag or "").lower() for tag in item.get("tags", []))
+                for column in item.get("columns", []) or []:
+                    haystacks.append((column.get("name") or "").lower())
+                return any(query in hay for hay in haystacks if hay)
+
+            filtered = [item for item in filtered if _matches(item)]
+
+    tag_filter = _normalise_tags(tags)
+    if tag_filter:
+        def _has_tags(item: Dict[str, Any]) -> bool:
+            item_tags = _normalise_tags(item.get("tags", []))
+            return tag_filter.issubset(item_tags)
+
+        filtered = [item for item in filtered if _has_tags(item)]
+
 def _prepare_dataset(dataset: Dict[str, Any]) -> Dict[str, Any]:
     dataset["tags"] = _normalize_tags(dataset.get("tags"))
     dataset["owners"] = _normalize_owners(dataset.get("owners"))
@@ -1030,8 +1102,34 @@ def list_datasets(order_by: Optional[str] = "-created_at"):
     if order_by:
         reverse = order_by.startswith("-")
         key = order_by.lstrip("-")
-        items.sort(key=lambda x: x.get(key, 0), reverse=reverse)
-    return items
+        filtered.sort(key=lambda x: x.get(key, 0), reverse=reverse)
+
+    total = len(filtered)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paginated = filtered[start:end]
+    total_pages = ceil(total / page_size) if total else 0
+
+    compatibility_plain = (
+        (isinstance(raw_page, params.Param) or page == 1)
+        and (isinstance(raw_page_size, params.Param) or page_size == DEFAULT_PAGE_SIZE)
+        and not search
+        and not tag_filter
+    )
+
+    if compatibility_plain:
+        return filtered
+
+    return {
+        "items": paginated,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_previous": page > 1,
+        "available_filters": {"tags": available_tags},
+    }
 
 
 @router.get("/refresh/schedules")

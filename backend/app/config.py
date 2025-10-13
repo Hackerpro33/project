@@ -113,6 +113,10 @@ class Settings(BaseSettings):
         alias="TASK_DEFAULT_TIMEOUT",
         description="Default timeout for background analytics tasks in seconds.",
     )
+    task_status_webhook_url: Optional[AnyHttpUrl] = Field(
+        None,
+        alias="TASK_STATUS_WEBHOOK_URL",
+        description="Optional endpoint notified about task status transitions.",
     frontend_static_dir: Optional[str] = Field(
         None,
         alias="FRONTEND_DIST_DIR",

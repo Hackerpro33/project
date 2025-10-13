@@ -1,0 +1,78 @@
+{
+  "app": {
+    "brand": "Analyzer",
+    "tagline": "Analytics platform"
+  },
+  "navigation": {
+    "sectionTitle": "Navigation",
+    "dashboard": "Dashboard",
+    "assistant": "Analytics assistant",
+    "advanced": "Advanced analytics",
+    "sources": "Data sources",
+    "transformation": "Data transformation",
+    "maps": "Maps",
+    "charts": "Charts",
+    "forecasting": "Forecasting",
+    "networks": "Network graphs",
+    "constructor": "Constructor",
+    "settings": "Settings"
+  },
+  "language": {
+    "en": "English",
+    "ru": "Russian"
+  },
+  "pagination": {
+    "previous": "Previous",
+    "next": "Next",
+    "pageOf": "Page {{current}} of {{total}}",
+    "empty": "No pages"
+  },
+  "datasets": {
+    "title": "Data sources",
+    "subtitle": "Upload and manage your datasets. Turn raw data into actionable insights.",
+    "searchPlaceholder": "Search datasets...",
+    "clearFilters": "Clear filters",
+    "filterTags": "Filter by tags",
+    "emptyTitle": "No datasets found",
+    "emptySearch": "Try adjusting your search criteria",
+    "emptyGeneral": "Upload your first dataset to get started",
+    "uploadCta": "Upload data"
+  },
+  "views": {
+    "placeholder": "Saved views",
+    "saveCurrent": "Save current view",
+    "deleteSelected": "Delete view",
+    "savePrompt": "Enter a name for the saved view",
+    "savedTitle": "View saved",
+    "savedDescription": "The view \"{{name}}\" is now available in the list.",
+    "saveErrorTitle": "Unable to save view",
+    "saveErrorDescription": "Check your connection and try again.",
+    "deletedTitle": "View deleted",
+    "deletedDescription": "The saved view was removed.",
+    "deleteErrorTitle": "Unable to delete view",
+    "deleteErrorDescription": "Please try again later."
+  },
+  "tasks": {
+    "logTitle": "Task event log",
+    "logDescription": "Subscribe to live updates for a background task by its identifier.",
+    "inputPlaceholder": "Task ID (for example rq:job:123)",
+    "subscribe": "Subscribe",
+    "refresh": "Refresh",
+    "disconnect": "Disconnect",
+    "emptyLog": "No events recorded for this task yet.",
+    "eventTypes": {
+      "status": "Status change",
+      "heartbeat": "Heartbeat",
+      "error": "Error"
+    },
+    "statusLabel": "Status"
+  },
+  "charts": {
+    "title": "Chart builder",
+    "subtitle": "Create beautiful interactive charts from your data. Choose from many chart types and tailor them to your needs.",
+    "searchPlaceholder": "Search visualizations...",
+    "clearFilters": "Reset filters",
+    "filterTags": "Filter by tags",
+    "filterTypes": "Filter by types"
+  }
+}
