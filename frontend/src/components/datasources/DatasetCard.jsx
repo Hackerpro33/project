@@ -2,13 +2,15 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Database, 
-  Calendar, 
-  BarChart, 
-  Eye, 
+import {
+  Database,
+  Calendar,
+  BarChart,
+  Eye,
   Download,
-  Tag
+  Tag,
+  Sparkles,
+  Users,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -22,6 +24,27 @@ export default function DatasetCard({ dataset, onPreview }) {
     };
     return colors[type] || "bg-gray-100 text-gray-700";
   };
+
+  const createdDateCandidate = dataset.created_date || dataset.created_at;
+  let createdLabel = "—";
+  if (createdDateCandidate) {
+    const parsed = typeof createdDateCandidate === "number"
+      ? new Date(createdDateCandidate * 1000)
+      : new Date(createdDateCandidate);
+    if (!Number.isNaN(parsed.getTime())) {
+      createdLabel = format(parsed, "d MMM yyyy");
+    }
+  }
+
+  const ownersLabel = Array.isArray(dataset.owners)
+    ? dataset.owners.filter(Boolean).slice(0, 2).join(", ")
+    : "";
+  const extraOwners = Array.isArray(dataset.owners) && dataset.owners.length > 2
+    ? dataset.owners.length - 2
+    : 0;
+  const highlightReasons = Array.isArray(dataset.match_reasons)
+    ? dataset.match_reasons.slice(0, 3)
+    : [];
 
   return (
     <Card className="group border-0 bg-white/70 backdrop-blur-xl shadow-lg hover:shadow-2xl transition-all duration-500 hover:scale-105">
@@ -37,7 +60,7 @@ export default function DatasetCard({ dataset, onPreview }) {
               </CardTitle>
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <Calendar className="w-3 h-3" />
-                {format(new Date(dataset.created_date), "d MMM yyyy")}
+                {createdLabel}
               </div>
             </div>
           </div>
@@ -45,9 +68,36 @@ export default function DatasetCard({ dataset, onPreview }) {
       </CardHeader>
       
       <CardContent className="space-y-4">
-        <p className="text-sm text-slate-600 line-clamp-2">
-          {dataset.description || "Описание отсутствует"}
-        </p>
+        <div className="flex flex-wrap gap-2">
+          {dataset.dataset_type && (
+            <Badge variant="outline" className="text-xs uppercase tracking-wide text-blue-600 border-blue-200">
+              {dataset.dataset_type}
+            </Badge>
+          )}
+          {ownersLabel && (
+            <Badge variant="outline" className="flex items-center gap-1 text-xs text-slate-600 border-slate-200">
+              <Users className="w-3 h-3" />
+              {ownersLabel}
+              {extraOwners > 0 && (
+                <span className="text-[10px] text-slate-400">+{extraOwners}</span>
+              )}
+            </Badge>
+          )}
+        </div>
+
+        {dataset.auto_summary ? (
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 text-sm text-indigo-700 shadow-sm">
+            <div className="flex items-center gap-2 font-semibold text-indigo-600">
+              <Sparkles className="w-4 h-4" />
+              Автоописание
+            </div>
+            <p className="mt-1 line-clamp-3 text-sm text-indigo-700">{dataset.auto_summary}</p>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-600 line-clamp-3">
+            {dataset.description || "Описание отсутствует"}
+          </p>
+        )}
 
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-4">
@@ -92,6 +142,20 @@ export default function DatasetCard({ dataset, onPreview }) {
               <Badge key={index} variant="outline" className="text-xs">
                 <Tag className="w-3 h-3 mr-1" />
                 {tag}
+              </Badge>
+            ))}
+          </div>
+        )}
+
+        {highlightReasons.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-1">
+            {highlightReasons.map((reason) => (
+              <Badge
+                key={reason}
+                variant="secondary"
+                className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200"
+              >
+                {reason}
               </Badge>
             ))}
           </div>

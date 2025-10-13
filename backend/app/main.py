@@ -1,4 +1,7 @@
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+import asyncio
+import json
+import mimetypes
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -6,18 +9,59 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 import os
 import json
+import os
 import sys
+import time
 import uuid
+from collections import defaultdict, deque
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+try:  # pragma: no cover - optional dependency guard
+    import magic  # type: ignore[import-not-found]
+except Exception:  # pragma: no cover - gracefully handle missing libmagic
+    magic = None
+
+try:  # pragma: no cover - optional dependency guard
+    import puremagic
+except Exception:  # pragma: no cover - gracefully handle missing dependency
+    puremagic = None
+
+import httpx
+from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram, generate_latest
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.responses import Response
+import hashlib
+import math
+import shutil
+import time
+from pathlib import Path
+from urllib.parse import unquote, urlparse
 from typing import Optional, Dict, Any, List
 
 from .utils import files as files_utils
 from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 import httpx
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, CollectorRegistry, generate_latest
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Histogram,
+    generate_latest,
+)
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import get_settings
+from .version import __version__
 from .schemas import (
     EmailRequest,
     EmailResponse,
@@ -26,27 +70,294 @@ from .schemas import (
     ExtractResponse,
     FileUploadResponse,
     QuickExtraction,
+    ResumableChunkAck,
+    ResumableUploadInitRequest,
+    ResumableUploadInitResponse,
     TaskEnqueueResponse,
     TaskStatusResponse,
+    UrlImportRequest,
 )
+from .utils import files as files_utils
+from .services.extraction import build_extraction
+from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
 from .utils.files import (
     DATA_DIR,
     UPLOAD_DIR,
+    get_file_registry,
     read_table_bytes,
     register_uploaded_file,
     resolve_file_path,
     safe_filename,
-    get_file_registry,
 )
-from .services.extraction import build_extraction
-from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
 
 settings = get_settings()
 
 
+class RateLimiter:
+    """Async in-memory rate limiter keyed by client fingerprint."""
+
+    def __init__(self, limit: int, window_seconds: int) -> None:
+        self.limit = max(0, limit)
+        self.window = max(1, window_seconds)
+        self._hits: defaultdict[str, deque[float]] = defaultdict(deque)
+        self._lock = asyncio.Lock()
+
+    async def check(self, fingerprint: str) -> None:
+        if self.limit == 0:
+            return
+
+        now = time.monotonic()
+        async with self._lock:
+            bucket = self._hits[fingerprint]
+            while bucket and now - bucket[0] >= self.window:
+                bucket.popleft()
+            if len(bucket) >= self.limit:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Too many upload requests. Please retry later.",
+                )
+            bucket.append(now)
+
+    def reset(self) -> None:
+        self._hits.clear()
+
+
+class IdempotencyCoordinator:
+    """Coordinate idempotent request handling across concurrent workers."""
+
+    def __init__(self, ttl_seconds: int = 900, max_entries: int = 1024) -> None:
+        self._ttl = max(ttl_seconds, 0)
+        self._max_entries = max(max_entries, 0)
+        self._cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+        self._inflight: Dict[str, asyncio.Future] = {}
+        self._lock = asyncio.Lock()
+
+    async def enter(self, key: Optional[str]) -> Tuple[Optional[Dict[str, Any]], Optional[asyncio.Future], bool]:
+        if not key:
+            return None, None, True
+
+        async with self._lock:
+            now = time.monotonic()
+            self._purge_expired_locked(now)
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached[1], None, False
+
+            future = self._inflight.get(key)
+            if future is None:
+                future = asyncio.get_running_loop().create_future()
+                self._inflight[key] = future
+                return None, future, True
+
+        result = await future
+        return result, None, False
+
+    async def complete(self, key: str, future: asyncio.Future, payload: Dict[str, Any]) -> None:
+        async with self._lock:
+            if self._ttl > 0:
+                now = time.monotonic()
+                self._cache[key] = (now, payload)
+                self._enforce_cache_bounds_locked()
+            stored = self._inflight.get(key)
+            if stored is future and not stored.done():
+                stored.set_result(payload)
+            self._inflight.pop(key, None)
+
+    async def fail(self, key: str, future: asyncio.Future, exc: BaseException) -> None:
+        async with self._lock:
+            stored = self._inflight.get(key)
+            if stored is future and not stored.done():
+                stored.set_exception(exc)
+            self._inflight.pop(key, None)
+
+    def get(self, key: Optional[str]) -> Optional[Dict[str, Any]]:
+        if not key:
+            return None
+        cached = self._cache.get(key)
+        if not cached or self._ttl == 0:
+            return None
+        timestamp, payload = cached
+        if time.monotonic() - timestamp >= self._ttl:
+            self._cache.pop(key, None)
+            return None
+        return payload
+
+    def reset(self) -> None:
+        self._cache.clear()
+        self._inflight.clear()
+
+    def _purge_expired_locked(self, now: float) -> None:
+        if self._ttl == 0:
+            self._cache.clear()
+            return
+        expired = [key for key, (ts, _) in self._cache.items() if now - ts >= self._ttl]
+        for key in expired:
+            self._cache.pop(key, None)
+
+    def _enforce_cache_bounds_locked(self) -> None:
+        if self._max_entries == 0:
+            self._cache.clear()
+            return
+        while len(self._cache) > self._max_entries:
+            oldest_key = min(self._cache.items(), key=lambda item: item[1][0])[0]
+            self._cache.pop(oldest_key, None)
+
+
+UPLOAD_RATE_LIMITER = RateLimiter(
+    limit=settings.upload_rate_limit_requests,
+    window_seconds=settings.upload_rate_limit_window_seconds,
+)
+IDEMPOTENCY_COORDINATOR = IdempotencyCoordinator(
+    ttl_seconds=settings.idempotency_cache_ttl_seconds,
+    max_entries=settings.idempotency_cache_max_entries,
+)
+
+
+def _enforce_secure_cookies(response: Response) -> None:
+    rewritten: List[Tuple[bytes, bytes]] = []
+    for name, value in response.raw_headers:
+        if name.lower() != b"set-cookie":
+            rewritten.append((name, value))
+            continue
+
+        header = value.decode("latin-1")
+        segments = [segment.strip() for segment in header.split(";") if segment.strip()]
+        if not segments:
+            continue
+        cookie_value, *attributes = segments
+        lower_attrs = [attr.lower() for attr in attributes]
+        if not any(attr.startswith("samesite") for attr in lower_attrs):
+            attributes.append("SameSite=Lax")
+        if "secure" not in lower_attrs:
+            attributes.append("Secure")
+        if "httponly" not in lower_attrs:
+            attributes.append("HttpOnly")
+
+        normalized = [cookie_value]
+        seen = set()
+        for attribute in attributes:
+            key = attribute.lower()
+            if key.startswith("samesite"):
+                _, _, value_part = attribute.partition("=")
+                normalized_attr = f"SameSite={value_part.capitalize()}" if value_part else "SameSite=Lax"
+            elif key == "secure":
+                normalized_attr = "Secure"
+            elif key == "httponly":
+                normalized_attr = "HttpOnly"
+            else:
+                normalized_attr = attribute
+            if key not in seen:
+                normalized.append(normalized_attr)
+                seen.add(key)
+        rewritten.append((name, "; ".join(normalized).encode("latin-1")))
+
+    if rewritten:
+        response.raw_headers = tuple(rewritten)
+
+
+def _client_fingerprint(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        candidate = forwarded_for.split(",")[0].strip()
+        if candidate:
+            return candidate
+
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip and real_ip.strip():
+        return real_ip.strip()
+
+    forwarded = request.headers.get("forwarded")
+    if forwarded:
+        for entry in forwarded.split(","):
+            for piece in entry.split(";"):
+                piece = piece.strip()
+                if piece.lower().startswith("for="):
+                    value = piece.split("=", 1)[1].strip().strip('"')
+                    if value:
+                        # Remove IPv6 brackets if present
+                        return value.strip("[]")
+
+    return request.client.host if request.client else "anonymous"
+
+
+def _detect_mime_type(data: bytes, filename: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    sniffed: Optional[str] = None
+    if magic is not None:
+        try:
+            sniffed = magic.from_buffer(data, mime=True)  # type: ignore[call-arg]
+        except Exception:  # pragma: no cover - best effort fallback
+            sniffed = None
+    if sniffed is None and puremagic is not None:
+        try:
+            matches = puremagic.from_string(data)
+            if matches:
+                sniffed = matches[0].mime_type
+        except Exception:  # pragma: no cover - best effort fallback
+            sniffed = None
+
+    signature_map = {
+        b"\x89PNG\r\n\x1a\n": "image/png",
+        b"%PDF": "application/pdf",
+        b"PK\x03\x04": "application/zip",
+        b"MZ": "application/x-dosexec",
+    }
+    for signature, mime in signature_map.items():
+        if data.startswith(signature):
+            sniffed = sniffed or mime
+            break
+    guessed, _ = mimetypes.guess_type(filename or "")
+    return sniffed, guessed
+
+
+def _assert_allowed_mime(data: bytes, filename: Optional[str]) -> None:
+    sniffed, guessed = _detect_mime_type(data, filename)
+    ext = os.path.splitext(filename or "")[1].lower()
+    allowed_mimes = {
+        ".csv": {"text/csv", "text/plain", "application/vnd.ms-excel"},
+        ".tsv": {"text/tab-separated-values", "text/plain"},
+        ".xls": {"application/vnd.ms-excel"},
+        ".xlsx": {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/zip",
+        },
+    }.get(ext)
+
+    if not allowed_mimes:
+        return
+
+    if sniffed and sniffed not in allowed_mimes:
+        raise HTTPException(status_code=400, detail="Uploaded content signature does not match the file extension")
+
+    observed = {value for value in (sniffed, guessed) if value}
+    if not observed:
+        raise HTTPException(status_code=400, detail="Unable to determine file type for uploaded content")
+    if observed.isdisjoint(allowed_mimes):
+        raise HTTPException(status_code=400, detail="MIME type does not match allowed dataset formats")
+
+
+def _build_csp_policy(allowed_connect_origins: List[str]) -> str:
+    connect_sources = {"'self'"}
+    for origin in allowed_connect_origins:
+        connect_sources.add(origin.rstrip("/"))
+    directives = [
+        "default-src 'none'",
+        "frame-ancestors 'none'",
+        "base-uri 'none'",
+        "form-action 'self'",
+        f"connect-src {' '.join(sorted(connect_sources))}",
+        "img-src 'self' data:",
+        "font-src 'self'",
+        "style-src 'self'",
+        "script-src 'self'",
+        "object-src 'none'",
+    ]
+    return "; ".join(directives)
+API_PREFIX = "/api/v1"
+
+
 app = FastAPI(
     title="Insight Sphere Backend",
-    version="0.1.0",
+    version=__version__,
     description=(
         "API for managing analytical datasets, providing upload/extraction capabilities "
         "with strong validation, observability, and documentation."
@@ -55,6 +366,9 @@ app = FastAPI(
         "name": "Insight Sphere Team",
         "url": "https://github.com/insight-sphere",
     },
+    docs_url=f"{API_PREFIX}/docs",
+    redoc_url=f"{API_PREFIX}/redoc",
+    openapi_url=f"{API_PREFIX}/openapi.json",
 )
 
 
@@ -94,6 +408,17 @@ class CDNCacheMiddleware(BaseHTTPMiddleware):
 # --- CORS ---
 allow_origins = {str(settings.frontend_origin), "http://127.0.0.1:5173", "http://127.0.0.1:5174"}
 allow_origins.update(settings.additional_origins)
+csp_policy = _build_csp_policy(sorted(allow_origins))
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "same-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+    "Content-Security-Policy": csp_policy,
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+}
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(allow_origins),
@@ -106,16 +431,30 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_li
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CDNCacheMiddleware)
 
+
+@app.middleware("http")
+async def security_headers_middleware(request, call_next):
+    response = await call_next(request)
+    for header, value in SECURITY_HEADERS.items():
+        response.headers[header] = value
+    _enforce_secure_cookies(response)
+    return response
+
+
+app.state.upload_rate_limiter = UPLOAD_RATE_LIMITER
+app.state.idempotency = IDEMPOTENCY_COORDINATOR
+
 EMAIL_LOG_PATH = DATA_DIR / "email_log.jsonl"
 
-FILE_REGISTRY = files_utils._FILE_REGISTRY
-_safe_name = safe_filename
+FILE_REGISTRY = get_file_registry()
 
-MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "25"))
-MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 MAX_UPLOAD_SIZE = settings.max_upload_size
 MAX_UPLOAD_SIZE_MB = settings.max_upload_size_mb
 ALLOWED_EXTENSIONS = {ext.lower() for ext in settings.allowed_upload_extensions}
+
+
+RESUMABLE_DIR = Path(UPLOAD_DIR) / "resumable"
+RESUMABLE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 REGISTRY = CollectorRegistry()
@@ -157,6 +496,104 @@ async def _scan_for_malware(file_bytes: bytes) -> None:
         raise HTTPException(status_code=400, detail="File failed malware scan")
 
 
+def _calculate_sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _resumable_state_path(upload_id: str) -> Path:
+    return RESUMABLE_DIR / f"{upload_id}.json"
+
+
+def _resumable_chunk_dir(upload_id: str) -> Path:
+    return RESUMABLE_DIR / upload_id
+
+
+def _load_resumable_state(upload_id: str) -> Dict[str, Any]:
+    state_path = _resumable_state_path(upload_id)
+    if not state_path.exists():
+        raise HTTPException(status_code=404, detail="Upload session not found")
+    with state_path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _save_resumable_state(upload_id: str, state: Dict[str, Any]) -> None:
+    state_path = _resumable_state_path(upload_id)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = state_path.with_suffix(".tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        json.dump(state, handle, ensure_ascii=False, indent=2)
+    tmp_path.replace(state_path)
+
+
+async def _persist_uploaded_bytes(
+    data: bytes,
+    original_filename: Optional[str],
+    *,
+    idempotency_key: Optional[str] = None,
+) -> FileUploadResponse:
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(data) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Max allowed size is {settings.max_upload_size_mb} MB",
+        )
+
+    _ensure_allowed_extension(original_filename)
+    await _scan_for_malware(data)
+
+    file_id = str(uuid.uuid4())
+    safe_name = safe_filename(original_filename or "file")
+    upload_root = Path(UPLOAD_DIR)
+    upload_root.mkdir(parents=True, exist_ok=True)
+    path = upload_root / f"{file_id}_{safe_name}"
+    with path.open("wb") as handle:
+        handle.write(data)
+    register_uploaded_file(file_id, path)
+
+    try:
+        df = read_table_bytes(data, original_filename or path.name)
+        extraction = build_extraction(df)
+    except Exception:
+        extraction = None
+
+    quick = QuickExtraction.model_validate(extraction) if extraction else None
+    payload = FileUploadResponse(
+        status="success",
+        file_url=file_id,
+        filename=original_filename,
+        quick_extraction=quick,
+    )
+
+    UPLOAD_COUNTER.inc()
+    UPLOAD_SIZE.observe(len(data))
+
+    if idempotency_key:
+        _IDEMPOTENCY_CACHE[idempotency_key] = payload.model_dump()
+
+    return payload
+
+
+def _derive_filename_from_remote(url: str, headers: Optional[Dict[str, str]], fallback: Optional[str]) -> str:
+    if fallback:
+        return fallback
+    if headers:
+        content_disposition = headers.get("content-disposition") or headers.get("Content-Disposition")
+        if content_disposition:
+            for part in content_disposition.split(";"):
+                part = part.strip()
+                if part.lower().startswith("filename="):
+                    value = part.split("=", 1)[1].strip().strip('"')
+                    if value:
+                        return unquote(value)
+    parsed = urlparse(url)
+    if parsed.path:
+        filename = Path(parsed.path).name
+        if filename:
+            return unquote(filename)
+    return "dataset"
+
+
 @app.get("/healthz", summary="Liveness probe", response_model=Dict[str, str])
 def healthz() -> Dict[str, str]:
     return {"status": "ok"}
@@ -192,7 +629,7 @@ def _ensure_allowed_extension(filename: Optional[str]) -> None:
 
 
 @app.post(
-    "/api/upload",
+    f"{API_PREFIX}/upload",
     summary="Upload dataset",
     response_model=FileUploadResponse,
     responses={
@@ -202,28 +639,228 @@ def _ensure_allowed_extension(filename: Optional[str]) -> None:
     },
 )
 async def api_upload(
+    request: Request,
     file: UploadFile = File(..., description="Dataset file to upload"),
     idempotency_key: Optional[str] = Header(None, convert_underscores=False, alias="Idempotency-Key"),
 ) -> FileUploadResponse:
+    fingerprint = _client_fingerprint(request)
+    await UPLOAD_RATE_LIMITER.check(fingerprint)
+
+    cached, pending_future, should_process = await IDEMPOTENCY_COORDINATOR.enter(idempotency_key)
+    if not should_process:
+        if cached is not None:
+            return FileUploadResponse(**cached)
+        if pending_future is not None:
+            try:
+                cached_payload = await pending_future
+            except Exception as exc:  # pragma: no cover - bubble up task failure
+                raise exc
+            if cached_payload is None:
+                raise HTTPException(status_code=500, detail="Idempotent request state unavailable")
+            return FileUploadResponse(**cached_payload)
+
+    try:
+        _ensure_allowed_extension(file.filename)
+        data = await file.read()
+        if not data:
+            raise HTTPException(status_code=400, detail="Empty file")
+        if len(data) > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Max allowed size is {settings.max_upload_size_mb} MB",
+            )
+        _assert_allowed_mime(data, file.filename)
+        await _scan_for_malware(data)
+        # save
+        fid = str(uuid.uuid4())
+        safe = safe_filename(file.filename or "file")
+        upload_root = Path(UPLOAD_DIR)
+        upload_root.mkdir(parents=True, exist_ok=True)
+        path = upload_root / f"{fid}_{safe}"
+        with path.open("wb") as f:
+            f.write(data)
+        register_uploaded_file(fid, path)
+        # quick extraction for preview (optional)
+        try:
+            df = read_table_bytes(data, file.filename)
+            extraction = build_extraction(df)
+        except Exception:
+            extraction = None
+        quick = QuickExtraction.model_validate(extraction) if extraction else None
+        payload = FileUploadResponse(
+            status="success", file_url=fid, filename=file.filename, quick_extraction=quick
+        )
+        UPLOAD_COUNTER.inc()
+        UPLOAD_SIZE.observe(len(data))
+    except Exception as exc:
+        if idempotency_key and pending_future is not None:
+            await IDEMPOTENCY_COORDINATOR.fail(idempotency_key, pending_future, exc)
+        raise
+
+    if idempotency_key and pending_future is not None:
+        await IDEMPOTENCY_COORDINATOR.complete(idempotency_key, pending_future, payload.model_dump())
+    return payload
     if idempotency_key and idempotency_key in _IDEMPOTENCY_CACHE:
         return FileUploadResponse(**_IDEMPOTENCY_CACHE[idempotency_key])
 
-    _ensure_allowed_extension(file.filename)
     data = await file.read()
+    return await _persist_uploaded_bytes(
+        data,
+        file.filename,
+        idempotency_key=idempotency_key,
+    )
+
+
+@app.post(
+    "/api/upload/resumable/start",
+    response_model=ResumableUploadInitResponse,
+    summary="Initialise or resume a resumable upload session",
+)
+async def resumable_upload_start(payload: ResumableUploadInitRequest) -> ResumableUploadInitResponse:
+    _ensure_allowed_extension(payload.filename)
+    upload_id = payload.upload_id or str(uuid.uuid4())
+    state_path = _resumable_state_path(upload_id)
+
+    if state_path.exists():
+        state = _load_resumable_state(upload_id)
+        if (
+            state.get("filename") != payload.filename
+            or state.get("total_size") != payload.total_size
+        ):
+            upload_id = str(uuid.uuid4())
+            state = {}
+        else:
+            state.setdefault("uploaded_chunks", [])
+    else:
+        state = {}
+
+    chunk_dir = _resumable_chunk_dir(upload_id)
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+
+    total_chunks = max(1, math.ceil(payload.total_size / payload.chunk_size))
+    state.update(
+        {
+            "upload_id": upload_id,
+            "filename": payload.filename,
+            "total_size": payload.total_size,
+            "chunk_size": payload.chunk_size,
+            "checksum": payload.checksum,
+            "uploaded_chunks": sorted({int(idx) for idx in state.get("uploaded_chunks", [])}),
+            "total_chunks": total_chunks,
+            "created_at": state.get("created_at") or time.time(),
+            "updated_at": time.time(),
+        }
+    )
+
+    _save_resumable_state(upload_id, state)
+
+    return ResumableUploadInitResponse(
+        upload_id=upload_id,
+        uploaded_chunks=state["uploaded_chunks"],
+        chunk_size=state["chunk_size"],
+        total_chunks=state["total_chunks"],
+        total_size=state["total_size"],
+    )
+
+
+@app.put(
+    "/api/upload/resumable/{upload_id}/chunk",
+    response_model=ResumableChunkAck,
+    summary="Persist a single chunk for a resumable upload",
+)
+async def resumable_upload_chunk(
+    upload_id: str,
+    chunk_index: int = Form(..., description="Zero-based chunk index"),
+    chunk_checksum: Optional[str] = Form(
+        None, description="Optional SHA-256 checksum calculated by the client"
+    ),
+    chunk: UploadFile = File(..., description="Binary payload for the chunk"),
+) -> ResumableChunkAck:
+    state = _load_resumable_state(upload_id)
+    total_chunks = int(state.get("total_chunks", 0))
+    if chunk_index < 0 or chunk_index >= total_chunks:
+        raise HTTPException(status_code=400, detail="Chunk index out of range")
+
+    chunk_dir = _resumable_chunk_dir(upload_id)
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    part_path = chunk_dir / f"{chunk_index:06d}.part"
+
+    if part_path.exists():
+        existing_checksum = _calculate_sha256(part_path.read_bytes())
+        if not chunk_checksum or existing_checksum == chunk_checksum:
+            return ResumableChunkAck(chunk_index=chunk_index, stored_checksum=existing_checksum)
+
+    data = await chunk.read()
     if not data:
-        raise HTTPException(status_code=400, detail="Empty file")
-    if len(data) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=400, detail="Chunk is empty")
+
+    expected_size = int(state.get("chunk_size", len(data)))
+    if chunk_index < total_chunks - 1 and len(data) != expected_size:
+        raise HTTPException(status_code=400, detail="Chunk size mismatch")
+
+    checksum = _calculate_sha256(data)
+    if chunk_checksum and checksum != chunk_checksum:
+        raise HTTPException(status_code=400, detail="Chunk checksum mismatch")
+
+    with part_path.open("wb") as handle:
+        handle.write(data)
+
+    uploaded_chunks = set(state.get("uploaded_chunks", []))
+    uploaded_chunks.add(int(chunk_index))
+    state["uploaded_chunks"] = sorted(uploaded_chunks)
+    state["updated_at"] = time.time()
+    _save_resumable_state(upload_id, state)
+
+    return ResumableChunkAck(chunk_index=int(chunk_index), stored_checksum=checksum)
+
+
+@app.post(
+    "/api/upload/resumable/{upload_id}/finish",
+    response_model=FileUploadResponse,
+    summary="Finalize a resumable upload and assemble the stored chunks",
+)
+async def resumable_upload_finish(upload_id: str) -> FileUploadResponse:
+    state = _load_resumable_state(upload_id)
+    total_chunks = int(state.get("total_chunks", 0))
+    uploaded = set(int(idx) for idx in state.get("uploaded_chunks", []))
+    missing = [idx for idx in range(total_chunks) if idx not in uploaded]
+    if missing:
         raise HTTPException(
-            status_code=413,
-            detail=f"File too large. Max allowed size is {settings.max_upload_size_mb} MB",
+            status_code=400,
+            detail=f"Not all chunks uploaded: missing {missing[:5]}{'...' if len(missing) > 5 else ''}",
         )
+
+    chunk_dir = _resumable_chunk_dir(upload_id)
+    combined_path = chunk_dir / "__combined__"
+    with combined_path.open("wb") as destination:
+        for idx in range(total_chunks):
+            part_path = chunk_dir / f"{idx:06d}.part"
+            if not part_path.exists():
+                raise HTTPException(status_code=500, detail="Chunk file missing on disk")
+            with part_path.open("rb") as source:
+                shutil.copyfileobj(source, destination)
+
+    if combined_path.stat().st_size != int(state.get("total_size", 0)):
+        combined_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Combined file size does not match expected total size")
+
+    data = combined_path.read_bytes()
+    combined_path.unlink(missing_ok=True)
+
+    expected_checksum = state.get("checksum")
+    if expected_checksum:
+        calculated_checksum = _calculate_sha256(data)
+        if calculated_checksum != expected_checksum:
+            raise HTTPException(status_code=400, detail="File checksum mismatch after assembly")
+
+    response = await _persist_uploaded_bytes(data, state.get("filename"))
+
+    for part in chunk_dir.glob("*.part"):
+        part.unlink(missing_ok=True)
     await _scan_for_malware(data)
     # save
     fid = str(uuid.uuid4())
     safe = safe_filename(file.filename or "file")
-    upload_dir = Path(UPLOAD_DIR)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    path = upload_dir / f"{fid}_{safe}"
     upload_root = Path(UPLOAD_DIR)
     upload_root.mkdir(parents=True, exist_ok=True)
     path = upload_root / f"{fid}_{safe}"
@@ -232,21 +869,62 @@ async def api_upload(
     register_uploaded_file(fid, path)
     # quick extraction for preview (optional)
     try:
-        df = read_table_bytes(data, file.filename)
-        extraction = build_extraction(df)
-    except Exception:
-        extraction = None
-    quick = QuickExtraction.model_validate(extraction) if extraction else None
-    payload = FileUploadResponse(status="success", file_url=fid, filename=file.filename, quick_extraction=quick)
-    UPLOAD_COUNTER.inc()
-    UPLOAD_SIZE.observe(len(data))
-    if idempotency_key:
-        _IDEMPOTENCY_CACHE[idempotency_key] = payload.model_dump()
-    return payload
+        chunk_dir.rmdir()
+    except OSError:
+        pass
+
+    state_path = _resumable_state_path(upload_id)
+    state_path.unlink(missing_ok=True)
+
+    return response
 
 
 @app.post(
-    "/api/extract",
+    "/api/upload/from-url",
+    response_model=FileUploadResponse,
+    summary="Download a dataset from a remote URL and store it locally",
+)
+async def upload_from_url(request: UrlImportRequest) -> FileUploadResponse:
+    headers = request.headers or {}
+    timeout = httpx.Timeout(30.0, read=120.0)
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream("GET", request.url, headers=headers) as response:
+                if response.status_code >= 400:
+                    body = await response.aread()
+                    preview = body.decode("utf-8", errors="ignore")[:200]
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Failed to download remote file (status {response.status_code}): {preview}",
+                    )
+
+                data_chunks: List[bytes] = []
+                downloaded = 0
+                async for chunk in response.aiter_bytes():
+                    if not chunk:
+                        continue
+                    downloaded += len(chunk)
+                    if downloaded > MAX_UPLOAD_SIZE:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"Remote file exceeds maximum allowed size of {MAX_UPLOAD_SIZE_MB} MB",
+                        )
+                    data_chunks.append(chunk)
+
+                remote_headers = dict(response.headers)
+    except HTTPException:
+        raise
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to download remote file: {exc}") from exc
+
+    data = b"".join(data_chunks)
+    filename = _derive_filename_from_remote(request.url, remote_headers, request.filename)
+    return await _persist_uploaded_bytes(data, filename)
+
+
+@app.post(
+    f"{API_PREFIX}/extract",
     summary="Extract dataset metadata",
     response_model=ExtractResponse,
     responses={400: {"model": ErrorResponse, "description": "Unable to process dataset"}},
@@ -264,7 +942,7 @@ def api_extract(req: ExtractRequest) -> ExtractResponse:
 
 
 @app.post(
-    "/api/extract/async",
+    f"{API_PREFIX}/extract/async",
     summary="Schedule dataset metadata extraction",
     response_model=TaskEnqueueResponse,
     responses={
@@ -285,7 +963,7 @@ def api_extract_async(req: ExtractRequest) -> TaskEnqueueResponse:
 
 
 @app.get(
-    "/api/tasks/{task_id}",
+    f"{API_PREFIX}/tasks/{{task_id}}",
     summary="Inspect background task status",
     response_model=TaskStatusResponse,
     responses={
@@ -311,7 +989,7 @@ def api_task_status(task_id: str) -> TaskStatusResponse:
 
 
 @app.post(
-    "/api/utils/send-email",
+    f"{API_PREFIX}/utils/send-email",
     summary="Log outgoing email",
     response_model=EmailResponse,
     responses={500: {"model": ErrorResponse, "description": "Failed to write audit log"}},
@@ -327,6 +1005,7 @@ async def api_send_email(payload: EmailRequest) -> EmailResponse:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with log_path.open("a", encoding="utf-8") as log_file:
+        with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to log email: {exc}")
@@ -346,31 +1025,44 @@ if __package__ in {None, ""}:
     if current_dir not in sys.path:
         sys.path.append(current_dir)
     import audit_api as audit_router_module
+    import collaboration_api as collaboration_router_module
     import chat_api as chat_router_module
     import datasets_api as datasets_router_module
+    import dataset_versions_api as dataset_versions_router_module
     import dictionary_api as dictionary_router_module
     import visualizations_api as visualizations_router_module
     import feature_flags_api as feature_flags_router_module
 else:
     from . import audit_api as audit_router_module
+    from . import collaboration_api as collaboration_router_module
     from . import chat_api as chat_router_module
     from . import datasets_api as datasets_router_module
+    from . import dataset_versions_api as dataset_versions_router_module
     from . import dictionary_api as dictionary_router_module
     from . import visualizations_api as visualizations_router_module
     from . import feature_flags_api as feature_flags_router_module
 
 datasets_router = datasets_router_module.router
+dataset_versions_router = dataset_versions_router_module.router
 dictionary_router = dictionary_router_module.router
 visualizations_router = visualizations_router_module.router
 chat_router = chat_router_module.router
 audit_router = audit_router_module.router
 feature_flags_router = feature_flags_router_module.router
+collaboration_router = collaboration_router_module.router
 
+app.include_router(datasets_router, prefix=f"{API_PREFIX}/dataset")
+app.include_router(dictionary_router, prefix=f"{API_PREFIX}/dictionary")
+app.include_router(visualizations_router, prefix=f"{API_PREFIX}/visualization")
+app.include_router(chat_router, prefix=f"{API_PREFIX}/chat")
+app.include_router(audit_router, prefix=f"{API_PREFIX}/audit")
 app.include_router(datasets_router, prefix="/api/dataset")
+app.include_router(dataset_versions_router, prefix="/api/dataset")
 app.include_router(dictionary_router, prefix="/api/dictionary")
 app.include_router(visualizations_router, prefix="/api/visualization")
 app.include_router(chat_router, prefix="/api/chat")
 app.include_router(audit_router, prefix="/api/audit")
 app.include_router(feature_flags_router, prefix="/api/feature-flags")
+app.include_router(collaboration_router, prefix="/api")
 FILE_REGISTRY = get_file_registry()
 _safe_name = safe_filename

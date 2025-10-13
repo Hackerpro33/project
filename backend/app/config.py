@@ -1,15 +1,56 @@
-"""Application configuration powered by environment variables."""
+"""Application configuration powered by environment variables.
+
+The service historically relied on a ``.env`` file checked out alongside the
+source tree.  Secrets now live in an encrypted SOPS manifest instead.  During
+application startup we opportunistically read a decrypted YAML file (usually
+produced by ``sops -d`` as part of the deployment pipeline) and populate the
+process environment before Pydantic evaluates settings.
+"""
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
+import yaml
 from pydantic import AnyHttpUrl, AnyUrl, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+BASE_DIR = Path(__file__).resolve().parents[2]
+DEFAULT_SECRETS_FILE = BASE_DIR / "secrets" / "runtime.secrets.yaml"
+
+
+def _apply_sops_secrets() -> None:
+    """Load decrypted SOPS secrets into ``os.environ`` if present.
+
+    The SOPS manifest stores key/value pairs under the ``env`` key to avoid
+    clashing with metadata fields (``sops`` stanza, rotation docs, etc.).  The
+    loader only applies values that are currently missing so runtime overrides
+    keep precedence over the decrypted file contents.
+    """
+
+    secrets_path = Path(os.getenv("INSIGHT_SECRETS_FILE", DEFAULT_SECRETS_FILE))
+    if not secrets_path.exists():
+        return
+
+    try:
+        with secrets_path.open("r", encoding="utf-8") as handle:
+            payload: Dict[str, Dict[str, str]] = yaml.safe_load(handle) or {}
+    except Exception as exc:  # pragma: no cover - defensive guardrail
+        raise RuntimeError(f"Failed to parse secrets file {secrets_path}: {exc}")
+
+    secrets = payload.get("env") if isinstance(payload, dict) else None
+    if not isinstance(secrets, dict):
+        return
+
+    for key, value in secrets.items():
+        if isinstance(key, str) and value is not None and key not in os.environ:
+            os.environ[key] = str(value)
+
+
+_apply_sops_secrets()
 
 
 class Settings(BaseSettings):
@@ -104,10 +145,48 @@ class Settings(BaseSettings):
         30,
         alias="FEATURE_FLAG_CACHE_TTL",
         description="In-memory cache TTL for Unleash feature flags in seconds.",
+    alert_webhook_url: Optional[AnyHttpUrl] = Field(
+        None,
+        alias="ALERT_WEBHOOK_URL",
+        description="Webhook endpoint for alert notifications.",
+    )
+    alert_webhook_retries: int = Field(
+        2,
+        alias="ALERT_WEBHOOK_RETRIES",
+        description="Number of retry attempts for webhook delivery.",
+        ge=0,
+    )
+    alert_webhook_timeout: float = Field(
+        5.0,
+        alias="ALERT_WEBHOOK_TIMEOUT",
+        description="Timeout in seconds for webhook delivery attempts.",
+        ge=0.1,
+    )
+
+    upload_rate_limit_requests: int = Field(
+        120,
+        alias="UPLOAD_RATE_LIMIT_REQUESTS",
+        description="Maximum number of upload requests allowed within the rate window.",
+    )
+    upload_rate_limit_window_seconds: int = Field(
+        60,
+        alias="UPLOAD_RATE_LIMIT_WINDOW_SECONDS",
+        description="Size of the upload rate limiting window in seconds.",
+    )
+
+    idempotency_cache_ttl_seconds: int = Field(
+        900,
+        alias="IDEMPOTENCY_CACHE_TTL_SECONDS",
+        description="Lifetime in seconds for cached idempotent responses before reprocessing.",
+    )
+    idempotency_cache_max_entries: int = Field(
+        1024,
+        alias="IDEMPOTENCY_CACHE_MAX_ENTRIES",
+        description="Maximum number of idempotent responses retained in memory.",
     )
 
     model_config = SettingsConfigDict(
-        env_file=str(ENV_FILE),
+        env_file=os.getenv("INSIGHT_ENV_FILE"),
         env_file_encoding="utf-8",
         case_sensitive=False,
     )

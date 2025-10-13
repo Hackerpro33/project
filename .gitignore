@@ -24,8 +24,14 @@ Thumbs.db
 backend/data/*.jsonl
 backend/data/visualizations.json
 backend/uploads/
+# Encrypted secrets live in git, decrypted manifests must stay local
+secrets/**/*.yaml
+!secrets/example.secrets.yaml
+# Allow checked-in documentation about secrets
+!secrets/**/*.md
 # Coverage outputs
 coverage.xml
 htmlcov/
 frontend/coverage/
 .coverage
+coverage/
