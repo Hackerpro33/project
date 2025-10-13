@@ -1,8 +1,9 @@
 import asyncio
-import builtins
 import json
 from datetime import datetime
+from pathlib import Path
 
+import httpx
 import numpy as np
 import pandas as pd
 import pytest
@@ -13,6 +14,7 @@ from .. import datasets_api
 from .. import visualizations_api
 from .. import main
 from ..services import extraction
+from .factories import DatasetCreateFactory
 
 HEADERS = {"host": "localhost"}
 
@@ -104,20 +106,7 @@ def test_extract_missing_file_returns_404(client):
 
 
 def test_dataset_create_and_list(client):
-    dataset_payload = {
-        "name": "Extracted Sample",
-        "description": "Сгенерировано в тестах",
-        "tags": ["test"],
-        "columns": [
-            {"name": "city", "type": "string"},
-            {"name": "population", "type": "number"},
-        ],
-        "row_count": 2,
-        "sample_data": [
-            {"city": "Paris", "population": 2148327},
-            {"city": "Berlin", "population": 3769495},
-        ],
-    }
+    dataset_payload = DatasetCreateFactory.build().model_dump()
 
     create_response = client.post(
         "/api/dataset/create",
@@ -522,22 +511,61 @@ def test_upload_multiple_tables_near_limit(monkeypatch, client):
     assert names == {"Batch 0", "Batch 1", "Batch 2"}
 
 
-def test_upload_rejects_files_over_limit(monkeypatch, client):
-    limit = 1024  # 1 KB
-    _set_upload_limit(monkeypatch, limit)
-
-    csv_bytes = _make_wide_csv(rows=80, columns=5)
-    assert len(csv_bytes) > limit
+def test_upload_rejects_files_over_limit(limit_upload_size, client, oversized_csv_payload):
+    limit_upload_size(1024)
 
     response = client.post(
         "/api/upload",
-        files={"file": ("too_big.csv", csv_bytes, "text/csv")},
+        files={"file": ("too_big.csv", oversized_csv_payload, "text/csv")},
         headers=HEADERS,
     )
 
     assert response.status_code == 413
     payload = response.json()
     assert "File too large" in payload["detail"]
+
+
+@pytest.mark.parametrize(
+    "clamav_status,clamav_payload,expected_status,expected_detail",
+    [
+        (503, {"status": "error"}, 502, "ClamAV scanning service unavailable"),
+        (200, {"status": "infected"}, 400, "File failed malware scan"),
+    ],
+)
+def test_upload_clamav_failure_paths(
+    monkeypatch,
+    client,
+    clamav_status,
+    clamav_payload,
+    expected_status,
+    expected_detail,
+    csv_bytes_factory,
+    limit_upload_size,
+):
+    limit_upload_size(2 * 1024 * 1024)
+    monkeypatch.setattr(main.settings, "clamav_scan_url", "http://clamav:3310/scan")
+
+    class _FakeResponse:
+        def __init__(self, status_code: int, payload: dict):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self) -> dict:
+            return self._payload
+
+    async def _fake_post(self, url, files):
+        return _FakeResponse(clamav_status, clamav_payload)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", _fake_post, raising=False)
+
+    response = client.post(
+        "/api/upload",
+        files={"file": ("dataset.csv", csv_bytes_factory(rows=10, columns=5), "text/csv")},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == expected_status
+    assert expected_detail in response.json()["detail"]
 
 
 def test_visualization_ensure_dates_populates_fields(monkeypatch):
@@ -779,7 +807,7 @@ def test_api_send_email_logs_errors(monkeypatch):
     def failing_open(*args, **kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(builtins, "open", failing_open)
+    monkeypatch.setattr(Path, "open", failing_open, raising=False)
 
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(
