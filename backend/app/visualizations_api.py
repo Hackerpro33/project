@@ -148,9 +148,17 @@ def _format_datetime(dt: datetime) -> str:
 
 def _ensure_dates(item: Dict[str, Any]) -> Dict[str, Any]:
     result = dict(item)
-    now = int(time.time())
-    created_at = int(result.get("created_at") or now)
-    updated_at = int(result.get("updated_at") or created_at)
+    created_raw = result.get("created_at")
+    if created_raw is None:
+        created_at = int(time.time())
+    else:
+        created_at = int(created_raw)
+
+    updated_raw = result.get("updated_at")
+    if updated_raw is None:
+        updated_at = created_at
+    else:
+        updated_at = int(updated_raw)
     result["created_at"] = created_at
     result["updated_at"] = updated_at
     created_dt = datetime.fromtimestamp(created_at, tz=timezone.utc)
