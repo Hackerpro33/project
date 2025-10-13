@@ -15,6 +15,7 @@ from .. import main
 from ..services import extraction
 
 HEADERS = {"host": "localhost"}
+API_PREFIX = "/api/v1"
 
 
 @pytest.fixture(autouse=True)
@@ -71,7 +72,7 @@ def client():
 def test_upload_and_extract_roundtrip(client):
     csv_bytes = b"city,population\nParis,2148327\nBerlin,3769495\n"
     response = client.post(
-        "/api/upload",
+        f"{API_PREFIX}/upload",
         files={"file": ("cities.csv", csv_bytes, "text/csv")},
         headers=HEADERS,
     )
@@ -83,7 +84,7 @@ def test_upload_and_extract_roundtrip(client):
     assert payload["quick_extraction"]["row_count"] == 2
 
     extract_response = client.post(
-        "/api/extract",
+        f"{API_PREFIX}/extract",
         json={"file_url": payload["file_url"]},
         headers=HEADERS,
     )
@@ -96,7 +97,7 @@ def test_upload_and_extract_roundtrip(client):
 
 def test_extract_missing_file_returns_404(client):
     response = client.post(
-        "/api/extract",
+        f"{API_PREFIX}/extract",
         json={"file_url": "missing"},
         headers=HEADERS,
     )
@@ -120,7 +121,7 @@ def test_dataset_create_and_list(client):
     }
 
     create_response = client.post(
-        "/api/dataset/create",
+        f"{API_PREFIX}/dataset/create",
         json=dataset_payload,
         headers={"Content-Type": "application/json", **HEADERS},
     )
@@ -131,7 +132,7 @@ def test_dataset_create_and_list(client):
     assert created["dataset"]["name"] == dataset_payload["name"]
 
     list_response = client.get(
-        "/api/dataset/list",
+        f"{API_PREFIX}/dataset/list",
         headers=HEADERS,
     )
     assert list_response.status_code == 200
@@ -143,7 +144,7 @@ def test_dataset_create_and_list(client):
 
 def test_dataset_update_and_delete(client):
     create_response = client.post(
-        "/api/dataset/create",
+        f"{API_PREFIX}/dataset/create",
         json={
             "name": "Initial dataset",
             "description": "До обновления",
@@ -155,7 +156,7 @@ def test_dataset_update_and_delete(client):
     dataset_id = create_response.json()["id"]
 
     update_response = client.put(
-        f"/api/dataset/{dataset_id}",
+        f"{API_PREFIX}/dataset/{dataset_id}",
         json={
             "description": "После обновления",
             "tags": ["updated"],
@@ -170,7 +171,7 @@ def test_dataset_update_and_delete(client):
     assert "updated_at" in updated
 
     delete_response = client.delete(
-        f"/api/dataset/{dataset_id}",
+        f"{API_PREFIX}/dataset/{dataset_id}",
         headers=HEADERS,
     )
 
@@ -178,7 +179,7 @@ def test_dataset_update_and_delete(client):
     assert delete_response.json()["status"] == "deleted"
 
     missing_response = client.get(
-        f"/api/dataset/{dataset_id}",
+        f"{API_PREFIX}/dataset/{dataset_id}",
         headers=HEADERS,
     )
     assert missing_response.status_code == 404
@@ -186,7 +187,7 @@ def test_dataset_update_and_delete(client):
 
 def test_visualization_crud_and_filter(client):
     dataset_response = client.post(
-        "/api/dataset/create",
+        f"{API_PREFIX}/dataset/create",
         json={
             "name": "Geo dataset",
             "columns": [],
@@ -196,7 +197,7 @@ def test_visualization_crud_and_filter(client):
     dataset_id = dataset_response.json()["id"]
 
     create_response = client.post(
-        "/api/visualization/create",
+        f"{API_PREFIX}/visualization/create",
         json={
             "title": "Map overview",
             "type": "map",
@@ -212,7 +213,7 @@ def test_visualization_crud_and_filter(client):
     assert viz_payload["visualization"]["title"] == "Map overview"
 
     list_response = client.get(
-        "/api/visualization/list",
+        f"{API_PREFIX}/visualization/list",
         headers=HEADERS,
     )
     assert list_response.status_code == 200
@@ -221,7 +222,7 @@ def test_visualization_crud_and_filter(client):
     assert all_items[0]["dataset_id"] == dataset_id
 
     filter_response = client.post(
-        "/api/visualization/filter",
+        f"{API_PREFIX}/visualization/filter",
         json={"filters": {"type": "map"}},
         headers=HEADERS,
     )
@@ -231,14 +232,14 @@ def test_visualization_crud_and_filter(client):
     assert filtered[0]["id"] == viz_id
 
     get_response = client.get(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         headers=HEADERS,
     )
     assert get_response.status_code == 200
     assert get_response.json()["title"] == "Map overview"
 
     update_response = client.put(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         json={"title": "Updated map", "tags": ["geo"]},
         headers=HEADERS,
     )
@@ -248,13 +249,13 @@ def test_visualization_crud_and_filter(client):
     assert updated["tags"] == ["geo"]
 
     delete_response = client.delete(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         headers=HEADERS,
     )
     assert delete_response.status_code == 200
 
     not_found = client.get(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         headers=HEADERS,
     )
     assert not_found.status_code == 404
@@ -262,7 +263,7 @@ def test_visualization_crud_and_filter(client):
 
 def test_send_email_logs_request(client, tmp_path):
     response = client.post(
-        "/api/utils/send-email",
+        f"{API_PREFIX}/utils/send-email",
         json={
             "to": "user@example.com",
             "subject": "Test",
@@ -407,7 +408,7 @@ def test_upload_multiple_tables_near_limit(monkeypatch, client):
         assert len(csv_bytes) < limit
 
         upload_response = client.post(
-            "/api/upload",
+            f"{API_PREFIX}/upload",
             files={"file": (f"table_{idx}.csv", csv_bytes, "text/csv")},
             headers=HEADERS,
         )
@@ -417,7 +418,7 @@ def test_upload_multiple_tables_near_limit(monkeypatch, client):
         assert uploaded["quick_extraction"]["row_count"] == 50
 
         extract_response = client.post(
-            "/api/extract",
+            f"{API_PREFIX}/extract",
             json={"file_url": uploaded["file_url"]},
             headers=HEADERS,
         )
@@ -435,7 +436,7 @@ def test_upload_multiple_tables_near_limit(monkeypatch, client):
         }
 
         dataset_response = client.post(
-            "/api/dataset/create",
+            f"{API_PREFIX}/dataset/create",
             json=dataset_payload,
             headers={"Content-Type": "application/json", **HEADERS},
         )
@@ -443,7 +444,7 @@ def test_upload_multiple_tables_near_limit(monkeypatch, client):
         created_datasets.append(dataset_response.json()["id"])
 
     list_response = client.get(
-        "/api/dataset/list",
+        f"{API_PREFIX}/dataset/list",
         headers=HEADERS,
     )
     assert list_response.status_code == 200
@@ -461,7 +462,7 @@ def test_upload_rejects_files_over_limit(monkeypatch, client):
     assert len(csv_bytes) > limit
 
     response = client.post(
-        "/api/upload",
+        f"{API_PREFIX}/upload",
         files={"file": ("too_big.csv", csv_bytes, "text/csv")},
         headers=HEADERS,
     )
@@ -542,7 +543,7 @@ def test_health_endpoint_returns_security_headers(client):
 
 def test_upload_rejects_empty_payload(client):
     response = client.post(
-        "/api/upload",
+        f"{API_PREFIX}/upload",
         files={"file": ("empty.csv", b"", "text/csv")},
         headers=HEADERS,
     )
@@ -553,7 +554,7 @@ def test_crime_factor_dataset_workflow(client):
     csv_bytes = _criminogenic_factors_csv()
 
     upload_response = client.post(
-        "/api/upload",
+        f"{API_PREFIX}/upload",
         files={"file": ("crime_factors.csv", csv_bytes, "text/csv")},
         headers=HEADERS,
     )
@@ -567,7 +568,7 @@ def test_crime_factor_dataset_workflow(client):
     assert any("risk factor" in insight.lower() for insight in extraction["insights"])
 
     extract_response = client.post(
-        "/api/extract",
+        f"{API_PREFIX}/extract",
         json={"file_url": upload_payload["file_url"]},
         headers=HEADERS,
     )
@@ -577,7 +578,7 @@ def test_crime_factor_dataset_workflow(client):
     assert any("policing resource" in insight.lower() for insight in extract_payload["insights"])
 
     dataset_response = client.post(
-        "/api/dataset/create",
+        f"{API_PREFIX}/dataset/create",
         json={
             "name": "Criminogenic Factors Central District",
             "description": "Многолетний мониторинг криминогенных показателей.",
@@ -594,7 +595,7 @@ def test_crime_factor_dataset_workflow(client):
     assert dataset_detail["row_count"] == 4
 
     dataset_list_response = client.get(
-        "/api/dataset/list",
+        f"{API_PREFIX}/dataset/list",
         headers=HEADERS,
     )
     assert dataset_list_response.status_code == 200
@@ -606,7 +607,7 @@ def test_crime_factor_dataset_workflow(client):
     assert dataset_listing["tags"] == ["crime-analysis", "trend"]
 
     dataset_get_response = client.get(
-        f"/api/dataset/{dataset_id}",
+        f"{API_PREFIX}/dataset/{dataset_id}",
         headers=HEADERS,
     )
     assert dataset_get_response.status_code == 200
@@ -615,7 +616,7 @@ def test_crime_factor_dataset_workflow(client):
     assert len(dataset_payload["sample_data"]) == 4
 
     update_response = client.put(
-        f"/api/dataset/{dataset_id}",
+        f"{API_PREFIX}/dataset/{dataset_id}",
         json={"description": "Обновлено с криминогенными инсайтами", "tags": ["crime-analysis", "hotspot"]},
         headers=HEADERS,
     )
@@ -623,7 +624,7 @@ def test_crime_factor_dataset_workflow(client):
     assert "hotspot" in update_response.json()["dataset"]["tags"]
 
     viz_response = client.post(
-        "/api/visualization/create",
+        f"{API_PREFIX}/visualization/create",
         json={
             "title": "Crime vs Policing Trend",
             "type": "line",
@@ -639,7 +640,7 @@ def test_crime_factor_dataset_workflow(client):
     assert viz_detail["config"]["y"] == ["crime_rate", "police_presence"]
 
     filtered_viz = client.post(
-        "/api/visualization/filter",
+        f"{API_PREFIX}/visualization/filter",
         json={"filters": {"type": "line"}},
         headers=HEADERS,
     )
@@ -647,7 +648,7 @@ def test_crime_factor_dataset_workflow(client):
     assert any(item["id"] == viz_id for item in filtered_viz.json())
 
     viz_get_response = client.get(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         headers=HEADERS,
     )
     assert viz_get_response.status_code == 200
@@ -655,7 +656,7 @@ def test_crime_factor_dataset_workflow(client):
     assert viz_payload["title"] == "Crime vs Policing Trend"
 
     viz_update_response = client.put(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         json={
             "title": "Crime vs Policing Trend (Updated)",
             "summary": {"crime_rate": {"latest": 16.7, "trend": "rising"}},
@@ -670,21 +671,21 @@ def test_crime_factor_dataset_workflow(client):
     assert "report" in updated_viz["tags"]
 
     viz_list_response = client.get(
-        "/api/visualization/list",
+        f"{API_PREFIX}/visualization/list",
         headers=HEADERS,
     )
     assert viz_list_response.status_code == 200
     assert any(item["id"] == viz_id for item in viz_list_response.json())
 
     viz_delete_response = client.delete(
-        f"/api/visualization/{viz_id}",
+        f"{API_PREFIX}/visualization/{viz_id}",
         headers=HEADERS,
     )
     assert viz_delete_response.status_code == 200
     assert viz_delete_response.json()["status"] == "deleted"
 
     filtered_after_delete = client.post(
-        "/api/visualization/filter",
+        f"{API_PREFIX}/visualization/filter",
         json={"filters": {"type": "line"}},
         headers=HEADERS,
     )
@@ -692,14 +693,14 @@ def test_crime_factor_dataset_workflow(client):
     assert not any(item["id"] == viz_id for item in filtered_after_delete.json())
 
     dataset_delete_response = client.delete(
-        f"/api/dataset/{dataset_id}",
+        f"{API_PREFIX}/dataset/{dataset_id}",
         headers=HEADERS,
     )
     assert dataset_delete_response.status_code == 200
     assert dataset_delete_response.json()["status"] == "deleted"
 
     dataset_list_after_delete = client.get(
-        "/api/dataset/list",
+        f"{API_PREFIX}/dataset/list",
         headers=HEADERS,
     )
     assert dataset_list_after_delete.status_code == 200

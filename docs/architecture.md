@@ -1,58 +1,99 @@
-# Архитектура проекта
+# Архитектура Insight Sphere
 
-## Общий обзор
+## Обзор
 
-Проект состоит из фронтенда на React (Vite) и бэкенда на FastAPI. Компоненты общаются через
-REST API `/api/v1`. Статические артефакты и загруженные пользователями файлы хранятся во внешнем
-S3-совместимом хранилище (MinIO).
+Система состоит из одностраничного приложения на React (Vite) и API на FastAPI. Пользователи
+загружают табличные данные, получают моментальные инсайты и могут запускать асинхронные задачи
+обработки через очередь Redis/RQ. Ограничения по размеру файла и проверка ClamAV защищают систему
+от злоупотреблений.
 
+## C4 — Контекст
+
+```mermaid
+C4Context
+    title Insight Sphere — контекст
+    Person(user, "Аналитик", "Загружает и исследует наборы данных")
+    System(frontend, "Insight Sphere UI", "React + Vite")
+    System(api, "Insight Sphere API", "FastAPI")
+    System_Ext(storage, "Файловое хранилище", "Локальный диск / S3 совместимый бакет")
+    System_Ext(redis, "Redis", "Очередь задач и кэш")
+    user -> frontend : управляет загрузками и визуализациями
+    frontend -> api : REST `/api/v1`
+    api -> storage : сохраняет файлы
+    api -> redis : ставит задачи и читает статусы
 ```
-┌────────────┐     ┌──────────────┐     ┌──────────────┐
-│ React SPA  │ <-- │ FastAPI API  │ --> │ Postgres      │
-└────────────┘     └──────┬───────┘     └──────────────┘
-        │                  │                ▲
-        ▼                  ▼                │
-   Playwright        Celery/RQ workers      │
-        │                  │                │
-        ▼                  ▼                │
-┌────────────┐     ┌──────────────┐     ┌──────────────┐
-│ Browser    │     │ Redis cache  │     │ MinIO storage│
-└────────────┘     └──────────────┘     └──────────────┘
+
+## C4 — Контейнеры
+
+```mermaid
+C4Container
+    title Insight Sphere — контейнеры
+    Person(user, "Аналитик")
+    System_Boundary(system, "Insight Sphere") {
+        Container(ui, "React SPA", "Vite, React Query", "UI, формы загрузки, визуализации")
+        Container(api, "FastAPI", "Python", "Проверка файлов, генерация метаданных, REST API")
+        Container(worker, "RQ worker", "Python", "Асинхронная обработка и генерация отчётов")
+    }
+    ContainerDb(files, "Uploads", "Файловая система / S3", "Загруженные исходные данные")
+    ContainerDb(redis, "Redis", "In-memory store", "Очередь задач и кэш статусов")
+    user -> ui : HTTP(S)
+    ui -> api : REST `/api/v1`
+    api -> files : `PUT`/`GET`
+    api -> redis : Push job / poll status
+    worker -> files : читает данные
+    worker -> redis : обновляет статусы задач
 ```
 
-## Бэкенд
+## Последовательность загрузки
 
-- FastAPI + SQLModel/SQLAlchemy для ORM.
-- Миграции через Alembic.
-- Авторизация через OAuth2 + JWT, роли и permissions в таблицах Postgres.
-- Очередь задач на Celery/RQ для асинхронной аналитики; брокер Redis, результаты в Postgres/MinIO.
-- Механизмы rate limiting с использованием Redis.
-- Логи в формате JSON, интеграция с OpenTelemetry и Sentry.
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as React SPA
+    participant API as FastAPI `/api/v1/upload`
+    participant Store as Файловое хранилище
+    participant Queue as Redis/RQ
 
-## Фронтенд
+    User->>UI: выбирает CSV/XLSX
+    UI->>API: POST /api/v1/upload (multipart, Idempotency-Key)
+    API->>API: проверка расширения, лимита и (опц.) ClamAV
+    API->>Store: запись файла
+    API-->>UI: 200 + quick_extraction
+    User->>UI: запускает асинхронную обработку
+    UI->>API: POST /api/v1/extract/async
+    API->>Queue: enqueue(job)
+    UI->>API: GET /api/v1/tasks/{id}
+    API->>Queue: получить статус
+    API-->>UI: queued|started|finished + result/error
+```
 
-- React + TypeScript, управление данными через TanStack Query.
-- Формы на React Hook Form + Zod, i18n на базе i18next.
-- Покрытие тестами: React Testing Library, Vitest, Playwright.
-- Улучшения UX: error boundaries, skeleton loaders.
+## Ограничения загрузок
 
-## CI/CD
+- Размер файла ограничен `MAX_UPLOAD_SIZE_MB` (25 МБ по умолчанию).
+- Допустимые расширения: `.csv`, `.tsv`, `.xlsx`, `.xls` (настраиваются).
+- Опциональная проверка ClamAV через `CLAMAV_SCAN_URL`.
+- Заголовок `Idempotency-Key` обеспечивает повторяемость запросов.
 
-- GitHub Actions с матрицей Python 3.x и Node LTS.
-- Шаги: установка зависимостей, линтеры (ruff, black, mypy, eslint, prettier, ts), тесты, сборка фронта,
-  расчёт покрытия, загрузка отчётов в GitHub.
-- Дополнительно: pre-commit, Dependabot, CodeQL.
-- Docker образы собираются в мульти-стадиях; Helm chart обеспечивает деплой в Kubernetes.
+## Очереди и фоновые задачи
 
-## Наблюдаемость
+- Флаг `TASK_QUEUE_ENABLED` активирует Redis/RQ.
+- `/api/v1/extract/async` ставит задачу в очередь `TASK_QUEUE_NAME`.
+- `/api/v1/tasks/{task_id}` возвращает `queued|started|finished|failed` и итоговый payload.
+- Рабочие процессы запускаются командой `python -m app.worker`.
 
-- Health-check эндпоинты `/-/health` (liveness/readiness).
-- Метрики Prometheus на `/metrics`.
-- Трассировки OpenTelemetry с экспортом в OTLP.
-- Алертинг по Sentry и Grafana.
+## Документация API и контрактные тесты
 
-## Конфигурация
+- OpenAPI схема фиксируется снапшотом `backend/app/tests/snapshots/openapi_v1.json`.
+- Контракт между фронтом и API описан Pact-файлом `contracts/pacts/insight-frontend-insight-backend.json`.
+- Провайдерские тесты (`pytest -m contract`) и потребительские (`npm run test:contracts`) проверяют
+  совместимость.
 
-- Pydantic Settings читает конфиги из `.env` и переменных окружения.
-- `.env.example` содержит список обязательных параметров.
-- Для продакшена используются Helm values и secrets менеджер.
+## Нагрузочные проверки
+
+- Скрипт `tests/load/upload.js` (k6) моделирует массовые загрузки.
+- Целевые SLO: `p(95) < 2.5s`, `error rate < 1%`.
+
+## Дополнительные материалы
+
+- [ADR 0002](adr/0002-file-storage-and-queues.md) — детальное решение по хранению и очередям.
+- [README](../README.md) — инструкции по запуску и качеству.

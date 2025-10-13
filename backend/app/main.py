@@ -1,20 +1,23 @@
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
-from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-import os
 import json
+import os
 import sys
 import uuid
 from pathlib import Path
-from typing import Optional, Dict, Any, List
-
-from .utils import files as files_utils
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 import httpx
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, CollectorRegistry, generate_latest
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Histogram,
+    generate_latest,
+)
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import get_settings
 from .schemas import (
@@ -28,19 +31,22 @@ from .schemas import (
     TaskEnqueueResponse,
     TaskStatusResponse,
 )
+from .services.extraction import build_extraction
+from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
 from .utils.files import (
     DATA_DIR,
     UPLOAD_DIR,
+    get_file_registry,
     read_table_bytes,
     register_uploaded_file,
     resolve_file_path,
     safe_filename,
-    get_file_registry,
 )
-from .services.extraction import build_extraction
-from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
 
 settings = get_settings()
+
+
+API_PREFIX = "/api/v1"
 
 
 app = FastAPI(
@@ -54,6 +60,9 @@ app = FastAPI(
         "name": "Insight Sphere Team",
         "url": "https://github.com/insight-sphere",
     },
+    docs_url=f"{API_PREFIX}/docs",
+    redoc_url=f"{API_PREFIX}/redoc",
+    openapi_url=f"{API_PREFIX}/openapi.json",
 )
 
 
@@ -90,11 +99,8 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 EMAIL_LOG_PATH = DATA_DIR / "email_log.jsonl"
 
-FILE_REGISTRY = files_utils._FILE_REGISTRY
-_safe_name = safe_filename
+FILE_REGISTRY = get_file_registry()
 
-MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "25"))
-MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 MAX_UPLOAD_SIZE = settings.max_upload_size
 MAX_UPLOAD_SIZE_MB = settings.max_upload_size_mb
 ALLOWED_EXTENSIONS = {ext.lower() for ext in settings.allowed_upload_extensions}
@@ -168,7 +174,7 @@ def _ensure_allowed_extension(filename: Optional[str]) -> None:
 
 
 @app.post(
-    "/api/upload",
+    f"{API_PREFIX}/upload",
     summary="Upload dataset",
     response_model=FileUploadResponse,
     responses={
@@ -197,9 +203,6 @@ async def api_upload(
     # save
     fid = str(uuid.uuid4())
     safe = safe_filename(file.filename or "file")
-    upload_dir = Path(UPLOAD_DIR)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    path = upload_dir / f"{fid}_{safe}"
     upload_root = Path(UPLOAD_DIR)
     upload_root.mkdir(parents=True, exist_ok=True)
     path = upload_root / f"{fid}_{safe}"
@@ -222,7 +225,7 @@ async def api_upload(
 
 
 @app.post(
-    "/api/extract",
+    f"{API_PREFIX}/extract",
     summary="Extract dataset metadata",
     response_model=ExtractResponse,
     responses={400: {"model": ErrorResponse, "description": "Unable to process dataset"}},
@@ -240,7 +243,7 @@ def api_extract(req: ExtractRequest) -> ExtractResponse:
 
 
 @app.post(
-    "/api/extract/async",
+    f"{API_PREFIX}/extract/async",
     summary="Schedule dataset metadata extraction",
     response_model=TaskEnqueueResponse,
     responses={
@@ -261,7 +264,7 @@ def api_extract_async(req: ExtractRequest) -> TaskEnqueueResponse:
 
 
 @app.get(
-    "/api/tasks/{task_id}",
+    f"{API_PREFIX}/tasks/{{task_id}}",
     summary="Inspect background task status",
     response_model=TaskStatusResponse,
     responses={
@@ -287,7 +290,7 @@ def api_task_status(task_id: str) -> TaskStatusResponse:
 
 
 @app.post(
-    "/api/utils/send-email",
+    f"{API_PREFIX}/utils/send-email",
     summary="Log outgoing email",
     response_model=EmailResponse,
     responses={500: {"model": ErrorResponse, "description": "Failed to write audit log"}},
@@ -302,7 +305,6 @@ async def api_send_email(payload: EmailRequest) -> EmailResponse:
     log_path = Path(EMAIL_LOG_PATH)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(EMAIL_LOG_PATH, "a", encoding="utf-8") as log_file:
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as exc:
@@ -340,10 +342,10 @@ visualizations_router = visualizations_router_module.router
 chat_router = chat_router_module.router
 audit_router = audit_router_module.router
 
-app.include_router(datasets_router, prefix="/api/dataset")
-app.include_router(dictionary_router, prefix="/api/dictionary")
-app.include_router(visualizations_router, prefix="/api/visualization")
-app.include_router(chat_router, prefix="/api/chat")
-app.include_router(audit_router, prefix="/api/audit")
+app.include_router(datasets_router, prefix=f"{API_PREFIX}/dataset")
+app.include_router(dictionary_router, prefix=f"{API_PREFIX}/dictionary")
+app.include_router(visualizations_router, prefix=f"{API_PREFIX}/visualization")
+app.include_router(chat_router, prefix=f"{API_PREFIX}/chat")
+app.include_router(audit_router, prefix=f"{API_PREFIX}/audit")
 FILE_REGISTRY = get_file_registry()
 _safe_name = safe_filename
