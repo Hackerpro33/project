@@ -3,7 +3,18 @@ import { jsonRequest as request } from './http';
 function buildQuery(params = {}) {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
+    if (value === undefined || value === null) {
+      return;
+    }
+    if (Array.isArray(value)) {
+      value
+        .filter((item) => item !== undefined && item !== null && item !== '')
+        .forEach((item) => {
+          search.append(key, item);
+        });
+      return;
+    }
+    if (value !== '') {
       search.append(key, value);
     }
   });
@@ -14,6 +25,26 @@ function buildQuery(params = {}) {
 export const Dataset = {
   async list(orderBy = '-created_at') {
     return request(`/api/v1/dataset/list${buildQuery({ order_by: orderBy })}`);
+  },
+
+  async search({
+    query,
+    tags = [],
+    types = [],
+    owners = [],
+    limit,
+    orderBy,
+  } = {}) {
+    return request(
+      `/api/dataset/search${buildQuery({
+        query,
+        tags,
+        dataset_types: types,
+        owners,
+        limit,
+        order_by: orderBy,
+      })}`,
+    );
   },
 
   async get(id) {
@@ -51,6 +82,25 @@ export const Dataset = {
   async delete(id) {
     return request(`/api/v1/dataset/${id}`, {
       method: 'DELETE',
+    });
+  },
+
+  async similar(id, options = {}) {
+    return request(
+      `/api/dataset/${id}/similar${buildQuery({ limit: options.limit })}`,
+    );
+  },
+
+  async regenerateSummary(id) {
+    return request(`/api/dataset/${id}/auto-summary`, {
+      method: 'POST',
+    });
+  },
+
+  async monitorMetrics(payload) {
+    return request('/api/dataset/monitor', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 };

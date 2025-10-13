@@ -30,6 +30,9 @@ import {
   Type,
   CheckCircle,
   Sparkles,
+  Activity,
+  AlertTriangle,
+  Users,
   ShieldCheck,
   AlertTriangle,
   CircleAlert,
@@ -45,6 +48,16 @@ export default function DatasetPreview({ dataset, onClose }) {
   const [isLoading, setIsLoading] = useState(true);
   const [aiSuggestions, setAiSuggestions] = useState(null);
   const [aiSummary, setAiSummary] = useState(null);
+  const [similarDatasets, setSimilarDatasets] = useState([]);
+  const [isSimilarLoading, setIsSimilarLoading] = useState(false);
+  const [monitoringResults, setMonitoringResults] = useState(null);
+  const [isMonitoringLoading, setIsMonitoringLoading] = useState(false);
+  const [monitoringError, setMonitoringError] = useState(null);
+
+  const monitoringStatusStyles = {
+    ok: { label: "В норме", className: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
+    warning: { label: "Предупреждение", className: "bg-amber-50 text-amber-700 border border-amber-200" },
+    critical: { label: "Критично", className: "bg-rose-50 text-rose-700 border border-rose-200" },
   const [activeTab, setActiveTab] = useState('overview');
   const [profile, setProfile] = useState(null);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
@@ -213,6 +226,77 @@ export default function DatasetPreview({ dataset, onClose }) {
   }, [dataset]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadSimilar() {
+      if (!dataset?.id) {
+        setSimilarDatasets([]);
+        return;
+      }
+      setIsSimilarLoading(true);
+      try {
+        const response = await Dataset.similar(dataset.id, { limit: 4 });
+        if (!cancelled) {
+          setSimilarDatasets(Array.isArray(response?.similar) ? response.similar : []);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Не удалось получить похожие наборы", error);
+          setSimilarDatasets([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsSimilarLoading(false);
+        }
+      }
+    }
+
+    loadSimilar();
+    return () => {
+      cancelled = true;
+    };
+  }, [dataset?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMonitoring() {
+      if (!dataset?.id) {
+        setMonitoringResults(null);
+        return;
+      }
+      setIsMonitoringLoading(true);
+      setMonitoringError(null);
+      try {
+        const response = await Dataset.monitorMetrics({
+          dataset_id: dataset.id,
+          metrics: [
+            { metric: "row_count" },
+            { metric: "ingestion_latency" },
+          ],
+          min_points: 5,
+        });
+        if (!cancelled) {
+          setMonitoringResults(response);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Не удалось выполнить мониторинг метрик", error);
+          setMonitoringResults(null);
+          setMonitoringError("Не удалось получить аналитические метрики");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsMonitoringLoading(false);
+        }
+      }
+    }
+
+    loadMonitoring();
+    return () => {
+      cancelled = true;
+    };
+  }, [dataset?.id]);
     setActiveTab('overview');
   }, [dataset?.id]);
 
@@ -319,13 +403,22 @@ export default function DatasetPreview({ dataset, onClose }) {
                 <Database className="w-5 h-5 text-white" />
               </div>
               <div>
-                <DialogTitle className="text-2xl font-bold text-slate-900">
-                  {dataset.name}
-                </DialogTitle>
-                <DialogDescription className="text-slate-600">
-                  {dataset.description}
-                </DialogDescription>
-              </div>
+              <DialogTitle className="text-2xl font-bold text-slate-900">
+                {dataset.name}
+              </DialogTitle>
+              <DialogDescription className="text-slate-600">
+                {dataset.description}
+              </DialogDescription>
+              {dataset.auto_summary && (
+                <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-indigo-700">
+                    <Sparkles className="w-4 h-4" />
+                    Автоописание
+                  </div>
+                  <p className="mt-1 text-sm text-indigo-700">{dataset.auto_summary}</p>
+                </div>
+              )}
+            </div>
             </div>
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="w-4 h-4" />
@@ -355,6 +448,173 @@ export default function DatasetPreview({ dataset, onClose }) {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Database className="w-5 h-5 text-blue-600" />
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">Похожие наборы</h3>
+                    <p className="text-xs text-slate-500">Семантические рекомендации по описанию и тегам</p>
+                  </div>
+                </div>
+                {isSimilarLoading && (
+                  <Badge variant="secondary" className="bg-blue-50 text-blue-600">
+                    Обновление…
+                  </Badge>
+                )}
+              </div>
+              <div className="mt-3 space-y-3">
+                {isSimilarLoading ? (
+                  Array.from({ length: 3 }).map((_, index) => (
+                    <div key={index} className="h-14 animate-pulse rounded-lg bg-slate-100" />
+                  ))
+                ) : similarDatasets.length > 0 ? (
+                  similarDatasets.map((item) => (
+                    <div key={item.id || item.name} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-900">{item.name}</div>
+                          <div className="text-xs text-slate-500 line-clamp-2">
+                            {item.description || "Описание недоступно"}
+                          </div>
+                        </div>
+                        {typeof item.similarity === 'number' && (
+                          <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+                            {(item.similarity * 100).toFixed(0)}%
+                          </Badge>
+                        )}
+                      </div>
+                      {Array.isArray(item.overlap_tags) && item.overlap_tags.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {item.overlap_tags.map((tag) => (
+                            <Badge key={tag} variant="outline" className="text-[11px]">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-slate-500">Недостаточно данных для рекомендаций.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-emerald-600" />
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">Мониторинг качества</h3>
+                    <p className="text-xs text-slate-500">Автоматическое выявление трендов и выбросов</p>
+                  </div>
+                </div>
+                {monitoringResults?.status && (
+                  <Badge
+                    variant="secondary"
+                    className={
+                      monitoringStatusStyles[monitoringResults.status]?.className ??
+                      'bg-slate-100 text-slate-600 border border-slate-200'
+                    }
+                  >
+                    {monitoringStatusStyles[monitoringResults.status]?.label ?? monitoringResults.status}
+                  </Badge>
+                )}
+              </div>
+              <div className="mt-3 space-y-3">
+                {monitoringError && (
+                  <Alert variant="destructive" className="border-red-200 bg-red-50 text-sm">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>{monitoringError}</AlertDescription>
+                  </Alert>
+                )}
+                {isMonitoringLoading ? (
+                  Array.from({ length: 2 }).map((_, index) => (
+                    <div key={index} className="h-20 animate-pulse rounded-lg bg-slate-100" />
+                  ))
+                ) : monitoringResults?.results?.length > 0 ? (
+                  monitoringResults.results.map((metric) => {
+                    const statusStyle =
+                      monitoringStatusStyles[metric.status] ?? {
+                        label: metric.status,
+                        className: 'bg-slate-100 text-slate-600 border border-slate-200',
+                      };
+                    return (
+                      <div key={metric.metric} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <div className="flex items-center justify-between">
+                          <div className="font-semibold text-slate-900">{metric.metric}</div>
+                          <Badge variant="secondary" className={statusStyle.className}>
+                            {statusStyle.label}
+                          </Badge>
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          Базовый уровень: {metric.baseline} · Порог: {metric.threshold}
+                        </div>
+                        {metric.trend && (
+                          <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                            <BarChart3 className="w-3 h-3 text-slate-500" />
+                            {metric.trend.direction === 'growing'
+                              ? 'Рост показателя'
+                              : metric.trend.direction === 'declining'
+                              ? 'Снижение показателя'
+                              : 'Стабильная динамика'}
+                            · {metric.trend.change_percent}%
+                          </div>
+                        )}
+                        {metric.anomalies && metric.anomalies.length > 0 ? (
+                          <div className="mt-2 space-y-1">
+                            {metric.anomalies.slice(0, 2).map((anomaly) => (
+                              <div
+                                key={`${metric.metric}-${anomaly.timestamp}`}
+                                className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-xs text-slate-600"
+                              >
+                                <div className="flex flex-col">
+                                  <span className="font-medium text-slate-800">
+                                    {new Date(anomaly.timestamp).toLocaleDateString()}
+                                  </span>
+                                  <span>{anomaly.message}</span>
+                                </div>
+                                <span className="text-slate-500">{anomaly.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="mt-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-500">
+                            Аномалии не обнаружены.
+                          </div>
+                        )}
+                        {metric.recommendations?.length > 0 && (
+                          <ul className="mt-2 list-disc list-inside text-xs text-slate-600">
+                            {metric.recommendations.slice(0, 2).map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-sm text-slate-500">Метрики пока не настроены для мониторинга.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {aiSuggestions && (
+            <div className="p-5 rounded-xl border border-slate-200 bg-slate-50/60">
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Рекомендации локального ИИ</h3>
+                  <p className="text-sm text-slate-600 mt-2">{aiSuggestions.summary}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(aiSuggestions.focus_areas ?? []).map((area) => (
+                    <Badge key={area} variant="secondary" className="text-[11px] bg-white text-slate-700 border border-slate-200">
+                      {area}
+                    </Badge>
+                  ))}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
             <TabsList className="grid grid-cols-3 w-full md:w-auto">
               <TabsTrigger value="overview">Обзор</TabsTrigger>

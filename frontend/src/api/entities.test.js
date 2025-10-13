@@ -36,6 +36,30 @@ describe("entities API client", () => {
     expect(response).toEqual([{ id: "d1" }]);
   });
 
+  it("performs semantic search with array filters", async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ items: [] }),
+    });
+
+    await Dataset.search({
+      query: "crime",
+      tags: ["crime", "geo"],
+      types: ["geospatial"],
+      owners: ["Analytics"],
+      limit: 25,
+      orderBy: "-created_at",
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/dataset/search?query=crime&tags=crime&tags=geo&dataset_types=geospatial&owners=Analytics&limit=25&order_by=-created_at",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "Content-Type": "application/json" }),
+      })
+    );
+  });
+
   it("creates a dataset via POST", async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,
@@ -65,6 +89,50 @@ describe("entities API client", () => {
 
     await expect(Dataset.get("missing"))
       .rejects.toThrow("failure");
+  });
+
+  it("fetches similar datasets and monitoring endpoints", async () => {
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ similar: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ auto_summary: "summary" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ status: "ok" }),
+      });
+
+    await Dataset.similar("abc", { limit: 3 });
+    await Dataset.regenerateSummary("abc");
+    await Dataset.monitorMetrics({ dataset_id: "abc" });
+
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      1,
+      "/api/dataset/abc/similar?limit=3",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "Content-Type": "application/json" }),
+      })
+    );
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      "/api/dataset/abc/auto-summary",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      3,
+      "/api/dataset/monitor",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ dataset_id: "abc" }),
+      })
+    );
   });
 
   it("filters visualizations with POST body", async () => {
