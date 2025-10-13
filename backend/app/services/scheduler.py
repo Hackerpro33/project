@@ -112,6 +112,60 @@ class TaskScheduler:
         self._save(filtered)
         logger.debug("Deleted schedule", extra={"schedule_id": schedule_id})
 
+    def update_schedule(
+        self,
+        schedule_id: str,
+        *,
+        name: Optional[str] = None,
+        cron: Optional[str] = None,
+        task: Optional[str] = None,
+        sla_seconds: Optional[int] = None,
+        max_retries: Optional[int] = None,
+        payload: Optional[Dict[str, Any]] = None,
+        now: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """Mutate persisted schedule attributes."""
+
+        def _apply_updates(schedule: Dict[str, Any]) -> Dict[str, Any]:
+            current_time = _ensure_utc(now)
+            if name is not None:
+                if not name:
+                    raise InvalidSchedule("Schedule name is required")
+                schedule["name"] = name
+            if task is not None:
+                if not task:
+                    raise InvalidSchedule("Task identifier is required")
+                schedule["task"] = task
+            if cron is not None:
+                if not croniter.is_valid(cron):
+                    raise InvalidSchedule(f"Invalid cron expression: {cron}")
+                schedule["cron"] = cron
+            if sla_seconds is not None:
+                if sla_seconds <= 0:
+                    raise InvalidSchedule("SLA must be a positive number of seconds")
+                schedule["sla_seconds"] = int(sla_seconds)
+            if max_retries is not None:
+                if max_retries < 0:
+                    raise InvalidSchedule("max_retries must be >= 0")
+                schedule["max_retries"] = int(max_retries)
+            if payload is not None:
+                if not isinstance(payload, dict):
+                    raise InvalidSchedule("payload must be a dictionary")
+                schedule["payload"] = payload
+
+            previous_status = schedule.get("status")
+            schedule["updated_at"] = _to_iso(current_time)
+            if previous_status != "paused":
+                schedule["next_run_due"] = _to_iso(_next_run(schedule["cron"], current_time))
+            schedule.setdefault("retry_count", 0)
+            if previous_status == "failed" and schedule.get("next_run_due"):
+                schedule["status"] = "pending"
+                schedule["retry_count"] = 0
+                schedule["last_error"] = None
+            return schedule
+
+        return self._mutate(schedule_id, _apply_updates)
+
     def get_due_jobs(self, reference_time: Optional[datetime] = None) -> List[Dict[str, Any]]:
         """Return schedules that should run at ``reference_time``."""
 
@@ -148,6 +202,51 @@ class TaskScheduler:
         """Register a failed run and manage retries."""
 
         return self._mutate(schedule_id, lambda schedule: self._set_failed(schedule, error, failed_at))
+
+    def pause_schedule(
+        self, schedule_id: str, paused_at: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Temporarily disable schedule execution."""
+
+        return self._mutate(schedule_id, lambda schedule: self._set_paused(schedule, paused_at))
+
+    def resume_schedule(
+        self, schedule_id: str, resumed_at: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Re-activate a previously paused or failed schedule."""
+
+        return self._mutate(schedule_id, lambda schedule: self._set_resumed(schedule, resumed_at))
+
+    def preview_runs(
+        self,
+        schedule_id: str,
+        *,
+        count: int = 5,
+        reference_time: Optional[datetime] = None,
+    ) -> List[str]:
+        """Return the next ``count`` scheduled run timestamps."""
+
+        if count <= 0:
+            return []
+        schedule = self.get_schedule(schedule_id)
+        reference = _ensure_utc(reference_time)
+        runs: List[str] = []
+
+        next_due = schedule.get("next_run_due")
+        base = reference
+        if next_due:
+            next_due_dt = _from_iso(next_due)
+            if next_due_dt >= reference:
+                runs.append(_to_iso(next_due_dt))
+                base = next_due_dt
+            else:
+                base = reference
+
+        remaining = max(count - len(runs), 0)
+        iterator = croniter(schedule["cron"], base)
+        for _ in range(remaining):
+            runs.append(_to_iso(iterator.get_next(datetime)))
+        return runs[:count]
 
     def enforce_sla(self, reference_time: Optional[datetime] = None) -> List[Dict[str, Any]]:
         """Ensure running jobs obey their SLA and trigger retries if exceeded."""
@@ -236,6 +335,36 @@ class TaskScheduler:
         if retry_count > int(schedule.get("max_retries", 0)):
             schedule["status"] = "failed"
             schedule["next_run_due"] = None
+        return schedule
+
+    def _set_paused(self, schedule: Dict[str, Any], paused_at: Optional[datetime]) -> Dict[str, Any]:
+        if schedule.get("status") == "running":
+            raise InvalidSchedule("Cannot pause a running schedule")
+        now = _ensure_utc(paused_at)
+        schedule.update(
+            {
+                "status": "paused",
+                "updated_at": _to_iso(now),
+                "next_run_due": None,
+            }
+        )
+        return schedule
+
+    def _set_resumed(self, schedule: Dict[str, Any], resumed_at: Optional[datetime]) -> Dict[str, Any]:
+        now = _ensure_utc(resumed_at)
+        previous_status = schedule.get("status")
+        if previous_status == "running":
+            raise InvalidSchedule("Cannot resume a running schedule")
+        schedule.update(
+            {
+                "status": "pending",
+                "updated_at": _to_iso(now),
+                "next_run_due": _to_iso(_next_run(schedule["cron"], now)),
+            }
+        )
+        if previous_status == "failed":
+            schedule["retry_count"] = 0
+            schedule["last_error"] = None
         return schedule
 
     def _load(self) -> List[Dict[str, Any]]:
