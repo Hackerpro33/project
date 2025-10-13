@@ -1,52 +1,27 @@
 """Dataset CRUD endpoints backed by JSON storage with HTTP caching."""
+
 from __future__ import annotations
-from collections import Counter
-from datetime import datetime, timedelta, timezone
-from math import sqrt
-from pathlib import Path
-from statistics import mean, pstdev
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
 import json
 import logging
 import os
-import shutil
-import tempfile
-import time
-import uuid
-from datetime import datetime
-from math import ceil
-from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set
-
-from fastapi import APIRouter, HTTPException, Query, params
-from typing import Any, Dict, List, Optional, Tuple
-
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
-
-import json
-import os
-import shutil
-import tempfile
-import time
-import uuid
 import random
 import re
-import tempfile
 import shutil
+import tempfile
 import time
 import uuid
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import datetime, timedelta, timezone
+from math import ceil, sqrt
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
-import re
-import shutil
-import tempfile
-import time
-import uuid
+from statistics import mean, pstdev
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import pandas as pd
+from fastapi import APIRouter, HTTPException, Query, Request, Response, params
+from pydantic import BaseModel, Field
 
 try:  # pragma: no cover - allow running as a standalone module
     from .schemas import (
@@ -70,6 +45,8 @@ except ImportError:  # pragma: no cover
         ValidationRule,
     )
     from utils.files import load_dataframe_from_identifier  # type: ignore
+
+from .config import get_settings
 from .services.notifications import WebhookDeliveryError, notify_dataset_refresh_failure
 from .services.scheduler import (
     InvalidSchedule,
@@ -77,31 +54,15 @@ from .services.scheduler import (
     ScheduleNotFound,
     TaskScheduler,
 )
+from .utils.cache import apply_cache_headers, should_return_not_modified
 
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 APP_DIR = Path(__file__).resolve().parent
-CANDIDATE_DIRS = [APP_DIR.parent / "data", APP_DIR / "data"]
-
-
-from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel, Field
-
-from .config import get_settings
-from .utils.cache import apply_cache_headers, should_return_not_modified
-
-router = APIRouter()
-settings = get_settings()
-STORE_DIR = _ensure_store_dir()
-DATASETS_JSON = STORE_DIR / "datasets.json"
-DEFAULT_PAGE_SIZE = 20
-REFRESH_SCHEDULES_JSON = STORE_DIR / "dataset_refresh_schedules.json"
-
-_refresh_scheduler = TaskScheduler(REFRESH_SCHEDULES_JSON)
-
-_DATA_DIR = Path(__file__).resolve().parent / "data"
+_DATA_DIR = APP_DIR / "data"
 _DEFAULT_STORE = _DATA_DIR / "datasets"
 _ENV_STORE = Path(os.getenv("INSIGHT_DATASETS_DIR", _DEFAULT_STORE))
 
@@ -123,6 +84,10 @@ def _resolve_store_dir() -> Path:
 
 STORE_DIR = _resolve_store_dir()
 DATASETS_JSON = STORE_DIR / "datasets.json"
+DEFAULT_PAGE_SIZE = 20
+REFRESH_SCHEDULES_JSON = STORE_DIR / "dataset_refresh_schedules.json"
+
+_refresh_scheduler = TaskScheduler(REFRESH_SCHEDULES_JSON)
 
 _ORDERABLE_FIELDS = {"created_at", "updated_at", "name", "row_count"}
 
@@ -1436,8 +1401,6 @@ __all__ = [
     "_atomic_write_json",
     "_save_all",
 ]
-
-    return {"status": "deleted", "id": dataset_id}
 
 
 @router.post("/profile", response_model=DatasetProfileResponse)

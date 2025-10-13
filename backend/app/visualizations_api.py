@@ -1,59 +1,34 @@
-from datetime import datetime
-from math import ceil
-from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set
-
-from fastapi import APIRouter, HTTPException, Query, params
-from pydantic import BaseModel, Field
-
-import json
-import os
-import shutil
-import tempfile
 """Visualization CRUD endpoints backed by JSON storage."""
+
 from __future__ import annotations
 
 import json
+import logging
 import os
+import shutil
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Set
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response, params
 from pydantic import BaseModel, Field
 
 from .config import get_settings
 from .utils.cache import apply_cache_headers, should_return_not_modified
 
-STORE_DIR = _ensure_store_dir()
-VISUALIZATIONS_JSON = STORE_DIR / "visualizations.json"
-DEFAULT_PAGE_SIZE = 20
+
 router = APIRouter()
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
-_DATA_DIR = Path(__file__).resolve().parent / "data"
+APP_DIR = Path(__file__).resolve().parent
+_DATA_DIR = APP_DIR / "data"
 _DEFAULT_STORE = _DATA_DIR / "visualizations"
 _ENV_STORE = Path(os.getenv("INSIGHT_VISUALIZATIONS_DIR", _DEFAULT_STORE))
 
-def _atomic_write_json(path: Path, data: Any) -> None:
-    fd, tmp_name = tempfile.mkstemp(prefix="visualizations_", suffix=".json", dir=str(path.parent))
-    tmp_path = Path(tmp_name)
-    try:
-        os.close(fd)
-    except OSError:
-        pass
-
-    try:
-        with tmp_path.open("w", encoding="utf-8") as handle:
-            json.dump(data, handle, ensure_ascii=False, indent=2)
-        shutil.move(str(tmp_path), str(path))
-    finally:
-        try:
-            tmp_path.unlink()
-        except FileNotFoundError:
-            pass
 CANDIDATE_DIRS: List[Path] = [_ENV_STORE, _DEFAULT_STORE, _DATA_DIR]
 
 
@@ -69,6 +44,7 @@ def _resolve_store_dir() -> Path:
 
 STORE_DIR = _resolve_store_dir()
 VISUALIZATIONS_JSON = STORE_DIR / "visualizations.json"
+DEFAULT_PAGE_SIZE = 20
 
 _ORDERABLE_FIELDS = {"created_at", "updated_at", "title", "type"}
 
