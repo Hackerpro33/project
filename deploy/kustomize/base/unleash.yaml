@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unleash
+  labels:
+    app: unleash
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: unleash
+  template:
+    metadata:
+      labels:
+        app: unleash
+    spec:
+      containers:
+        - name: unleash
+          image: unleashorg/unleash-server:4.22
+          env:
+            - name: DATABASE_HOST
+              value: postgres
+            - name: DATABASE_NAME
+              value: insight
+            - name: DATABASE_USERNAME
+              value: insight
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: password
+            - name: DATABASE_SSL
+              value: "false"
+            - name: INIT_CLIENT_API_TOKENS
+              valueFrom:
+                secretKeyRef:
+                  name: unleash-token
+                  key: apiToken
+            - name: INIT_FRONTEND_API_TOKENS
+              valueFrom:
+                secretKeyRef:
+                  name: unleash-token
+                  key: apiToken
+          ports:
+            - containerPort: 4242
+              name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: unleash
+  labels:
+    app: unleash
+spec:
+  selector:
+    app: unleash
+  ports:
+    - name: http
+      port: 4242
+      targetPort: http

@@ -1,0 +1,101 @@
+backend:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/insight-sphere/backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  env:
+    - name: DATABASE_URL
+      value: postgresql+psycopg://insight:insight@insight-postgres:5432/insight
+    - name: REDIS_URL
+      value: redis://insight-redis:6379/0
+    - name: UNLEASH_API_URL
+      value: http://insight-unleash:4242/api
+    - name: UNLEASH_API_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: insight-feature-flags
+          key: apiToken
+    - name: UNLEASH_ENVIRONMENT
+      value: production
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 15
+  readinessProbe:
+    httpGet:
+      path: /readiness
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 15
+  metrics:
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      scrapeTimeout: 10s
+
+frontend:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/insight-sphere/frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+  env:
+    - name: VITE_API_BASE
+      value: http://insight-sphere-backend:8000
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  port: 6379
+
+postgres:
+  enabled: true
+  image: postgres:15-alpine
+  port: 5432
+
+featureFlags:
+  enabled: true
+  image: unleashorg/unleash-server:4.22
+  service:
+    port: 4242
+  env:
+    - name: DATABASE_HOST
+      value: insight-postgres
+    - name: DATABASE_NAME
+      value: insight
+    - name: DATABASE_USERNAME
+      value: insight
+    - name: DATABASE_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: insight-postgres
+          key: password
+    - name: DATABASE_SSL
+      value: "false"
+    - name: INIT_CLIENT_API_TOKENS
+      value: default:development.unleash-insecure-api-token
+    - name: INIT_FRONTEND_API_TOKENS
+      value: default:development.unleash-insecure-api-token

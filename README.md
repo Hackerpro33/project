@@ -17,6 +17,23 @@
 ## Быстрый старт
 
 1. Склонируйте репозиторий и установите зависимости для фронтенда и бэкенда.
+2. Поднимите сопутствующие сервисы одной командой `make dev` (внутри используется `docker compose`).
+   Стек включает Postgres, Redis, Unleash для фич-флагов, backend и frontend. Миграции Alembic и
+   сидинг фикстур выполняются автоматически при старте контейнера бэкенда.
+3. Остановите окружение командой `make down`.
+4. Выполните автоматические тесты и линтеры через `make check` (см. раздел «Проверка работоспособности»).
+
+Makefile включает основные сценарии разработки:
+
+```bash
+make up          # поднять все сервисы в фоне
+make logs        # потоковые логи docker compose
+make test        # pytest для API и npm test для фронтенда
+make lint        # ruff/black + eslint
+make fmt         # автоформатирование бэкенда и фронтенда
+make type        # mypy поверх backend/app
+make ci          # билд всего стека в режиме CI с перегенерацией образов
+```
 2. **Вариант для VS Code/Dev Containers:** откройте папку в контейнере разработки — сервисы Postgres/Redis/MinIO поднимутся автоматически, а зависимости установятся через `postCreateCommand`.
 3. При локальном запуске без devcontainer поднимите сопутствующие сервисы (Postgres, Redis, MinIO) через `docker-compose`.
 4. Запустите бэкенд и фронтенд в отдельных терминалах.
@@ -151,6 +168,28 @@ npm run build
 Prometheus и оркестраторами. Логи формируются в формате JSON и включают trace-id для связывания
 с трассировками OpenTelemetry. Для отслеживания исключений используется Sentry.
 
+Helm-чарт (`deploy/helm/insight-sphere`) и kustomize-оверлеи (`deploy/kustomize/overlays`) содержат
+готовые Deployment/Service/ServiceMonitor-манифесты. В чарте настроены лимиты ресурсов, пробки
+живости и готовности, а также ServiceMonitor для Prometheus. В kustomize предусмотрены окружения
+`dev`, `stage` и `prod` с различным количеством реплик и параметрами кэша. Пример применения:
+
+```bash
+# dev-оверлей
+kubectl apply -k deploy/kustomize/overlays/dev
+
+# helm-чарт со значениями по умолчанию
+helm upgrade --install insight-sphere deploy/helm/insight-sphere
+```
+
+HTTP-кэш: тяжелые ответы (`/api/dataset/list`, `/api/visualization/list`, фильтры) сопровождаются
+ETag/If-None-Match и заголовками `Cache-Control` (`stale-while-revalidate`). Статические фронтенд
+активы, публикуемые через API (`/static/*`), получают CDN-заголовки `Cache-Control: immutable` с
+годичным `max-age`.
+
+Для гибкого включения раздела «Продвинутая аналитика» используется Unleash. Backend читает
+конфигурацию по `UNLEASH_API_URL`/`UNLEASH_API_TOKEN` и кеширует фичи-флаги, а фронтенд через
+контекст `FeatureFlagProvider` скрывает вкладку и показывает предупреждение при отключенном
+флаге `advanced_analytics`.
 ## Версионирование и релизы
 
 - Основной веткой служит `main`, релизы публикуются с помощью GitHub Release Drafter и следуют

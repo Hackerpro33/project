@@ -1,0 +1,16 @@
+[
+  {
+    "title": "Тепловая карта происшествий",
+    "type": "heatmap",
+    "tags": ["incidents", "geospatial"],
+    "config": {"layers": ["density"], "colorScale": "OrRd"},
+    "summary": {"insight": "Рост инцидентов в центральных районах ночью"}
+  },
+  {
+    "title": "Сценарии нагрузки патрулей",
+    "type": "chart",
+    "tags": ["forecast", "patrol"],
+    "config": {"chart": "line", "metrics": ["patrol_hours", "incidents"]},
+    "summary": {"insight": "Пиковая нагрузка приходится на пятницу 20:00"}
+  }
+]

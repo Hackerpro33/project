@@ -4,6 +4,7 @@ import mimetypes
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 import os
@@ -370,6 +371,40 @@ app = FastAPI(
     openapi_url=f"{API_PREFIX}/openapi.json",
 )
 
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Attach a strict set of security-oriented HTTP headers."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        headers = {
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "Referrer-Policy": "same-origin",
+            "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+            "Cross-Origin-Opener-Policy": "same-origin",
+            "Cross-Origin-Embedder-Policy": "require-corp",
+        }
+        for header, value in headers.items():
+            response.headers.setdefault(header, value)
+        return response
+
+
+class CDNCacheMiddleware(BaseHTTPMiddleware):
+    """Apply CDN-friendly caching headers for frontend assets."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path.startswith("/static/"):
+            response.headers.setdefault(
+                "Cache-Control",
+                f"public, max-age={settings.cdn_cache_max_age}, immutable",
+            )
+        elif path.endswith(".html") or path == "/":
+            response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
 # --- CORS ---
 allow_origins = {str(settings.frontend_origin), "http://127.0.0.1:5173", "http://127.0.0.1:5174"}
 allow_origins.update(settings.additional_origins)
@@ -393,6 +428,8 @@ app.add_middleware(
 )
 
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(CDNCacheMiddleware)
 
 
 @app.middleware("http")
@@ -432,6 +469,15 @@ UPLOAD_SIZE = Histogram(
     registry=REGISTRY,
     buckets=(10 * 1024, 100 * 1024, 1024 * 1024, 10 * 1024 * 1024, 50 * 1024 * 1024, float("inf")),
 )
+
+_IDEMPOTENCY_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+if settings.frontend_static_dir:
+    static_root = Path(settings.frontend_static_dir)
+    if static_root.exists():
+        app.mount("/static", StaticFiles(directory=str(static_root)), name="static")
+
 
 async def _scan_for_malware(file_bytes: bytes) -> None:
     if not settings.clamav_scan_url:
@@ -985,6 +1031,7 @@ if __package__ in {None, ""}:
     import dataset_versions_api as dataset_versions_router_module
     import dictionary_api as dictionary_router_module
     import visualizations_api as visualizations_router_module
+    import feature_flags_api as feature_flags_router_module
 else:
     from . import audit_api as audit_router_module
     from . import collaboration_api as collaboration_router_module
@@ -993,6 +1040,7 @@ else:
     from . import dataset_versions_api as dataset_versions_router_module
     from . import dictionary_api as dictionary_router_module
     from . import visualizations_api as visualizations_router_module
+    from . import feature_flags_api as feature_flags_router_module
 
 datasets_router = datasets_router_module.router
 dataset_versions_router = dataset_versions_router_module.router
@@ -1000,6 +1048,7 @@ dictionary_router = dictionary_router_module.router
 visualizations_router = visualizations_router_module.router
 chat_router = chat_router_module.router
 audit_router = audit_router_module.router
+feature_flags_router = feature_flags_router_module.router
 collaboration_router = collaboration_router_module.router
 
 app.include_router(datasets_router, prefix=f"{API_PREFIX}/dataset")
@@ -1013,6 +1062,7 @@ app.include_router(dictionary_router, prefix="/api/dictionary")
 app.include_router(visualizations_router, prefix="/api/visualization")
 app.include_router(chat_router, prefix="/api/chat")
 app.include_router(audit_router, prefix="/api/audit")
+app.include_router(feature_flags_router, prefix="/api/feature-flags")
 app.include_router(collaboration_router, prefix="/api")
 FILE_REGISTRY = get_file_registry()
 _safe_name = safe_filename
