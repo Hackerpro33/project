@@ -1,0 +1,167 @@
+import json
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app import datasets_api, dataset_versions_api
+from app.main import app
+
+HEADERS = {"host": "localhost"}
+
+
+@pytest.fixture(autouse=True)
+def override_storage(tmp_path, monkeypatch):
+    store_dir = tmp_path / "store"
+    store_dir.mkdir()
+
+    datasets_path = store_dir / "datasets.json"
+    versions_path = store_dir / "dataset_versions.json"
+
+    monkeypatch.setattr(datasets_api, "STORE_DIR", store_dir)
+    monkeypatch.setattr(datasets_api, "DATASETS_JSON", datasets_path)
+    monkeypatch.setattr(datasets_api, "CANDIDATE_DIRS", [store_dir])
+    monkeypatch.setattr(dataset_versions_api, "STORE_DIR", store_dir)
+    monkeypatch.setattr(dataset_versions_api, "VERSIONS_JSON", versions_path)
+    monkeypatch.setattr(dataset_versions_api, "CANDIDATE_DIRS", [store_dir])
+
+    # Ensure clean files
+    for path in (datasets_path, versions_path):
+        if path.exists():
+            path.unlink()
+    yield
+    # Cleanup created files
+    for path in (datasets_path, versions_path):
+        if path.exists():
+            path.unlink()
+
+
+def _create_dataset(name: str = "Sales") -> str:
+    payload = datasets_api.DatasetCreate(
+        name=name,
+        description="Test dataset",
+        columns=[
+            datasets_api.ColumnInfo(name="id", type="number"),
+            datasets_api.ColumnInfo(name="city", type="string"),
+            datasets_api.ColumnInfo(name="revenue", type="number"),
+        ],
+        sample_data=[
+            {"id": 1, "city": "Москва", "revenue": 120.0},
+            {"id": 2, "city": "Казань", "revenue": 80.0},
+        ],
+        row_count=2,
+    )
+    created = datasets_api.create_dataset(payload)
+    return created["id"]
+
+
+def test_versions_lifecycle_flow(override_storage):
+    client = TestClient(app)
+    dataset_id = _create_dataset()
+
+    first_payload = {
+        "author": "qa",
+        "notes": "Первый снимок",
+        "rows": [
+            {"id": 1, "city": "Москва", "revenue": 120},
+            {"id": 2, "city": "Казань", "revenue": 80},
+        ],
+    }
+    response = client.post(f"/api/dataset/{dataset_id}/versions", json=first_payload, headers=HEADERS)
+    assert response.status_code == 200
+    first_version = response.json()
+    assert first_version["row_count"] == 2
+    assert first_version["change_summary"]["rows_added"] == 2
+
+    second_payload = {
+        "author": "qa",
+        "notes": "Обновление",
+        "rows": [
+            {"id": 1, "city": "Москва", "revenue": 135},
+            {"id": 3, "city": "Самара", "revenue": 40},
+        ],
+    }
+    response = client.post(f"/api/dataset/{dataset_id}/versions", json=second_payload, headers=HEADERS)
+    assert response.status_code == 200
+    second_version = response.json()
+    assert second_version["row_count"] == 2
+    assert second_version["change_summary"]["rows_added"] >= 1
+
+    list_response = client.get(f"/api/dataset/{dataset_id}/versions", headers=HEADERS)
+    assert list_response.status_code == 200
+    versions = list_response.json()
+    assert len(versions) == 2
+    assert versions[0]["version_number"] == 2
+
+    diff_response = client.get(
+        f"/api/dataset/{dataset_id}/versions/{second_version['id']}/diff/{first_version['id']}",
+        headers=HEADERS,
+    )
+    assert diff_response.status_code == 200
+    diff = diff_response.json()
+    assert diff["added_rows"]
+    assert diff["removed_rows"]
+    assert diff["highlights"]
+    metrics_delta = diff["metrics_delta"]
+    assert "revenue" in metrics_delta
+    assert metrics_delta["revenue"]["sum"] != 0
+
+
+def test_versions_unknown_dataset_returns_404(override_storage):
+    client = TestClient(app)
+    response = client.get("/api/dataset/unknown/versions", headers=HEADERS)
+    assert response.status_code == 404
+
+
+def test_restore_version_updates_dataset_rows(override_storage):
+    client = TestClient(app)
+    dataset_id = _create_dataset()
+
+    first_payload = {
+        "author": "qa",
+        "notes": "Первый снимок",
+        "rows": [
+            {"id": 1, "city": "Москва", "revenue": 120},
+            {"id": 2, "city": "Казань", "revenue": 80},
+        ],
+    }
+    first_response = client.post(
+        f"/api/dataset/{dataset_id}/versions", json=first_payload, headers=HEADERS
+    )
+    assert first_response.status_code == 200
+    first_version = first_response.json()
+
+    second_payload = {
+        "author": "qa",
+        "notes": "Вторая версия",
+        "rows": [
+            {"id": 1, "city": "Москва", "revenue": 140},
+            {"id": 3, "city": "Самара", "revenue": 55},
+        ],
+    }
+    second_response = client.post(
+        f"/api/dataset/{dataset_id}/versions", json=second_payload, headers=HEADERS
+    )
+    assert second_response.status_code == 200
+
+    restore_response = client.post(
+        f"/api/dataset/{dataset_id}/versions/{first_version['id']}/restore",
+        headers=HEADERS,
+    )
+    assert restore_response.status_code == 200
+    restored_version = restore_response.json()
+    assert restored_version["id"] == first_version["id"]
+
+    dataset = datasets_api.get_dataset(dataset_id)
+    assert dataset["row_count"] == len(first_payload["rows"])
+    assert dataset["sample_data"] == first_payload["rows"]
+
+
+def test_restore_unknown_version_returns_404(override_storage):
+    client = TestClient(app)
+    dataset_id = _create_dataset()
+
+    response = client.post(
+        f"/api/dataset/{dataset_id}/versions/unknown/restore", headers=HEADERS
+    )
+    assert response.status_code == 404

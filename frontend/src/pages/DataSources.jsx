@@ -1,29 +1,100 @@
 import { Dataset } from "@/api/entities";
 import React, { useState, useEffect } from "react";
-import { extractDataFromUploadedFile, uploadFile } from "@/api/integrations";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { extractDataFromUploadedFile, importDatasetFromUrl } from "@/api/integrations";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import {
-  Upload,
-  FileText,
-  Database,
-  Tag,
-  Calendar,
-  BarChart,
-  Search,
-  Filter,
-  Plus
-} from "lucide-react";
-import { format } from "date-fns";
+import { Database, Tag, Search, Filter, Plus } from "lucide-react";
 
 import FileUploadZone from "../components/datasources/FileUploadZone";
+import LinkImportForm from "../components/datasources/LinkImportForm";
 import DatasetCard from "../components/datasources/DatasetCard";
 import DatasetPreview from "../components/datasources/DatasetPreview";
 import DataImportPreview from "../components/datasources/DataImportPreview";
 import PageContainer from "@/components/layout/PageContainer";
+import { resumableUpload } from "@/lib/resumableUpload";
+
+const MAX_FILE_SIZE_MB = 25;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const EXTRACTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    columns: {
+      type: 'array',
+      description:
+        'Массив объектов столбцов, каждый с именем и определенным типом данных (например, string, number, date).',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          type: { type: 'string' },
+        },
+        required: ['name', 'type'],
+      },
+    },
+    row_count: {
+      type: 'number',
+      description: 'Общее количество строк в наборе данных.',
+    },
+    sample_data: {
+      type: 'array',
+      description:
+        'Массив объектов, представляющих первые несколько строк данных. Каждый объект — это пара ключ-значение, где ключ — это имя столбца.',
+      items: {
+        type: 'object',
+        additionalProperties: true,
+      },
+    },
+  },
+  required: ['columns', 'row_count', 'sample_data'],
+};
+
+const createFallbackDatasetName = () => `dataset-${Date.now()}`;
+
+const normalizeFileName = (value) => {
+  if (!value) {
+    return '';
+  }
+  const withoutQuery = value.split('?')[0].split('#')[0];
+  const sanitized = withoutQuery.replace(/[\\/:*?"<>|]+/g, '_').trim();
+  return sanitized;
+};
+
+const ensureFileName = (candidate) => {
+  const normalized = normalizeFileName(candidate);
+  return normalized || createFallbackDatasetName();
+};
+
+const extractErrorMessage = (error, fallback) => {
+  const rawMessage = error?.message || error?.detail || '';
+  if (!rawMessage) {
+    return fallback;
+  }
+
+  const trimmed = rawMessage.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed === 'string') {
+      return parsed;
+    }
+    if (parsed && typeof parsed === 'object') {
+      if (typeof parsed.detail === 'string') {
+        return parsed.detail;
+      }
+      if (typeof parsed.message === 'string') {
+        return parsed.message;
+      }
+    }
+  } catch (errorParsing) {
+    // not JSON - fall back to string below
+  }
+
+  return trimmed;
+};
 
 export default function DataSources() {
   const [datasets, setDatasets] = useState([]);
@@ -34,6 +105,8 @@ export default function DataSources() {
   const [showPreview, setShowPreview] = useState(false);
   const [showImportPreview, setShowImportPreview] = useState(false);
   const [pendingDataset, setPendingDataset] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     loadDatasets();
@@ -52,130 +125,25 @@ export default function DataSources() {
     }
   };
 
-  const handleFileUpload = async (file) => {
-    setIsUploading(true);
-
-    const MAX_FILE_SIZE_MB = 25;
-    const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-        alert(`Ошибка: Файл слишком большой. Максимальный размер файла — ${MAX_FILE_SIZE_MB} МБ.`);
-        setIsUploading(false);
-        return;
+  const deriveFileNameFromUrl = (value) => {
+    if (!value) {
+      return ''
     }
-
-    let uploadedFileUrl = null;
-
     try {
-      const { file_url, quick_extraction } = await uploadFile({ file });
-      uploadedFileUrl = file_url;
-
-      if (quick_extraction?.columns?.length) {
-        const normalizedColumns = quick_extraction.columns.map((column) => ({
-          name: column.name,
-          type: column.type || 'string',
-        }));
-
-        setPendingDataset({
-          name: file.name.replace(/\.[^/.]+$/, ""),
-          description: `Автоматически распознанный набор данных из ${file.name}`,
-          file_url: uploadedFileUrl,
-          columns: normalizedColumns,
-          row_count: quick_extraction.row_count || 0,
-          sample_data: quick_extraction.sample_data || [],
-          insights: quick_extraction.insights || [],
-        });
-        setShowImportPreview(true);
-        return;
-      }
-
-      // Проверяем тип файла
-      const fileExtension = file.name.split('.').pop().toLowerCase();
-      const supportedByExtraction = ['csv', 'png', 'jpg', 'jpeg', 'pdf'];
-
-      if (supportedByExtraction.includes(fileExtension)) {
-        // Попробуем извлечь данные с помощью интеграции для поддерживаемых типов
-        try {
-          const result = await extractDataFromUploadedFile({
-            file_url: uploadedFileUrl,
-            json_schema: {
-              type: "object",
-              properties: {
-                columns: {
-                  type: "array",
-                  description: "Массив объектов столбцов, каждый с именем и определенным типом данных (например, string, number, date).",
-                  items: {
-                    type: "object",
-                    properties: {
-                      name: { type: "string" },
-                      type: { type: "string" }
-                    },
-                    required: ["name", "type"]
-                  }
-                },
-                row_count: {
-                  type: "number",
-                  description: "Общее количество строк в наборе данных."
-                },
-                sample_data: {
-                  type: "array",
-                  description: "Массив объектов, представляющих первые несколько строк данных. Каждый объект — это пара ключ-значение, где ключ — это имя столбца.",
-                  items: {
-                    type: "object",
-                    additionalProperties: true
-                  }
-                }
-              },
-              required: ["columns", "row_count", "sample_data"]
-            }
-          });
-
-          if (result.status === "success" && result.output && result.output.columns && result.output.columns.length > 0) {
-            setPendingDataset({
-              name: file.name.replace(/\.[^/.]+$/, ""),
-              description: `Загруженный набор данных из ${file.name}`,
-              file_url: uploadedFileUrl,
-              columns: result.output.columns || [],
-              row_count: result.output.row_count || 0,
-              sample_data: result.output.sample_data || [],
-            });
-            setShowImportPreview(true);
-          } else {
-            console.log("Автоматическое извлечение данных не удалось, используем резервный режим");
-            handleFallbackImport(file, uploadedFileUrl);
-          }
-        } catch (extractError) {
-          console.log("Ошибка извлечения данных, используем резервный режим:", extractError);
-          handleFallbackImport(file, uploadedFileUrl);
-        }
-      } else {
-        // Для неподдерживаемых типов файлов (включая Excel) сразу используем резервный режим
-        console.log(`Тип файла ${fileExtension} не поддерживается автоматическим извлечением, используем резервный режим`);
-        handleFallbackImport(file, uploadedFileUrl);
-      }
+      const parsed = new URL(value)
+      const segments = parsed.pathname?.split('/')?.filter(Boolean) ?? []
+      const lastSegment = segments[segments.length - 1] ?? ''
+      const decoded = decodeURIComponent(lastSegment)
+      return normalizeFileName(decoded)
     } catch (error) {
-      console.error('Ошибка обработки файла:', error);
-      const errorMessage = String(error);
-
-      if (errorMessage.includes("413") || errorMessage.includes("Payload too large")) {
-        alert(`Ошибка: Файл слишком большой. Пожалуйста, загрузите файл размером до ${MAX_FILE_SIZE_MB} МБ.`);
-      } else if (errorMessage.includes("Unsupported file type") && uploadedFileUrl) {
-        console.log("Неподдерживаемый тип файла, используем резервный режим");
-        handleFallbackImport(file, uploadedFileUrl);
-      } else if (errorMessage.includes("500")) {
-         alert("Произошла внутренняя ошибка сервера при обработке файла. Возможно, файл имеет неверный формат или слишком сложную структуру. Попробуйте упростить файл и загрузить снова.");
-      } else {
-        alert("Произошла непредвиденная ошибка при загрузке файла. Пожалуйста, проверьте подключение к локальной сети и попробуйте снова.");
-      }
-    } finally {
-      setIsUploading(false);
+      return ''
     }
-  };
+  }
 
-  const handleFallbackImport = (file, file_url) => {
-    // Создаем базовую структуру данных на основе имени файла и его типа
-    const fileName = file.name.toLowerCase();
-    const fileExtension = file.name.split('.').pop().toLowerCase();
+  const buildFallbackDataset = (rawFileName, fileUrl) => {
+    const safeName = ensureFileName(rawFileName)
+    const fileName = safeName.toLowerCase()
+    const fileExtension = safeName.includes('.') ? safeName.split('.').pop().toLowerCase() : ''
     let estimatedColumns = [];
     let sampleData = []; // Данные в резервном режиме всегда пустые
 
@@ -234,20 +202,137 @@ export default function DataSources() {
     // Добавляем информацию о типе файла в описание
     const fileTypeDescription = fileExtension === 'xlsx' || fileExtension === 'xls' ? 'Excel файла' :
                                fileExtension === 'csv' ? 'CSV файла' :
-                               `${fileExtension.toUpperCase()} файла`;
+                               (fileExtension ? `${fileExtension.toUpperCase()} файла` : 'загруженного файла');
 
-    setPendingDataset({
-      name: file.name.replace(/\.[^/.]+$/, ""),
+    const baseName = safeName.replace(/\.[^/.]+$/, '')
+    const datasetName = baseName || ensureFileName()
+
+    return {
+      name: datasetName,
       description: `Загруженный набор данных из ${fileTypeDescription} (требуется ручная настройка столбцов)`,
-      file_url,
+      file_url: fileUrl,
       columns: estimatedColumns,
-      row_count: 0, // Нет данных - нет строк
-      sample_data: [], // Всегда пустые данные для резервного режима
-    });
-    setShowImportPreview(true);
+      row_count: 0,
+      sample_data: sampleData,
+    }
   };
 
+  const processUploadResponse = async ({ fileName, uploadResponse }) => {
+    const normalizedFileName = ensureFileName(fileName)
+    const uploadedFileUrl = uploadResponse?.file_url
+    if (!uploadedFileUrl) {
+      throw new Error('Не удалось получить ссылку на загруженный файл')
+    }
+
+    const quickExtraction = uploadResponse?.quick_extraction
+
+    if (quickExtraction?.columns?.length) {
+      const normalizedColumns = quickExtraction.columns.map((column) => ({
+        name: column.name,
+        type: column.type || 'string',
+      }))
+
+      setPendingDataset({
+        name: normalizedFileName.replace(/\.[^/.]+$/, ''),
+        description: `Автоматически распознанный набор данных из ${normalizedFileName}`,
+        file_url: uploadedFileUrl,
+        columns: normalizedColumns,
+        row_count: quickExtraction.row_count || 0,
+        sample_data: quickExtraction.sample_data || [],
+        insights: quickExtraction.insights || [],
+      })
+      setShowImportPreview(true)
+      return
+    }
+
+    try {
+      const result = await extractDataFromUploadedFile({
+        file_url: uploadedFileUrl,
+        json_schema: EXTRACTION_SCHEMA,
+      })
+
+      if (result.status === 'success' && result.output?.columns?.length) {
+        setPendingDataset({
+          name: normalizedFileName.replace(/\.[^/.]+$/, ''),
+          description: `Загруженный набор данных из ${normalizedFileName}`,
+          file_url: uploadedFileUrl,
+          columns: result.output.columns || [],
+          row_count: result.output.row_count || 0,
+          sample_data: result.output.sample_data || [],
+        })
+        setShowImportPreview(true)
+        return
+      }
+    } catch (error) {
+      console.warn('Автоматическое извлечение данных не удалось, используем резервный режим', error)
+    }
+
+    const fallbackDataset = buildFallbackDataset(normalizedFileName, uploadedFileUrl)
+    setPendingDataset(fallbackDataset)
+    setShowImportPreview(true)
+  }
+
+  const handleFileUpload = async (file) => {
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      alert(`Ошибка: Файл слишком большой. Максимальный размер файла — ${MAX_FILE_SIZE_MB} МБ.`)
+      return
+    }
+
+    setIsUploading(true)
+    setUploadProgress({
+      uploadedBytes: 0,
+      totalBytes: file.size,
+      percentage: 0,
+      phase: 'uploading',
+      etaSeconds: null,
+    })
+
+    try {
+      const { response } = await resumableUpload(file, {
+        onProgress: (progress) => setUploadProgress(progress),
+      })
+
+      await processUploadResponse({ fileName: file.name, uploadResponse: response })
+    } catch (error) {
+      console.error('Ошибка обработки файла:', error)
+      const fallbackMessage = 'Не удалось загрузить файл. Проверьте соединение и попробуйте снова.'
+      alert(extractErrorMessage(error, fallbackMessage))
+    } finally {
+      setIsUploading(false)
+      setUploadProgress(null)
+    }
+  }
+
+  const handleImportFromLink = async ({ sourceType, url, filename, headers }) => {
+    setIsImporting(true)
+    try {
+      const response = await importDatasetFromUrl({
+        source_type: sourceType,
+        url,
+        filename,
+        headers,
+      })
+
+      const remoteFileName = filename || response?.filename || deriveFileNameFromUrl(url)
+      const inferredName = ensureFileName(remoteFileName)
+      await processUploadResponse({ fileName: inferredName, uploadResponse: response })
+      return true
+    } catch (error) {
+      console.error('Ошибка импорта по ссылке:', error)
+      const fallbackMessage = 'Не удалось импортировать файл по ссылке. Убедитесь, что ссылка доступна и попробуйте снова.'
+      const friendlyMessage = extractErrorMessage(error, fallbackMessage)
+      alert(friendlyMessage)
+      return false
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
   const handleConfirmImport = async (importConfig) => {
+    if (!pendingDataset) {
+      alert('Нет данных для импорта. Повторите загрузку файла.')
+      return
+    }
     try {
       const datasetData = {
         name: importConfig.name,
@@ -295,7 +380,10 @@ export default function DataSources() {
       <FileUploadZone
         onFileUpload={handleFileUpload}
         isUploading={isUploading}
+        progress={uploadProgress}
       />
+
+      <LinkImportForm onImport={handleImportFromLink} isImporting={isImporting} />
 
       {/* Search and Filters */}
       <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-lg">

@@ -1,0 +1,2960 @@
+{
+  "components": {
+    "schemas": {
+      "BiasAuditRequest": {
+        "properties": {
+          "actual_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional column with ground truth outcomes",
+            "title": "Actual Column"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Identifier of a dataset stored in the local catalog.",
+            "title": "Dataset Id"
+          },
+          "file_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Uploaded file identifier or a direct file path to analyse",
+            "title": "File Url"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "positive_label": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "default": 1,
+            "description": "Value that should be interpreted as a positive outcome",
+            "title": "Positive Label"
+          },
+          "prediction_column": {
+            "description": "Column with algorithm predictions",
+            "title": "Prediction Column",
+            "type": "string"
+          },
+          "prediction_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Threshold to binarise numeric prediction scores",
+            "title": "Prediction Threshold"
+          },
+          "privileged_values": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Values of the sensitive attribute that are considered privileged",
+            "title": "Privileged Values"
+          },
+          "save_result": {
+            "default": true,
+            "title": "Save Result",
+            "type": "boolean"
+          },
+          "schedule_frequency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional frequency (daily/weekly/monthly/quarterly/yearly)",
+            "title": "Schedule Frequency"
+          },
+          "schedule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule Id"
+          },
+          "sensitive_attribute": {
+            "description": "Column containing the protected attribute",
+            "title": "Sensitive Attribute",
+            "type": "string"
+          },
+          "threshold_overrides": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricThresholdOverrides"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "\u041f\u043e\u0437\u0432\u043e\u043b\u044f\u0435\u0442 \u0437\u0430\u0434\u0430\u0442\u044c \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u0441\u043a\u0438\u0435 \u043f\u043e\u0440\u043e\u0433\u0438 \u0434\u043b\u044f \u043c\u0435\u0442\u0440\u0438\u043a. \u0414\u043b\u044f \u043c\u0435\u0442\u0440\u0438\u043a-\u0440\u0430\u0437\u043d\u0438\u0446 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f \u0441\u043b\u043e\u0432\u0430\u0440\u044c difference, \u0434\u043b\u044f \u043c\u0435\u0442\u0440\u0438\u043a-\u043e\u0442\u043d\u043e\u0448\u0435\u043d\u0438\u0439 \u2014 ratio."
+          }
+        },
+        "required": [
+          "sensitive_attribute",
+          "prediction_column"
+        ],
+        "title": "BiasAuditRequest",
+        "type": "object"
+      },
+      "BiasAuditScheduleRequest": {
+        "properties": {
+          "actual_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Column"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "file_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Url"
+          },
+          "frequency": {
+            "description": "Frequency of the audit (daily, weekly, monthly, quarterly, yearly)",
+            "title": "Frequency",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "positive_label": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "default": 1,
+            "title": "Positive Label"
+          },
+          "prediction_column": {
+            "title": "Prediction Column",
+            "type": "string"
+          },
+          "prediction_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prediction Threshold"
+          },
+          "privileged_values": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Privileged Values"
+          },
+          "sensitive_attribute": {
+            "title": "Sensitive Attribute",
+            "type": "string"
+          },
+          "threshold_overrides": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricThresholdOverrides"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "sensitive_attribute",
+          "prediction_column",
+          "frequency"
+        ],
+        "title": "BiasAuditScheduleRequest",
+        "type": "object"
+      },
+      "Body_api_upload_api_v1_upload_post": {
+        "properties": {
+          "file": {
+            "description": "Dataset file to upload",
+            "format": "binary",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_api_upload_api_v1_upload_post",
+        "type": "object"
+      },
+      "ChatRequest": {
+        "properties": {
+          "message": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "message"
+        ],
+        "title": "ChatRequest",
+        "type": "object"
+      },
+      "ColumnInfo": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "selected": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": true,
+            "title": "Selected"
+          },
+          "type": {
+            "default": "string",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ColumnInfo",
+        "type": "object"
+      },
+      "ColumnPreview": {
+        "description": "Metadata about a column detected in the uploaded dataset.",
+        "properties": {
+          "name": {
+            "description": "Column name as present in the dataset",
+            "examples": [
+              "incident_date"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "description": "High level column data type detected by the backend",
+            "examples": [
+              "datetime"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "ColumnPreview",
+        "type": "object"
+      },
+      "DatasetCreate": {
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnInfo"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "",
+            "title": "Description"
+          },
+          "file_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Url"
+          },
+          "name": {
+            "description": "\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043d\u0430\u0431\u043e\u0440\u0430",
+            "title": "Name",
+            "type": "string"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "sample_data": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Data"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "DatasetCreate",
+        "type": "object"
+      },
+      "DatasetUpdate": {
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnInfo"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "",
+            "title": "Description"
+          },
+          "file_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Url"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043d\u0430\u0431\u043e\u0440\u0430",
+            "title": "Name"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "sample_data": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Data"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "title": "DatasetUpdate",
+        "type": "object"
+      },
+      "DictionaryCreate": {
+        "properties": {
+          "code_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "\u0418\u043c\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0438 \u0441 \u043a\u043e\u0434\u043e\u0432\u044b\u043c \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435\u043c",
+            "title": "Code Column"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "\u041a\u043e\u043b\u043e\u043d\u043a\u0430, \u043a \u043a\u043e\u0442\u043e\u0440\u043e\u0439 \u043e\u0442\u043d\u043e\u0441\u0438\u0442\u0441\u044f \u0441\u043b\u043e\u0432\u0430\u0440\u044c",
+            "title": "Column"
+          },
+          "context_columns": {
+            "description": "\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0435 \u043a\u043e\u043b\u043e\u043d\u043a\u0438 \u0434\u043b\u044f \u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442\u0430",
+            "items": {
+              "type": "string"
+            },
+            "title": "Context Columns",
+            "type": "array"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "\u0418\u0434\u0435\u043d\u0442\u0438\u0444\u0438\u043a\u0430\u0442\u043e\u0440 \u043d\u0430\u0431\u043e\u0440\u0430 \u0434\u0430\u043d\u043d\u044b\u0445",
+            "title": "Dataset Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "",
+            "title": "Description"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/DictionaryEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "file_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "\u0418\u0434\u0435\u043d\u0442\u0438\u0444\u0438\u043a\u0430\u0442\u043e\u0440 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d\u043d\u043e\u0433\u043e \u0444\u0430\u0439\u043b\u0430",
+            "title": "File Url"
+          },
+          "label_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "\u0418\u043c\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0438 \u0441 \u0440\u0430\u0441\u0448\u0438\u0444\u0440\u043e\u0432\u043a\u043e\u0439 \u043a\u043e\u0434\u0430",
+            "title": "Label Column"
+          },
+          "name": {
+            "description": "\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u0441\u043b\u043e\u0432\u0430\u0440\u044f",
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "DictionaryCreate",
+        "type": "object"
+      },
+      "DictionaryEntry": {
+        "properties": {
+          "code": {
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "",
+            "title": "Description"
+          },
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keywords",
+            "type": "array"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "label"
+        ],
+        "title": "DictionaryEntry",
+        "type": "object"
+      },
+      "DictionaryUpdate": {
+        "properties": {
+          "code_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Column"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "\u041a\u043e\u043b\u043e\u043d\u043a\u0430, \u043a \u043a\u043e\u0442\u043e\u0440\u043e\u0439 \u043e\u0442\u043d\u043e\u0441\u0438\u0442\u0441\u044f \u0441\u043b\u043e\u0432\u0430\u0440\u044c",
+            "title": "Column"
+          },
+          "context_columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Context Columns",
+            "type": "array"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "\u0418\u0434\u0435\u043d\u0442\u0438\u0444\u0438\u043a\u0430\u0442\u043e\u0440 \u043d\u0430\u0431\u043e\u0440\u0430 \u0434\u0430\u043d\u043d\u044b\u0445",
+            "title": "Dataset Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "",
+            "title": "Description"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/DictionaryEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "file_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Url"
+          },
+          "label_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Column"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u0441\u043b\u043e\u0432\u0430\u0440\u044f",
+            "title": "Name"
+          }
+        },
+        "title": "DictionaryUpdate",
+        "type": "object"
+      },
+      "EmailRequest": {
+        "description": "Schema for email logging endpoint payload.",
+        "properties": {
+          "body": {
+            "description": "Email body",
+            "examples": [
+              "Your dataset has been processed."
+            ],
+            "title": "Body",
+            "type": "string"
+          },
+          "from_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional friendly name that will be associated with the email",
+            "examples": [
+              "Insight Sphere"
+            ],
+            "title": "From Name"
+          },
+          "subject": {
+            "description": "Email subject",
+            "examples": [
+              "Dataset ready"
+            ],
+            "title": "Subject",
+            "type": "string"
+          },
+          "to": {
+            "description": "Recipient email address",
+            "examples": [
+              "team@example.com"
+            ],
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to",
+          "subject",
+          "body"
+        ],
+        "title": "EmailRequest",
+        "type": "object"
+      },
+      "EmailResponse": {
+        "description": "Response returned by the email logging endpoint.",
+        "properties": {
+          "logged": {
+            "default": true,
+            "description": "Flag indicating that the email was appended to the audit log",
+            "examples": [
+              true
+            ],
+            "title": "Logged",
+            "type": "boolean"
+          },
+          "status": {
+            "default": "queued",
+            "description": "Status of the email logging request",
+            "examples": [
+              "queued"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "EmailResponse",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "description": "Generic error response schema.",
+        "properties": {
+          "detail": {
+            "description": "Human readable error description",
+            "examples": [
+              "File too large"
+            ],
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "ExtractRequest": {
+        "description": "Request body for extracting metadata of a previously uploaded dataset.",
+        "properties": {
+          "file_url": {
+            "description": "Identifier returned by the upload endpoint",
+            "examples": [
+              "a3f1-42ab"
+            ],
+            "title": "File Url",
+            "type": "string"
+          },
+          "json_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional JSON schema supplied by the client to validate the dataset",
+            "example": {
+              "properties": {
+                "incident_id": {
+                  "type": "integer"
+                }
+              },
+              "title": "Dataset",
+              "type": "object"
+            },
+            "title": "Json Schema"
+          }
+        },
+        "required": [
+          "file_url"
+        ],
+        "title": "ExtractRequest",
+        "type": "object"
+      },
+      "ExtractResponse": {
+        "description": "Response returned by the dataset extraction endpoint.",
+        "properties": {
+          "output": {
+            "$ref": "#/components/schemas/QuickExtraction",
+            "description": "Quick extraction payload for the requested dataset"
+          },
+          "status": {
+            "default": "success",
+            "description": "Status of the extraction request",
+            "examples": [
+              "success"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "output"
+        ],
+        "title": "ExtractResponse",
+        "type": "object"
+      },
+      "FileUploadResponse": {
+        "description": "Response returned by the dataset upload endpoint.",
+        "properties": {
+          "file_url": {
+            "description": "Internal identifier that can be used to reference the uploaded file",
+            "examples": [
+              "a3f1-42ab"
+            ],
+            "title": "File Url",
+            "type": "string"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Original filename provided by the client",
+            "examples": [
+              "incidents.csv"
+            ],
+            "title": "Filename"
+          },
+          "quick_extraction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuickExtraction"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional quick extraction payload with structural information about the dataset"
+          },
+          "status": {
+            "default": "success",
+            "description": "Status of the upload request",
+            "examples": [
+              "success"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_url"
+        ],
+        "title": "FileUploadResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InstructionsRequest": {
+        "properties": {
+          "instructions": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "instructions"
+        ],
+        "title": "InstructionsRequest",
+        "type": "object"
+      },
+      "MetricThresholdOverrides": {
+        "properties": {
+          "difference": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "\u041f\u0435\u0440\u0435\u043e\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u0438\u044f \u043f\u043e\u0440\u043e\u0433\u043e\u0432 \u0434\u043b\u044f \u043c\u0435\u0442\u0440\u0438\u043a \u0441 \u0430\u0431\u0441\u043e\u043b\u044e\u0442\u043d\u043e\u0439 \u0440\u0430\u0437\u043d\u0438\u0446\u0435\u0439",
+            "title": "Difference",
+            "type": "object"
+          },
+          "ratio": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RatioThreshold"
+            },
+            "description": "\u041f\u0435\u0440\u0435\u043e\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u0438\u044f \u043f\u043e\u0440\u043e\u0433\u043e\u0432 \u0434\u043b\u044f \u043c\u0435\u0442\u0440\u0438\u043a \u0441 \u043e\u0442\u043d\u043e\u0448\u0435\u043d\u0438\u044f\u043c\u0438",
+            "title": "Ratio",
+            "type": "object"
+          }
+        },
+        "title": "MetricThresholdOverrides",
+        "type": "object"
+      },
+      "QuickExtraction": {
+        "description": "Lightweight preview of an uploaded dataset.",
+        "properties": {
+          "columns": {
+            "description": "Detected columns with their data types",
+            "examples": [
+              [
+                {
+                  "name": "incident_id",
+                  "type": "number"
+                }
+              ]
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ColumnPreview"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "insights": {
+            "description": "Domain specific insights generated for the dataset",
+            "examples": [
+              [
+                "Crime indicator 'incident_id' increased by 4.00 between the first and last records."
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Insights",
+            "type": "array"
+          },
+          "row_count": {
+            "description": "Total number of rows detected in the dataset",
+            "examples": [
+              1200
+            ],
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "sample_data": {
+            "description": "Sample rows extracted from the dataset for quick preview",
+            "examples": [
+              [
+                {
+                  "district": "North",
+                  "incident_id": 1,
+                  "offense": "Burglary"
+                }
+              ]
+            ],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Sample Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "columns",
+          "row_count",
+          "sample_data"
+        ],
+        "title": "QuickExtraction",
+        "type": "object"
+      },
+      "RatioThreshold": {
+        "properties": {
+          "max": {
+            "description": "\u041c\u0430\u043a\u0441\u0438\u043c\u0430\u043b\u044c\u043d\u043e \u0434\u043e\u043f\u0443\u0441\u0442\u0438\u043c\u043e\u0435 \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435 \u043c\u0435\u0442\u0440\u0438\u043a\u0438",
+            "title": "Max",
+            "type": "number"
+          },
+          "min": {
+            "description": "\u041c\u0438\u043d\u0438\u043c\u0430\u043b\u044c\u043d\u043e \u0434\u043e\u043f\u0443\u0441\u0442\u0438\u043c\u043e\u0435 \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435 \u043c\u0435\u0442\u0440\u0438\u043a\u0438",
+            "title": "Min",
+            "type": "number"
+          }
+        },
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "RatioThreshold",
+        "type": "object"
+      },
+      "ResetRequest": {
+        "properties": {
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "title": "ResetRequest",
+        "type": "object"
+      },
+      "TaskEnqueueResponse": {
+        "description": "Response returned when a background analytics task is enqueued.",
+        "properties": {
+          "queue": {
+            "description": "Name of the queue the task was submitted to",
+            "examples": [
+              "insight-analytics"
+            ],
+            "title": "Queue",
+            "type": "string"
+          },
+          "status": {
+            "const": "queued",
+            "default": "queued",
+            "description": "Initial status of the task right after scheduling",
+            "examples": [
+              "queued"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Identifier of the scheduled task",
+            "examples": [
+              "rq:job:123"
+            ],
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "queue"
+        ],
+        "title": "TaskEnqueueResponse",
+        "type": "object"
+      },
+      "TaskStatusResponse": {
+        "description": "Status payload returned for a background analytics task.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional traceback or message if the task failed",
+            "examples": [
+              "Traceback (most recent call last)..."
+            ],
+            "title": "Error"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuickExtraction"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional quick extraction payload when the task finished successfully"
+          },
+          "status": {
+            "description": "Current RQ status (queued/started/finished/failed)",
+            "examples": [
+              "finished"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Identifier of the tracked task",
+            "examples": [
+              "rq:job:123"
+            ],
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "status"
+        ],
+        "title": "TaskStatusResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VisualizationCreate": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "insights": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insights"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "default": "chart",
+            "title": "Type",
+            "type": "string"
+          },
+          "x_axis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Axis"
+          },
+          "y_axis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Axis"
+          },
+          "z_axis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Z Axis"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "VisualizationCreate",
+        "type": "object"
+      },
+      "VisualizationFilterRequest": {
+        "properties": {
+          "filters": {
+            "additionalProperties": true,
+            "title": "Filters",
+            "type": "object"
+          },
+          "order_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "-created_at",
+            "title": "Order By"
+          }
+        },
+        "title": "VisualizationFilterRequest",
+        "type": "object"
+      },
+      "VisualizationUpdate": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "insights": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insights"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "chart",
+            "title": "Type"
+          },
+          "x_axis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Axis"
+          },
+          "y_axis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Axis"
+          },
+          "z_axis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Z Axis"
+          }
+        },
+        "title": "VisualizationUpdate",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "contact": {
+      "name": "Insight Sphere Team",
+      "url": "https://github.com/insight-sphere"
+    },
+    "description": "API for managing analytical datasets, providing upload/extraction capabilities with strong validation, observability, and documentation.",
+    "title": "Insight Sphere Backend",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/audit/bias/history": {
+      "get": {
+        "operationId": "list_audit_history_api_v1_audit_bias_history_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Audit History Api V1 Audit Bias History Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Audit History"
+      }
+    },
+    "/api/v1/audit/bias/history/{audit_id}": {
+      "delete": {
+        "operationId": "delete_audit_record_api_v1_audit_bias_history__audit_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "audit_id",
+            "required": true,
+            "schema": {
+              "title": "Audit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Audit Record"
+      }
+    },
+    "/api/v1/audit/bias/run": {
+      "post": {
+        "operationId": "run_bias_audit_api_v1_audit_bias_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BiasAuditRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Bias Audit"
+      }
+    },
+    "/api/v1/audit/bias/schedules": {
+      "get": {
+        "operationId": "list_schedules_api_v1_audit_bias_schedules_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Schedules Api V1 Audit Bias Schedules Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Schedules"
+      },
+      "post": {
+        "operationId": "create_schedule_api_v1_audit_bias_schedules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BiasAuditScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Schedule"
+      }
+    },
+    "/api/v1/audit/bias/schedules/{schedule_id}": {
+      "delete": {
+        "operationId": "delete_schedule_api_v1_audit_bias_schedules__schedule_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Schedule"
+      },
+      "put": {
+        "operationId": "update_schedule_api_v1_audit_bias_schedules__schedule_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BiasAuditScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Schedule"
+      }
+    },
+    "/api/v1/chat/instructions": {
+      "post": {
+        "operationId": "update_instructions_api_v1_chat_instructions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstructionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Instructions"
+      }
+    },
+    "/api/v1/chat/message": {
+      "post": {
+        "operationId": "post_message_api_v1_chat_message_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Message"
+      }
+    },
+    "/api/v1/chat/reset": {
+      "post": {
+        "operationId": "reset_conversation_api_v1_chat_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Conversation"
+      }
+    },
+    "/api/v1/chat/state/{user_id}": {
+      "get": {
+        "operationId": "get_state_api_v1_chat_state__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get State"
+      }
+    },
+    "/api/v1/dataset/create": {
+      "post": {
+        "operationId": "create_dataset_api_v1_dataset_create_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Dataset"
+      }
+    },
+    "/api/v1/dataset/list": {
+      "get": {
+        "operationId": "list_datasets_api_v1_dataset_list_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "-created_at",
+              "title": "Order By"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Datasets"
+      }
+    },
+    "/api/v1/dataset/{dataset_id}": {
+      "delete": {
+        "operationId": "delete_dataset_api_v1_dataset__dataset_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Dataset"
+      },
+      "get": {
+        "operationId": "get_dataset_api_v1_dataset__dataset_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Dataset"
+      },
+      "put": {
+        "operationId": "update_dataset_api_v1_dataset__dataset_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Dataset"
+      }
+    },
+    "/api/v1/dictionary/create": {
+      "post": {
+        "operationId": "create_dictionary_api_v1_dictionary_create_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DictionaryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Dictionary"
+      }
+    },
+    "/api/v1/dictionary/list": {
+      "get": {
+        "operationId": "list_dictionaries_api_v1_dictionary_list_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dataset_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dataset Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "column",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Column"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Dictionaries"
+      }
+    },
+    "/api/v1/dictionary/search": {
+      "get": {
+        "operationId": "search_dictionaries_api_v1_dictionary_search_get",
+        "parameters": [
+          {
+            "description": "\u041f\u043e\u0438\u0441\u043a\u043e\u0432\u044b\u0439 \u0437\u0430\u043f\u0440\u043e\u0441 \u043f\u043e \u0441\u043b\u043e\u0432\u0430\u0440\u044f\u043c",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "description": "\u041f\u043e\u0438\u0441\u043a\u043e\u0432\u044b\u0439 \u0437\u0430\u043f\u0440\u043e\u0441 \u043f\u043e \u0441\u043b\u043e\u0432\u0430\u0440\u044f\u043c",
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\u0418\u0434\u0435\u043d\u0442\u0438\u0444\u0438\u043a\u0430\u0442\u043e\u0440 \u043d\u0430\u0431\u043e\u0440\u0430 \u0434\u0430\u043d\u043d\u044b\u0445",
+            "in": "query",
+            "name": "dataset_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "\u0418\u0434\u0435\u043d\u0442\u0438\u0444\u0438\u043a\u0430\u0442\u043e\u0440 \u043d\u0430\u0431\u043e\u0440\u0430 \u0434\u0430\u043d\u043d\u044b\u0445",
+              "title": "Dataset Id"
+            }
+          },
+          {
+            "description": "\u041a\u043e\u043b\u043e\u043d\u043a\u0430, \u043a \u043a\u043e\u0442\u043e\u0440\u043e\u0439 \u043e\u0442\u043d\u043e\u0441\u0438\u0442\u0441\u044f \u0441\u043b\u043e\u0432\u0430\u0440\u044c",
+            "in": "query",
+            "name": "column",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "\u041a\u043e\u043b\u043e\u043d\u043a\u0430, \u043a \u043a\u043e\u0442\u043e\u0440\u043e\u0439 \u043e\u0442\u043d\u043e\u0441\u0438\u0442\u0441\u044f \u0441\u043b\u043e\u0432\u0430\u0440\u044c",
+              "title": "Column"
+            }
+          },
+          {
+            "description": "\u041c\u0430\u043a\u0441\u0438\u043c\u0430\u043b\u044c\u043d\u043e\u0435 \u043a\u043e\u043b\u0438\u0447\u0435\u0441\u0442\u0432\u043e \u0441\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0439",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "\u041c\u0430\u043a\u0441\u0438\u043c\u0430\u043b\u044c\u043d\u043e\u0435 \u043a\u043e\u043b\u0438\u0447\u0435\u0441\u0442\u0432\u043e \u0441\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0439",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Dictionaries"
+      }
+    },
+    "/api/v1/dictionary/{dictionary_id}": {
+      "delete": {
+        "operationId": "delete_dictionary_api_v1_dictionary__dictionary_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dictionary_id",
+            "required": true,
+            "schema": {
+              "title": "Dictionary Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Dictionary"
+      },
+      "get": {
+        "operationId": "get_dictionary_api_v1_dictionary__dictionary_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dictionary_id",
+            "required": true,
+            "schema": {
+              "title": "Dictionary Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Dictionary"
+      },
+      "put": {
+        "operationId": "update_dictionary_api_v1_dictionary__dictionary_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dictionary_id",
+            "required": true,
+            "schema": {
+              "title": "Dictionary Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DictionaryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Dictionary"
+      }
+    },
+    "/api/v1/extract": {
+      "post": {
+        "operationId": "api_extract_api_v1_extract_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtractResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unable to process dataset"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Extract dataset metadata"
+      }
+    },
+    "/api/v1/extract/async": {
+      "post": {
+        "operationId": "api_extract_async_api_v1_extract_async_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskEnqueueResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unable to process dataset"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Task queue unavailable"
+          }
+        },
+        "summary": "Schedule dataset metadata extraction"
+      }
+    },
+    "/api/v1/tasks/{task_id}": {
+      "get": {
+        "operationId": "api_task_status_api_v1_tasks__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Task not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Task queue unavailable"
+          }
+        },
+        "summary": "Inspect background task status"
+      }
+    },
+    "/api/v1/upload": {
+      "post": {
+        "operationId": "api_upload_api_v1_upload_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_api_upload_api_v1_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileUploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Payload too large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "ClamAV service unavailable"
+          }
+        },
+        "summary": "Upload dataset"
+      }
+    },
+    "/api/v1/utils/send-email": {
+      "post": {
+        "operationId": "api_send_email_api_v1_utils_send_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Failed to write audit log"
+          }
+        },
+        "summary": "Log outgoing email"
+      }
+    },
+    "/api/v1/visualization/create": {
+      "post": {
+        "operationId": "create_visualization_api_v1_visualization_create_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisualizationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Visualization"
+      }
+    },
+    "/api/v1/visualization/filter": {
+      "post": {
+        "operationId": "filter_visualizations_api_v1_visualization_filter_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisualizationFilterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Filter Visualizations"
+      }
+    },
+    "/api/v1/visualization/list": {
+      "get": {
+        "operationId": "list_visualizations_api_v1_visualization_list_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "-created_at",
+              "title": "Order By"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Visualizations"
+      }
+    },
+    "/api/v1/visualization/{viz_id}": {
+      "delete": {
+        "operationId": "delete_visualization_api_v1_visualization__viz_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "viz_id",
+            "required": true,
+            "schema": {
+              "title": "Viz Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Visualization"
+      },
+      "get": {
+        "operationId": "get_visualization_api_v1_visualization__viz_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "viz_id",
+            "required": true,
+            "schema": {
+              "title": "Viz Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Visualization"
+      },
+      "put": {
+        "operationId": "update_visualization_api_v1_visualization__viz_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "viz_id",
+            "required": true,
+            "schema": {
+              "title": "Viz Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisualizationUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Visualization"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Healthz Healthz Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness probe"
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "metrics_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Prometheus metrics"
+      }
+    },
+    "/readiness": {
+      "get": {
+        "operationId": "readiness_readiness_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Readiness Readiness Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Readiness probe"
+      }
+    }
+  }
+}

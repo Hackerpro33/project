@@ -26,6 +26,9 @@ minversion = "7.0"
 filterwarnings = [
   "error::DeprecationWarning",
 ]
+markers = [
+  "contract: Contract tests validating consumer-provider agreements",
+]
 
 [tool.coverage.run]
 branch = true
