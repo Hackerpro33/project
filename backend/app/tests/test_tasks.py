@@ -1,6 +1,8 @@
+import base64
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from .. import main
 from ..tasks import process_extraction_job
@@ -27,6 +29,17 @@ def isolated_history(tmp_path):
 @pytest.fixture
 def client():
     return TestClient(main.app)
+
+
+MINIMAL_PDF = (
+    b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids "
+    b"[3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+    b"/Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n4 0 obj\n<< /Length 44 >>\nstream\n"
+    b"BT /F1 24 Tf 72 120 Td (Hello PDF) Tj ET\nendstream\nendobj\n5 0 obj\n<< /Type /Font /Subtype /Type1 "
+    b"/BaseFont /Helvetica >>\nendobj\nxref\n0 6\n0000000000 65535 f \n0000000010 00000 n \n0000000061 00000 n \n"
+    b"0000000118 00000 n \n0000000293 00000 n \n0000000380 00000 n \ntrailer\n<< /Root 1 0 R /Size 6 >>\nstartxref\n"
+    b"447\n%%EOF\n"
+)
 
 
 def test_process_extraction_job_generates_preview(tmp_path, isolated_history):
@@ -103,6 +116,10 @@ def test_dataset_preview_endpoint(client, tmp_path):
 
     response = client.get(
         "/api/upload/preview-file/preview",
+        headers={"host": "localhost"},
+    )
+
+
 API_PREFIX = "/api/v1"
 
 
@@ -153,6 +170,45 @@ def test_task_status_requires_queue_enabled(client):
     assert unique_pairs.issubset({("1", "2"), ("3", "4"), ("5", "6")})
 
 
+def test_dataset_preview_pdf_document(client, tmp_path):
+    pdf_path = tmp_path / "preview.pdf"
+    pdf_path.write_bytes(MINIMAL_PDF)
+    register_uploaded_file("preview-pdf", pdf_path)
+
+    response = client.get(
+        "/api/upload/preview-pdf/preview",
+        headers={"host": "localhost"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["preview_type"] == "pdf"
+    assert payload["pages"]
+    assert payload["pages"][0]["text"].startswith("Hello")
+
+
+def test_dataset_preview_image_thumbnail(client, tmp_path):
+    image_path = tmp_path / "preview.png"
+    Image.new("RGB", (64, 32), color=(255, 0, 0)).save(image_path, format="PNG")
+    register_uploaded_file("preview-image", image_path)
+
+    response = client.get(
+        "/api/upload/preview-image/preview",
+        headers={"host": "localhost"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["preview_type"] == "image"
+    assert payload["thumbnails"]
+    thumb_data = payload["thumbnails"][0]
+    assert thumb_data.startswith("data:image/png;base64,")
+    decoded = base64.b64decode(thumb_data.split(",", 1)[1])
+    assert len(decoded) > 0
+    assert payload["metadata"]["original_width"] == 64
+    assert payload["metadata"]["original_height"] == 32
+
+
 def test_task_history_retry_metadata(isolated_history):
     isolated_history.record_enqueued("task-1", "extraction", params={"file_url": "file-1"})
 
@@ -171,6 +227,28 @@ def test_task_history_retry_metadata(isolated_history):
     original_entry = isolated_history.get("task-1")
     retry_logs = [log for log in original_entry["log"] if "Retried as" in log["message"]]
     assert retry_logs, "Original task should capture retry log entry"
+
+
+def test_task_history_csv_export(client, isolated_history):
+    isolated_history.record_enqueued("task-1", "extraction", params={"file_url": "file-1"})
+    isolated_history.update_status("task-1", "finished", task_type="extraction")
+    isolated_history.record_enqueued("task-2", "extraction", params={"file_url": "file-2"})
+    isolated_history.update_status(
+        "task-2",
+        "failed",
+        message="Boom",
+        level="error",
+        task_type="extraction",
+        extra={"error": "Boom"},
+    )
+
+    response = client.get("/api/tasks/history/export", headers={"host": "localhost"})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    body = response.text.strip().splitlines()
+    assert body[0].startswith("task_id,task_type")
+    assert any("task-1" in line for line in body[1:])
+    assert any("task-2" in line for line in body[1:])
 
 
 def test_task_history_search_and_date_filters(monkeypatch, client, isolated_history):
