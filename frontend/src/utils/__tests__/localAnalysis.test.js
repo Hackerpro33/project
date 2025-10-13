@@ -478,24 +478,69 @@ describe("buildProjectReport and summarizeEmailBody", () => {
 describe("suggestDataApplications", () => {
   it("proposes local analytical scenarios based on dataset structure", () => {
     const dataset = {
-      name: "Crime Stats",
-      row_count: 1200,
+      name: "Chicago crime incidents 2020-2023",
+      description:
+        "Annual aggregates of reported crimes from the City of Chicago data portal, including theft, battery and homicide counts.",
+      row_count: 4,
       columns: [
-        { name: "date", type: "date" },
+        { name: "reported_date", type: "date" },
         { name: "district", type: "string" },
-        { name: "incidents", type: "number" },
+        { name: "crime_incidents", type: "number" },
+        { name: "theft_incidents", type: "number" },
+        { name: "battery_incidents", type: "number" },
+        { name: "homicide_incidents", type: "number" },
         { name: "latitude", type: "number" },
         { name: "longitude", type: "number" },
-        { name: "notes", type: "string" },
+        { name: "narrative", type: "string" },
       ],
       sample_data: [
         {
-          date: "2024-01-01",
-          district: "Downtown",
-          incidents: 42,
-          latitude: 40.7128,
-          longitude: -74.006,
-          notes: "Вечерние патрули отмечают всплеск правонарушений вблизи станции метро.",
+          reported_date: "2020-12-31",
+          district: "Chicago",
+          crime_incidents: 212646,
+          theft_incidents: 41350,
+          battery_incidents: 41517,
+          homicide_incidents: 796,
+          latitude: 41.8781,
+          longitude: -87.6298,
+          narrative:
+            "Citywide totals recorded in the Chicago Data Portal for 2020 document 212646 incidents with 796 homicides and more than forty thousand thefts.",
+        },
+        {
+          reported_date: "2021-12-31",
+          district: "Chicago",
+          crime_incidents: 209589,
+          theft_incidents: 40821,
+          battery_incidents: 40483,
+          homicide_incidents: 813,
+          latitude: 41.8781,
+          longitude: -87.6298,
+          narrative:
+            "Chicago closed 2021 with 209589 recorded offenses on the public portal, including 813 homicide cases and just over forty thousand batteries.",
+        },
+        {
+          reported_date: "2022-12-31",
+          district: "Chicago",
+          crime_incidents: 239918,
+          theft_incidents: 54899,
+          battery_incidents: 40962,
+          homicide_incidents: 737,
+          latitude: 41.8781,
+          longitude: -87.6298,
+          narrative:
+            "The 2022 dataset shows a jump to 239918 total incidents with theft rising above fifty four thousand and 737 homicide investigations citywide.",
+        },
+        {
+          reported_date: "2023-12-31",
+          district: "Chicago",
+          crime_incidents: 263134,
+          theft_incidents: 57493,
+          battery_incidents: 44250,
+          homicide_incidents: 638,
+          latitude: 41.8781,
+          longitude: -87.6298,
+          narrative:
+            "By the end of 2023 the Chicago portal tallied 263134 offenses, with theft surpassing 57k, 44k battery reports and 638 homicide cases on record.",
         },
       ],
     };
