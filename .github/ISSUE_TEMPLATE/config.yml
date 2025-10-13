@@ -1,0 +1,6 @@
+blank_issues_enabled: false
+default_labels: []
+contact_links:
+  - name: 📚 Архитектурный FAQ
+    url: https://github.com/insight-sphere/insight-sphere/wiki/Architecture-FAQ
+    about: Ответы на часто задаваемые вопросы по архитектуре и ADR

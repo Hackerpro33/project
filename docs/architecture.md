@@ -44,6 +44,31 @@ C4Container
     worker -> redis : обновляет статусы задач
 ```
 
+## C4 — Компоненты (API слой)
+
+```mermaid
+C4Component
+    title Insight Sphere — компоненты API
+    Component_Boundary(api, "FastAPI Application") {
+        Component(upload, "UploadController", "FastAPI", "Обработка загрузок и метаданных")
+        Component(tasks, "TaskController", "FastAPI", "REST для постановки и чтения задач")
+        Component(service, "IngestionService", "Python сервис", "Валидация и профилирование данных")
+        Component(repo, "DatasetRepository", "SQLModel", "CRUD поверх Postgres")
+    }
+    Component_Boundary(worker, "RQ Worker") {
+        Component(job, "ProcessDatasetJob", "RQ job", "Аналитика, агрегации, обновление статуса")
+    }
+    ContainerDb(db, "Postgres", "Managed Postgres", "Метаданные загрузок, профили, задания")
+    Container(files, "Object Storage", "S3 совместимое", "Сырые файлы и экспорт")
+    Rel(upload, service, "Создаёт задание на профилирование", "Python")
+    Rel(service, repo, "Транзакции", "SQL")
+    Rel(tasks, repo, "Читает и обновляет статусы", "SQL")
+    Rel(job, repo, "Обновление результатов", "SQL")
+    Rel(upload, files, "PUT объектов", "S3 API")
+    Rel(job, files, "GET исходных файлов", "S3 API")
+    Rel(repo, db, "SQLAlchemy", "TCP/5432")
+```
+
 ## Последовательность загрузки
 
 ```mermaid
@@ -65,6 +90,32 @@ sequenceDiagram
     UI->>API: GET /api/v1/tasks/{id}
     API->>Queue: получить статус
     API-->>UI: queued|started|finished + result/error
+```
+
+## Потоки данных
+
+```mermaid
+flowchart LR
+    subgraph Client[Пользовательский браузер]
+        UI[React SPA]
+    end
+    subgraph Platform[Insight Sphere]
+        API[FastAPI]
+        Worker[RQ Worker]
+        Cache[(Redis)]
+    end
+    Storage[(Object Storage)]
+    DB[(Postgres)]
+
+    UI -->|Формы загрузки, REST| API
+    API -->|Метаданные загрузок| DB
+    API -->|RAW файлы| Storage
+    API -->|enqueue job| Cache
+    Worker -->|Взять задачу| Cache
+    Worker -->|Читать файлы| Storage
+    Worker -->|Обновить профиль/метрики| DB
+    UI -->|Polling статусов| API
+    API -->|Кешировать ответы| Cache
 ```
 
 ## Ограничения загрузок
@@ -92,6 +143,16 @@ sequenceDiagram
 
 - Скрипт `tests/load/upload.js` (k6) моделирует массовые загрузки.
 - Целевые SLO: `p(95) < 2.5s`, `error rate < 1%`.
+
+## SLA и операционные цели
+
+| Метрика | Цель | Механизмы обеспечения |
+| --- | --- | --- |
+| Доступность API | 99.5% в месяц | Health-check `/healthz`, авто-ребут контейнеров, мониторинг в Grafana |
+| Время отклика загрузки (p95) | ≤ 2.5 секунды | Пул воркеров Gunicorn/Uvicorn, оптимизация SQL запросов, CDN для статичных ресурсов |
+| Время обработки фоновой задачи (p90) | ≤ 10 минут | Горизонтальное масштабирование воркеров RQ, приоритезация очереди |
+| RPO | ≤ 15 минут | PITR бэкапы Postgres, версионирование файлов в объектном хранилище |
+| RTO | ≤ 30 минут | Автоматизированные playbook-и восстановления, инфраструктура как код |
 
 ## Дополнительные материалы
 

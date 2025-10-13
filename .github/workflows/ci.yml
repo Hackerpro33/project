@@ -37,7 +37,7 @@ jobs:
           mypy backend/app
       - name: Run tests with coverage
         run: |
-          pytest
+          pytest --cov-fail-under=80
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
