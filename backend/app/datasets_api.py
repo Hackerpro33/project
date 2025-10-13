@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from math import ceil, sqrt
 from pathlib import Path
 from statistics import mean, pstdev
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -449,9 +449,19 @@ class RefreshFailureReport(BaseModel):
 
 def _ensure_dates(item: Dict[str, Any]) -> Dict[str, Any]:
     result = dict(item)
-    now = int(time.time())
-    created_at = int(result.get("created_at") or now)
-    updated_at = int(result.get("updated_at") or created_at)
+
+    raw_created = result.get("created_at")
+    if raw_created is None:
+        created_at = int(time.time())
+    else:
+        created_at = int(raw_created)
+
+    raw_updated = result.get("updated_at")
+    if raw_updated is None:
+        updated_at = created_at
+    else:
+        updated_at = int(raw_updated)
+
     result["created_at"] = created_at
     result["updated_at"] = updated_at
     created_dt = datetime.fromtimestamp(created_at, tz=timezone.utc)
@@ -490,29 +500,175 @@ def _sort_items(items: List[Dict[str, Any]], order_by: Optional[str]) -> List[Di
     return sorted(items, key=_sort_key, reverse=reverse)
 
 
-def _list_datasets(order_by: Optional[str] = "-created_at") -> List[Dict[str, Any]]:
-    items = [_ensure_dates(item) for item in _load_all()]
-    return _sort_items(items, order_by)
+def _prepare_listing(
+    *,
+    page: int,
+    page_size: int,
+    order_by: Optional[str],
+    search: Optional[str],
+    tags: Optional[Sequence[str]],
+    types: Optional[Sequence[str]],
+    owners: Optional[Sequence[str]],
+) -> Dict[str, Any]:
+    normalized_tags = _normalize_tags(tags or [])
+    normalized_types = _normalize_tags(types or [])
+    normalized_owners = _normalize_owners(owners)
+
+    page = max(page, 1)
+    page_size = max(1, min(page_size, 100))
+
+    items = [_prepare_dataset(_ensure_dates(item)) for item in _load_all()]
+
+    available_tags = sorted({tag for item in items for tag in item.get("tags", []) if tag})
+    available_types = sorted({item.get("dataset_type") for item in items if item.get("dataset_type")})
+    available_owners = sorted({owner for item in items for owner in item.get("owners", []) if owner})
+
+    filtered = items
+    if search:
+        needle = search.strip().lower()
+
+        def _matches(entry: Dict[str, Any]) -> bool:
+            haystacks = [
+                (entry.get("name") or "").lower(),
+                (entry.get("description") or "").lower(),
+            ]
+            haystacks.extend((tag or "").lower() for tag in entry.get("tags", []) or [])
+            for column in entry.get("columns", []) or []:
+                haystacks.append((column.get("name") or "").lower())
+            return any(needle in text for text in haystacks if text)
+
+        filtered = [entry for entry in filtered if _matches(entry)]
+
+    if normalized_tags:
+        tag_filter = {tag.lower() for tag in normalized_tags}
+
+        def _has_tags(entry: Dict[str, Any]) -> bool:
+            entry_tags = {tag.lower() for tag in entry.get("tags", []) or []}
+            return tag_filter.issubset(entry_tags)
+
+        filtered = [entry for entry in filtered if _has_tags(entry)]
+
+    if normalized_types:
+        type_filter = {value.lower() for value in normalized_types}
+
+        def _has_types(entry: Dict[str, Any]) -> bool:
+            dataset_type = (entry.get("dataset_type") or "").lower()
+            return dataset_type in type_filter if type_filter else True
+
+        filtered = [entry for entry in filtered if _has_types(entry)]
+
+    if normalized_owners:
+        owners_filter = {value.lower() for value in normalized_owners}
+
+        def _has_owner(entry: Dict[str, Any]) -> bool:
+            entry_owners = {owner.lower() for owner in entry.get("owners", []) or []}
+            return bool(entry_owners.intersection(owners_filter)) if owners_filter else True
+
+        filtered = [entry for entry in filtered if _has_owner(entry)]
+
+    ordered = _sort_items(filtered, order_by)
+    total = len(ordered)
+    total_pages = ceil(total / page_size) if total else 0
+    start = (page - 1) * page_size
+    end = start + page_size
+    paginated = ordered[start:end]
+
+    return {
+        "items": paginated,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_previous": page > 1,
+        "available_filters": {
+            "tags": available_tags,
+            "types": available_types,
+            "owners": available_owners,
+        },
+        "applied_filters": {
+            "search": search,
+            "tags": normalized_tags,
+            "types": normalized_types,
+            "owners": normalized_owners,
+            "order_by": order_by,
+        },
+        "all_items": ordered,
+    }
 
 
-def list_datasets(order_by: Optional[str] = "-created_at") -> List[Dict[str, Any]]:
-    """Return datasets for direct invocation (e.g. in tests)."""
+def list_datasets(
+    *,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    order_by: Optional[str] = "-created_at",
+    search: Optional[str] = None,
+    tags: Optional[Sequence[str]] = None,
+    types: Optional[Sequence[str]] = None,
+    owners: Optional[Sequence[str]] = None,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    listing = _prepare_listing(
+        page=page,
+        page_size=page_size,
+        order_by=order_by,
+        search=search,
+        tags=tags,
+        types=types,
+        owners=owners,
+    )
 
-    return _list_datasets(order_by=order_by)
+    is_unfiltered = (
+        page == 1
+        and page_size == DEFAULT_PAGE_SIZE
+        and not search
+        and not (tags or types or owners)
+        and (order_by in (None, "-created_at"))
+    )
+
+    if is_unfiltered:
+        return listing["all_items"]
+
+    payload = listing.copy()
+    payload.pop("all_items", None)
+    return payload
 
 
 @router.get("/list")
 def list_datasets_endpoint(
-    order_by: Optional[str] = "-created_at",
+    order_by: Optional[str] = Query("-created_at", description="Поле сортировки"),
+    page: int = Query(1, ge=1, description="Номер страницы"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=100, description="Количество элементов на странице"),
+    search: Optional[str] = Query(None, description="Поисковый запрос"),
+    tags: Optional[List[str]] = Query(None, description="Фильтр по тегам"),
+    types: Optional[List[str]] = Query(None, alias="dataset_types", description="Фильтр по типам"),
+    owners: Optional[List[str]] = Query(None, description="Фильтр по владельцам"),
     request: Request = None,  # type: ignore[assignment]
     response: Response = None,  # type: ignore[assignment]
-) -> List[Dict[str, Any]]:
-    # FastAPI injects ``Request``/``Response`` despite the default ``None`` which
-    # keeps the function callable from tests without providing arguments.
-    items = _list_datasets(order_by=order_by)
+):
+    listing = _prepare_listing(
+        page=page,
+        page_size=page_size,
+        order_by=order_by,
+        search=search,
+        tags=tags,
+        types=types,
+        owners=owners,
+    )
+
+    payload = listing.copy()
+    ordered_items = payload.pop("all_items")
 
     if response is not None:
-        cache_payload = {"order_by": order_by, "items": items}
+        cache_payload = {
+            "order_by": order_by,
+            "page": page,
+            "page_size": page_size,
+            "search": search,
+            "tags": tags,
+            "types": types,
+            "owners": owners,
+            "items": ordered_items,
+        }
         etag = apply_cache_headers(
             response,
             cache_payload,
@@ -523,9 +679,18 @@ def list_datasets_endpoint(
             cache_control = response.headers.get("Cache-Control")
             if cache_control:
                 headers["Cache-Control"] = cache_control
-            return Response(status_code=304, headers=headers)  # type: ignore[return-value]
+            return Response(status_code=304, headers=headers)
 
-    return items
+    if (
+        page == 1
+        and page_size == DEFAULT_PAGE_SIZE
+        and not search
+        and not (tags or types or owners)
+        and (order_by in (None, "-created_at"))
+    ):
+        return ordered_items
+
+    return payload
 
 
 def create_dataset(payload: DatasetCreate) -> Dict[str, Any]:
@@ -727,52 +892,6 @@ def _resolve_param(value):
         return value.default
     return value
 
-
-@router.get("/list")
-def list_datasets(
-    order_by: Optional[str] = "-created_at",
-    page: int = Query(1, ge=1, description="Номер страницы"),
-    page_size: int = Query(20, ge=1, le=100, description="Количество элементов на странице"),
-    search: Optional[str] = Query(None, description="Поисковый запрос по названиям, описанию и тегам"),
-    tags: Optional[List[str]] = Query(None, description="Фильтр по тегам"),
-):
-    raw_page = page
-    raw_page_size = page_size
-
-    page = _resolve_param(page) or 1
-    page_size = _resolve_param(page_size) or DEFAULT_PAGE_SIZE
-    search = _resolve_param(search)
-    tags = _resolve_param(tags)
-    if isinstance(tags, str):
-        tags = [tags]
-
-    items = [_ensure_dates(item) for item in _load_all()]
-
-    available_tags = sorted({tag for item in items for tag in item.get("tags", []) if tag})
-
-    filtered = items
-    if search:
-        query = search.strip().lower()
-        if query:
-            def _matches(item: Dict[str, Any]) -> bool:
-                haystacks = [
-                    (item.get("name") or "").lower(),
-                    (item.get("description") or "").lower(),
-                ]
-                haystacks.extend((tag or "").lower() for tag in item.get("tags", []))
-                for column in item.get("columns", []) or []:
-                    haystacks.append((column.get("name") or "").lower())
-                return any(query in hay for hay in haystacks if hay)
-
-            filtered = [item for item in filtered if _matches(item)]
-
-    tag_filter = _normalise_tags(tags)
-    if tag_filter:
-        def _has_tags(item: Dict[str, Any]) -> bool:
-            item_tags = _normalise_tags(item.get("tags", []))
-            return tag_filter.issubset(item_tags)
-
-        filtered = [item for item in filtered if _has_tags(item)]
 
 def _prepare_dataset(dataset: Dict[str, Any]) -> Dict[str, Any]:
     dataset["tags"] = _normalize_tags(dataset.get("tags"))
@@ -1085,42 +1204,6 @@ def _evaluate_metric(metric: str, series: Sequence[MetricPoint], sensitivity: fl
     }
 
 
-@router.get("/list")
-def list_datasets(order_by: Optional[str] = "-created_at"):
-    items = [_ensure_summary(_ensure_dates(item)) for item in _load_all()]
-    if order_by:
-        reverse = order_by.startswith("-")
-        key = order_by.lstrip("-")
-        filtered.sort(key=lambda x: x.get(key, 0), reverse=reverse)
-
-    total = len(filtered)
-    start = (page - 1) * page_size
-    end = start + page_size
-    paginated = filtered[start:end]
-    total_pages = ceil(total / page_size) if total else 0
-
-    compatibility_plain = (
-        (isinstance(raw_page, params.Param) or page == 1)
-        and (isinstance(raw_page_size, params.Param) or page_size == DEFAULT_PAGE_SIZE)
-        and not search
-        and not tag_filter
-    )
-
-    if compatibility_plain:
-        return filtered
-
-    return {
-        "items": paginated,
-        "page": page,
-        "page_size": page_size,
-        "total": total,
-        "total_pages": total_pages,
-        "has_next": page < total_pages,
-        "has_previous": page > 1,
-        "available_filters": {"tags": available_tags},
-    }
-
-
 @router.get("/refresh/schedules")
 def list_refresh_schedules() -> Dict[str, Any]:
     schedules = _refresh_scheduler.list_schedules()
@@ -1238,6 +1321,7 @@ def _find_dataset(datasets: List[Dict[str, Any]], dataset_id: str) -> Dict[str, 
     for item in datasets:
         if item.get("id") == dataset_id:
             return item
+    raise HTTPException(status_code=404, detail="Dataset not found")
 @router.get("/search")
 def search_datasets(
     query: Optional[str] = None,

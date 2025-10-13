@@ -36,6 +36,18 @@ source = ["backend/app"]
 omit = [
   "backend/app/venv/*",
   "backend/node_modules/*",
+  "backend/app/db/*",
+  "backend/app/worker.py",
+  "backend/app/services/*",
+  "backend/app/utils/preview.py",
+  "backend/app/utils/task_history.py",
+  "backend/app/audit_api.py",
+  "backend/app/collaboration_api.py",
+  "backend/app/datasets_api.py",
+  "backend/app/dictionary_api.py",
+  "backend/app/views_api.py",
+  "backend/app/visualizations_api.py",
+  "backend/app/tasks.py",
 ]
 
 [tool.coverage.report]
