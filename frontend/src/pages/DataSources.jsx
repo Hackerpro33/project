@@ -1,23 +1,18 @@
 import { Dataset } from "@/api/entities";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { extractDataFromUploadedFile, uploadFile } from "@/api/integrations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-  Upload,
-  FileText,
   Database,
-  Tag,
-  Calendar,
-  BarChart,
   Search,
-  Filter,
-  Plus
+  Plus,
+  AlertTriangle
 } from "lucide-react";
-import { format } from "date-fns";
 
 import FileUploadZone from "../components/datasources/FileUploadZone";
 import DatasetCard from "../components/datasources/DatasetCard";
@@ -34,22 +29,92 @@ export default function DataSources() {
   const [showPreview, setShowPreview] = useState(false);
   const [showImportPreview, setShowImportPreview] = useState(false);
   const [pendingDataset, setPendingDataset] = useState(null);
+  const [facets, setFacets] = useState({ tags: [], types: [], owners: [] });
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [selectedTypes, setSelectedTypes] = useState([]);
+  const [selectedOwners, setSelectedOwners] = useState([]);
+  const [searchError, setSearchError] = useState(null);
+  const [searchMeta, setSearchMeta] = useState({ total: 0, applied_filters: {} });
+  const [refreshToken, setRefreshToken] = useState(0);
+  const activeRequestRef = useRef(0);
+
+  const normalizedFilters = useMemo(
+    () => ({
+      query: searchTerm.trim(),
+      tags: selectedTags,
+      types: selectedTypes,
+      owners: selectedOwners,
+    }),
+    [searchTerm, selectedTags, selectedTypes, selectedOwners],
+  );
 
   useEffect(() => {
-    loadDatasets();
-  }, []);
-
-  const loadDatasets = async () => {
+    let cancelled = false;
+    const requestId = activeRequestRef.current + 1;
+    activeRequestRef.current = requestId;
     setIsLoading(true);
-    try {
-      const data = await Dataset.list('-created_at');
-      setDatasets(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Failed to load datasets:', err);
-      setDatasets([]);
-    } finally {
-      setIsLoading(false);
-    }
+    setSearchError(null);
+
+    const timer = setTimeout(async () => {
+      try {
+        const response = await Dataset.search({
+          query: normalizedFilters.query || undefined,
+          tags: normalizedFilters.tags,
+          types: normalizedFilters.types,
+          owners: normalizedFilters.owners,
+          limit: 60,
+          orderBy: '-created_at',
+        });
+        if (cancelled || activeRequestRef.current !== requestId) {
+          return;
+        }
+        const items = Array.isArray(response?.items) ? response.items : [];
+        setDatasets(items);
+        setFacets({
+          tags: response?.facets?.tags ?? [],
+          types: response?.facets?.types ?? [],
+          owners: response?.facets?.owners ?? [],
+        });
+        setSearchMeta({
+          total: response?.total ?? items.length,
+          applied_filters: response?.applied_filters ?? {},
+        });
+      } catch (error) {
+        if (cancelled || activeRequestRef.current !== requestId) {
+          return;
+        }
+        console.error('Failed to load datasets:', error);
+        setDatasets([]);
+        setSearchError('Не удалось загрузить данные. Попробуйте обновить страницу позже.');
+      } finally {
+        if (!cancelled && activeRequestRef.current === requestId) {
+          setIsLoading(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [normalizedFilters, refreshToken]);
+
+  const toggleFacetValue = (value, selectedValues, setValues) => {
+    if (!value) return;
+    setValues((prev) => {
+      const exists = prev.includes(value);
+      if (exists) {
+        return prev.filter((item) => item !== value);
+      }
+      return [...prev, value];
+    });
+  };
+
+  const resetFilters = () => {
+    setSelectedTags([]);
+    setSelectedTypes([]);
+    setSelectedOwners([]);
+    setSearchTerm('');
   };
 
   const handleFileUpload = async (file) => {
@@ -257,6 +322,8 @@ export default function DataSources() {
         row_count: pendingDataset.row_count,
         tags: importConfig.tags,
         sample_data: pendingDataset.sample_data,
+        dataset_type: importConfig.dataset_type,
+        owners: importConfig.owners,
       };
       await Dataset.create(datasetData);
     } catch (error) {
@@ -265,19 +332,42 @@ export default function DataSources() {
     } finally {
       setShowImportPreview(false);
       setPendingDataset(null);
-      await loadDatasets();
+      setRefreshToken((token) => token + 1);
     }
   };
-
-  const filteredDatasets = datasets.filter(dataset =>
-    dataset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    dataset.description?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
   const handlePreview = (dataset) => {
     setSelectedDataset(dataset);
     setShowPreview(true);
   };
+
+  const renderFacetGroup = (label, items, selectedValues, onToggle) => (
+    <div className="space-y-2">
+      <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</div>
+      <div className="flex flex-wrap gap-2">
+        {items.length === 0 && (
+          <span className="text-xs text-slate-400">Нет доступных значений</span>
+        )}
+        {items.map((item) => {
+          const isActive = selectedValues.includes(item.value);
+          return (
+            <Button
+              key={`${label}-${item.value}`}
+              variant={isActive ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => onToggle(item.value)}
+              className={`flex items-center gap-2 rounded-full ${isActive ? 'bg-blue-600 text-white hover:bg-blue-600' : 'border-slate-200 hover:border-blue-200 hover:text-blue-600'}`}
+            >
+              <span>{item.value}</span>
+              <span className={`text-[10px] font-medium ${isActive ? 'text-blue-100' : 'text-slate-400'}`}>
+                {item.count}
+              </span>
+            </Button>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   return (
     <PageContainer className="space-y-8">
@@ -299,30 +389,43 @@ export default function DataSources() {
 
       {/* Search and Filters */}
       <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-lg">
-        <CardContent className="p-6">
-          <div className="flex flex-col md:flex-row gap-4 items-center">
+        <CardContent className="space-y-6 p-6">
+          <div className="flex flex-col lg:flex-row gap-4 lg:items-center">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
               <Input
                 placeholder="Искать наборы данных..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 border-slate-200 focus:border-blue-500 bg-white/50"
+                className="pl-10 border-slate-200 focus:border-blue-500 bg-white/60"
               />
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="gap-2">
-                <Filter className="w-4 h-4" />
-                Фильтр
-              </Button>
-              <Button variant="outline" size="sm" className="gap-2">
-                <Tag className="w-4 h-4" />
-                Теги
-              </Button>
+            <div className="flex flex-wrap gap-2 items-center">
+              <Badge variant="secondary" className="bg-blue-50 text-blue-600">
+                Найдено {searchMeta.total}
+              </Badge>
+              {(normalizedFilters.tags.length > 0 || normalizedFilters.types.length > 0 || normalizedFilters.owners.length > 0 || normalizedFilters.query) && (
+                <Button variant="ghost" size="sm" onClick={resetFilters} className="text-slate-500 hover:text-blue-600">
+                  Сбросить фильтры
+                </Button>
+              )}
             </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {renderFacetGroup('Теги', facets.tags, selectedTags, (value) => toggleFacetValue(value, selectedTags, setSelectedTags))}
+            {renderFacetGroup('Типы наборов', facets.types, selectedTypes, (value) => toggleFacetValue(value, selectedTypes, setSelectedTypes))}
+            {renderFacetGroup('Владельцы', facets.owners, selectedOwners, (value) => toggleFacetValue(value, selectedOwners, setSelectedOwners))}
           </div>
         </CardContent>
       </Card>
+
+      {searchError && (
+        <Alert variant="destructive" className="border-red-200 bg-red-50">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>{searchError}</AlertDescription>
+        </Alert>
+      )}
 
       {/* Datasets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -337,7 +440,7 @@ export default function DataSources() {
             </Card>
           ))
         ) : (
-          filteredDatasets.map(dataset => (
+          datasets.map(dataset => (
             <DatasetCard
               key={dataset.id}
               dataset={dataset}
@@ -347,7 +450,7 @@ export default function DataSources() {
         )}
       </div>
 
-      {!isLoading && filteredDatasets.length === 0 && (
+      {!isLoading && datasets.length === 0 && (
         <Card className="border-0 bg-white/50 backdrop-blur-xl shadow-lg">
           <CardContent className="text-center py-12">
             <Database className="w-16 h-16 mx-auto text-slate-400 mb-4" />
@@ -379,6 +482,7 @@ export default function DataSources() {
           onCancel={() => {
             setShowImportPreview(false);
             setPendingDataset(null);
+            setRefreshToken((token) => token + 1);
           }}
         />
       )}

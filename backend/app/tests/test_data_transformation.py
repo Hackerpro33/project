@@ -1,7 +1,8 @@
 import asyncio
 import builtins
+import itertools
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -129,6 +130,7 @@ def test_dataset_create_and_list(client):
     created = create_response.json()
     assert created["status"] == "created"
     assert created["dataset"]["name"] == dataset_payload["name"]
+    assert created["dataset"].get("auto_summary")
 
     list_response = client.get(
         "/api/dataset/list",
@@ -139,6 +141,7 @@ def test_dataset_create_and_list(client):
     assert len(datasets) == 1
     assert datasets[0]["name"] == dataset_payload["name"]
     assert datasets[0]["row_count"] == 2
+    assert datasets[0].get("auto_summary")
 
 
 def test_dataset_update_and_delete(client):
@@ -168,6 +171,7 @@ def test_dataset_update_and_delete(client):
     assert updated["description"] == "После обновления"
     assert updated["tags"] == ["updated"]
     assert "updated_at" in updated
+    assert updated.get("auto_summary")
 
     delete_response = client.delete(
         f"/api/dataset/{dataset_id}",
@@ -370,6 +374,173 @@ def test_dataset_delete_missing_raises():
     with pytest.raises(HTTPException) as excinfo:
         datasets_api.delete_dataset("missing")
     assert excinfo.value.status_code == 404
+
+
+def test_dataset_search_facets_and_similarity(client):
+    datasets_api._save_all([])
+    first = {
+        "name": "Crime incidents",
+        "description": "Geospatial incident registry",
+        "tags": ["crime", "safety", "geodata"],
+        "columns": [{"name": "district", "type": "string"}],
+        "row_count": 1200,
+        "dataset_type": "geospatial",
+        "owners": ["Analytics Lab"],
+    }
+    second = {
+        "name": "Crime heatmap",
+        "description": "Spatial grid for crime analysis",
+        "tags": ["crime", "heatmap"],
+        "columns": [{"name": "grid_id", "type": "number"}],
+        "row_count": 900,
+        "dataset_type": "geospatial",
+        "owners": ["Analytics Lab", "Visualization"],
+    }
+    third = {
+        "name": "Budget planning",
+        "description": "Financial projections",
+        "tags": ["finance"],
+        "columns": [{"name": "year", "type": "number"}],
+        "row_count": 50,
+        "dataset_type": "financial",
+        "owners": ["Finance"],
+    }
+
+    for payload in (first, second, third):
+        response = client.post(
+            "/api/dataset/create",
+            json=payload,
+            headers={"Content-Type": "application/json", **HEADERS},
+        )
+        assert response.status_code == 200
+
+    search_response = client.get(
+        "/api/dataset/search",
+        params={"query": "crime"},
+        headers=HEADERS,
+    )
+    assert search_response.status_code == 200
+    payload = search_response.json()
+    assert payload["total"] == 2
+    assert payload["facets"]["tags"]
+    assert any(item["value"] == "crime" for item in payload["facets"]["tags"])
+    assert all(item.get("auto_summary") for item in payload["items"])
+
+    filtered_response = client.get(
+        "/api/dataset/search",
+        params=[("tags", "crime"), ("owners", "Analytics Lab")],
+        headers=HEADERS,
+    )
+    assert filtered_response.status_code == 200
+    filtered = filtered_response.json()
+    assert filtered["total"] == 2
+    assert filtered["applied_filters"]["tags"] == ["crime"]
+
+    datasets = client.get("/api/dataset/list", headers=HEADERS).json()
+    target_id = next(item["id"] for item in datasets if item["name"] == "Crime incidents")
+
+    similar_response = client.get(
+        f"/api/dataset/{target_id}/similar",
+        params={"limit": 3},
+        headers=HEADERS,
+    )
+    assert similar_response.status_code == 200
+    similar_payload = similar_response.json()
+    assert similar_payload["dataset_id"] == target_id
+    assert any(entry["name"] == "Crime heatmap" for entry in similar_payload["similar"])
+    match = next(entry for entry in similar_payload["similar"] if entry["name"] == "Crime heatmap")
+    assert match["similarity"] > 0
+    assert "crime" in match.get("overlap_tags", [])
+
+
+def test_dataset_search_respects_ordering(client, monkeypatch):
+    datasets_api._save_all([])
+
+    base_timestamp = 1_700_000_000
+    counter = itertools.count()
+
+    monkeypatch.setattr(
+        datasets_api.time,
+        "time",
+        lambda: base_timestamp + next(counter),
+    )
+
+    for name in ("First dataset", "Second dataset", "Third dataset"):
+        response = client.post(
+            "/api/dataset/create",
+            json={
+                "name": name,
+                "description": "",
+                "columns": [],
+            },
+            headers={"Content-Type": "application/json", **HEADERS},
+        )
+        assert response.status_code == 200
+
+    ordered_response = client.get(
+        "/api/dataset/search",
+        params={"order_by": "-created_at"},
+        headers=HEADERS,
+    )
+    assert ordered_response.status_code == 200
+    payload = ordered_response.json()
+    assert payload["total"] == 3
+    names = [item["name"] for item in payload["items"]]
+    assert names == ["Third dataset", "Second dataset", "First dataset"]
+    assert payload["applied_filters"]["order_by"] == "-created_at"
+
+
+def test_dataset_auto_summary_endpoint(client):
+    create_response = client.post(
+        "/api/dataset/create",
+        json={
+            "name": "Fresh dataset",
+            "description": "",
+            "columns": [],
+        },
+        headers=HEADERS,
+    )
+    dataset_id = create_response.json()["id"]
+
+    regenerate = client.post(
+        f"/api/dataset/{dataset_id}/auto-summary",
+        headers=HEADERS,
+    )
+
+    assert regenerate.status_code == 200
+    summary_payload = regenerate.json()
+    assert summary_payload["dataset_id"] == dataset_id
+    assert isinstance(summary_payload["auto_summary"], str)
+    assert summary_payload["auto_summary"]
+
+
+def test_metrics_monitor_detects_anomalies(client):
+    series = []
+    start = datetime(2024, 1, 1)
+    for index in range(6):
+        timestamp = (start + timedelta(days=index)).isoformat() + "Z"
+        value = 10 + index
+        if index == 5:
+            value = 35
+        series.append({"timestamp": timestamp, "value": value})
+
+    response = client.post(
+        "/api/dataset/monitor",
+        json={
+            "metrics": [{"metric": "latency", "series": series}],
+            "sensitivity": 1.2,
+            "min_points": 5,
+        },
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "critical"
+    assert len(payload["results"]) == 1
+    assert payload["results"][0]["metric"] == "latency"
+    assert payload["results"][0]["anomalies"]
+    assert payload["alerts"]
 
 
 def _set_upload_limit(monkeypatch, size_bytes):
