@@ -1,8 +1,9 @@
 import asyncio
-import builtins
 import json
 from datetime import datetime
+from pathlib import Path
 
+import httpx
 import numpy as np
 import pandas as pd
 import pytest
@@ -13,6 +14,7 @@ from .. import datasets_api
 from .. import visualizations_api
 from .. import main
 from ..services import extraction
+from .factories import DatasetCreateFactory
 
 HEADERS = {"host": "localhost"}
 API_PREFIX = "/api/v1"
@@ -105,20 +107,7 @@ def test_extract_missing_file_returns_404(client):
 
 
 def test_dataset_create_and_list(client):
-    dataset_payload = {
-        "name": "Extracted Sample",
-        "description": "Сгенерировано в тестах",
-        "tags": ["test"],
-        "columns": [
-            {"name": "city", "type": "string"},
-            {"name": "population", "type": "number"},
-        ],
-        "row_count": 2,
-        "sample_data": [
-            {"city": "Paris", "population": 2148327},
-            {"city": "Berlin", "population": 3769495},
-        ],
-    }
+    dataset_payload = DatasetCreateFactory.build().model_dump()
 
     create_response = client.post(
         f"{API_PREFIX}/dataset/create",
@@ -307,6 +296,75 @@ def test_read_table_bytes_rejects_unknown_extension():
     assert excinfo.value.status_code == 400
 
 
+def test_read_table_bytes_parses_pdf(monkeypatch):
+    from app.utils import files
+
+    class _FakePage:
+        def __init__(self, tables, text):
+            self._tables = tables
+            self._text = text
+
+        def extract_tables(self):
+            return self._tables
+
+        def extract_text(self):
+            return self._text
+
+    class _FakePDF:
+        def __init__(self, pages):
+            self.pages = pages
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def _fake_open(_):
+        tables = [[["col1", "col2"], ["1", "2"], ["3", "4"]]]
+        text = "col1,col2\n1,2\n3,4"
+        page = _FakePage(tables=tables, text=text)
+        return _FakePDF([page])
+
+    monkeypatch.setattr(files.pdfplumber, "open", _fake_open)
+
+    df = main.read_table_bytes(b"%PDF", "report.pdf")
+    assert df.to_dict(orient="records") == [{"col1": "1", "col2": "2"}, {"col1": "3", "col2": "4"}]
+
+
+def test_read_table_bytes_parses_image(monkeypatch):
+    from app.utils import files
+
+    class _FakeImage:
+        def convert(self, *_args, **_kwargs):
+            return self
+
+    monkeypatch.setattr(files.Image, "open", lambda *_: _FakeImage())
+    monkeypatch.setattr(files.pytesseract, "image_to_string", lambda *_args, **_kwargs: "col1,col2\n1,2")
+
+    df = main.read_table_bytes(b"", "table.png")
+    assert df.to_dict(orient="records") == [{"col1": "1", "col2": "2"}]
+
+
+def test_read_table_payload_exposes_records_and_excel(tmp_path):
+    from app.utils import files
+
+    csv_bytes = b"name,score\nAlice,95\nBob,88\n"
+    payload = files.read_table_payload(csv_bytes, "scores.csv")
+
+    assert payload.records == [
+        {"name": "Alice", "score": 95},
+        {"name": "Bob", "score": 88},
+    ]
+
+    excel_bytes = payload.to_excel_bytes()
+    excel_path = tmp_path / "scores.xlsx"
+    excel_path.write_bytes(excel_bytes)
+
+    loaded = pd.read_excel(excel_path)
+    assert loaded.to_dict(orient="records") == payload.records
+
+
 def test_detect_general_type_handles_common_series():
     assert extraction.detect_general_type(pd.Series([True, False])) == "boolean"
     assert extraction.detect_general_type(pd.Series([1, 2.5])) == "number"
@@ -454,22 +512,63 @@ def test_upload_multiple_tables_near_limit(monkeypatch, client):
     assert names == {"Batch 0", "Batch 1", "Batch 2"}
 
 
-def test_upload_rejects_files_over_limit(monkeypatch, client):
-    limit = 1024  # 1 KB
-    _set_upload_limit(monkeypatch, limit)
-
-    csv_bytes = _make_wide_csv(rows=80, columns=5)
-    assert len(csv_bytes) > limit
+def test_upload_rejects_files_over_limit(limit_upload_size, client, oversized_csv_payload):
+    limit_upload_size(1024)
 
     response = client.post(
         f"{API_PREFIX}/upload",
         files={"file": ("too_big.csv", csv_bytes, "text/csv")},
+        "/api/upload",
+        files={"file": ("too_big.csv", oversized_csv_payload, "text/csv")},
         headers=HEADERS,
     )
 
     assert response.status_code == 413
     payload = response.json()
     assert "File too large" in payload["detail"]
+
+
+@pytest.mark.parametrize(
+    "clamav_status,clamav_payload,expected_status,expected_detail",
+    [
+        (503, {"status": "error"}, 502, "ClamAV scanning service unavailable"),
+        (200, {"status": "infected"}, 400, "File failed malware scan"),
+    ],
+)
+def test_upload_clamav_failure_paths(
+    monkeypatch,
+    client,
+    clamav_status,
+    clamav_payload,
+    expected_status,
+    expected_detail,
+    csv_bytes_factory,
+    limit_upload_size,
+):
+    limit_upload_size(2 * 1024 * 1024)
+    monkeypatch.setattr(main.settings, "clamav_scan_url", "http://clamav:3310/scan")
+
+    class _FakeResponse:
+        def __init__(self, status_code: int, payload: dict):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self) -> dict:
+            return self._payload
+
+    async def _fake_post(self, url, files):
+        return _FakeResponse(clamav_status, clamav_payload)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", _fake_post, raising=False)
+
+    response = client.post(
+        "/api/upload",
+        files={"file": ("dataset.csv", csv_bytes_factory(rows=10, columns=5), "text/csv")},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == expected_status
+    assert expected_detail in response.json()["detail"]
 
 
 def test_visualization_ensure_dates_populates_fields(monkeypatch):
@@ -711,7 +810,7 @@ def test_api_send_email_logs_errors(monkeypatch):
     def failing_open(*args, **kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(builtins, "open", failing_open)
+    monkeypatch.setattr(Path, "open", failing_open, raising=False)
 
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(

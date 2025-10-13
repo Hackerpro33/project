@@ -20,6 +20,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import get_settings
+from .version import __version__
 from .schemas import (
     EmailRequest,
     EmailResponse,
@@ -51,7 +52,7 @@ API_PREFIX = "/api/v1"
 
 app = FastAPI(
     title="Insight Sphere Backend",
-    version="0.1.0",
+    version=__version__,
     description=(
         "API for managing analytical datasets, providing upload/extraction capabilities "
         "with strong validation, observability, and documentation."
@@ -305,6 +306,7 @@ async def api_send_email(payload: EmailRequest) -> EmailResponse:
     log_path = Path(EMAIL_LOG_PATH)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
+        with log_path.open("a", encoding="utf-8") as log_file:
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as exc:
@@ -325,12 +327,14 @@ if __package__ in {None, ""}:
     if current_dir not in sys.path:
         sys.path.append(current_dir)
     import audit_api as audit_router_module
+    import collaboration_api as collaboration_router_module
     import chat_api as chat_router_module
     import datasets_api as datasets_router_module
     import dictionary_api as dictionary_router_module
     import visualizations_api as visualizations_router_module
 else:
     from . import audit_api as audit_router_module
+    from . import collaboration_api as collaboration_router_module
     from . import chat_api as chat_router_module
     from . import datasets_api as datasets_router_module
     from . import dictionary_api as dictionary_router_module
@@ -341,11 +345,18 @@ dictionary_router = dictionary_router_module.router
 visualizations_router = visualizations_router_module.router
 chat_router = chat_router_module.router
 audit_router = audit_router_module.router
+collaboration_router = collaboration_router_module.router
 
 app.include_router(datasets_router, prefix=f"{API_PREFIX}/dataset")
 app.include_router(dictionary_router, prefix=f"{API_PREFIX}/dictionary")
 app.include_router(visualizations_router, prefix=f"{API_PREFIX}/visualization")
 app.include_router(chat_router, prefix=f"{API_PREFIX}/chat")
 app.include_router(audit_router, prefix=f"{API_PREFIX}/audit")
+app.include_router(datasets_router, prefix="/api/dataset")
+app.include_router(dictionary_router, prefix="/api/dictionary")
+app.include_router(visualizations_router, prefix="/api/visualization")
+app.include_router(chat_router, prefix="/api/chat")
+app.include_router(audit_router, prefix="/api/audit")
+app.include_router(collaboration_router, prefix="/api")
 FILE_REGISTRY = get_file_registry()
 _safe_name = safe_filename

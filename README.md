@@ -4,14 +4,23 @@
 Этот документ описывает локальный запуск, а также инфраструктурные практики, которые мы
 используем для обеспечения качества и стабильности.
 
-![Coverage badge](https://img.shields.io/badge/coverage-80%25-brightgreen.svg)
+![Coverage badge](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/OWNER/REPO/gh-pages/coverage/coverage.json)
+
+## Управление релизами
+
+- Заголовки pull request-ов должны соответствовать [Conventional Commit](https://www.conventionalcommits.org/ru/v1.0.0/) — это проверяется GitHub Actions (`semantic-pull-requests`).
+- После слияния в `main` [Release Drafter](.github/release-drafter.yml) обновляет черновик следующего релиза и группирует изменения по SemVer.
+- Для публикации стабильной версии создайте аннотированный тег `vMAJOR.MINOR.PATCH` и запушьте его. Workflow [`publish-release`](.github/workflows/publish-release.yml) автоматически опубликует релиз на GitHub, используя описание из черновика.
+- Версия приложения хранится в `backend/app/version.py`. Обновлять её и переносить записи из `CHANGELOG.md` помогает утилита `./scripts/bump_version.py <major|minor|patch>` — она откажется работать, если секция `Unreleased` пуста.
+- После публикации синхронизируйте `CHANGELOG.md`, перенеся записи из секции `Unreleased` в новую версию.
 
 ## Быстрый старт
 
 1. Склонируйте репозиторий и установите зависимости для фронтенда и бэкенда.
-2. Поднимите сопутствующие сервисы (Postgres, Redis, MinIO) через `docker-compose`.
-3. Запустите бэкенд и фронтенд в отдельных терминалах.
-4. Выполните автоматические тесты и линтеры (см. раздел «Проверка работоспособности»).
+2. **Вариант для VS Code/Dev Containers:** откройте папку в контейнере разработки — сервисы Postgres/Redis/MinIO поднимутся автоматически, а зависимости установятся через `postCreateCommand`.
+3. При локальном запуске без devcontainer поднимите сопутствующие сервисы (Postgres, Redis, MinIO) через `docker-compose`.
+4. Запустите бэкенд и фронтенд в отдельных терминалах.
+5. Выполните автоматические тесты и линтеры (см. раздел «Проверка работоспособности»).
 
 > Подробный план развития проекта смотрите в [ROADMAP.md](ROADMAP.md), требования к
 > контрибьюторам — в [CONTRIBUTING.md](CONTRIBUTING.md), архитектурные решения и диаграммы —
@@ -133,6 +142,28 @@ npm run build
 Проект поставляется с эндпоинтами `/metrics`, `/healthz` и `/readiness` для интеграции с
 Prometheus и оркестраторами. Логи формируются в формате JSON и включают trace-id для связывания
 с трассировками OpenTelemetry. Для отслеживания исключений используется Sentry.
+
+## Версионирование и релизы
+
+- Основной веткой служит `main`, релизы публикуются с помощью GitHub Release Drafter и следуют
+  [Semantic Versioning](https://semver.org/lang/ru/). Для генерации черновиков релизов достаточно
+  оформлять PR в формате [Conventional Commits](https://www.conventionalcommits.org/ru/v1.0.0/) —
+  валидация заголовков выполняется отдельным GitHub Actions workflow.
+- Версию можно обновить командой `./scripts/bump_version.py <major|minor|patch>` — она переносит
+  список изменений из секции `Unreleased` в новую версию, убеждается, что она не пуста, и оставляет черновик пустым. Workflow
+  публикации проверяет, что SemVer-тег совпадает со значением `__version__` в
+  `backend/app/version.py`.
+- История изменений фиксируется в [CHANGELOG.md](CHANGELOG.md). Перед публикацией релиза
+  перенесите соответствующий блок из секции `Unreleased` в новую версию.
+
+## Безопасность контейнеров
+
+- Dockerfile бэкенда использует многоэтапную сборку: зависимости устанавливаются в промежуточном
+  образе `python:3.11-slim`, после чего рабочая среда переносится в финальный минимальный образ
+  [Distroless](https://github.com/GoogleContainerTools/distroless) с непривилегированным
+  пользователем.
+- Workflow `Container Security` собирает образ, формирует SBOM в формате SPDX с помощью Syft и
+  подписывает артефакт Cosign (keyless). SBOM и подпись публикуются как артефакты пайплайна.
 
 ## CI/CD
 
