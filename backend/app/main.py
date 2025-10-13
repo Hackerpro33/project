@@ -6,6 +6,7 @@ import json
 import mimetypes
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi import Query
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -93,6 +94,8 @@ from .schemas import (
     TaskEnqueueResponse,
     TaskHistoryListResponse,
     TaskHistoryEntry,
+    TaskHistoryEntry,
+    TaskHistoryListResponse,
     TaskStatusResponse,
     UrlImportRequest,
 )
@@ -1127,7 +1130,7 @@ async def api_task_status(task_id: str) -> TaskStatusResponse:
 
 
 @app.get(
-    "/api/tasks/{task_id}/events",
+    f"{API_PREFIX}/tasks/{{task_id}}/events",
     summary="Stream task status updates via Server-Sent Events",
     responses={
         404: {"model": ErrorResponse, "description": "Task not found"},

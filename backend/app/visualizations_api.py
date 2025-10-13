@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 import json
+
+from __future__ import annotations
+
+import json
+import logging
 import os
 import shutil
 import tempfile
@@ -13,15 +18,21 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Union
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
+from typing import Any, Dict, Iterable, List, Optional, Set
+
+from fastapi import APIRouter, HTTPException, Query, Request, Response, params
 from pydantic import BaseModel, Field
 
 from .config import get_settings
 from .utils.cache import apply_cache_headers, should_return_not_modified
 
+
 router = APIRouter()
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
-_DATA_DIR = Path(__file__).resolve().parent / "data"
+APP_DIR = Path(__file__).resolve().parent
+_DATA_DIR = APP_DIR / "data"
 _DEFAULT_STORE = _DATA_DIR / "visualizations"
 _ENV_STORE = Path(os.environ.get("INSIGHT_VISUALIZATIONS_DIR") or _DEFAULT_STORE)
 CANDIDATE_DIRS: List[Path] = [_ENV_STORE, _DEFAULT_STORE, _DATA_DIR]
@@ -68,6 +79,51 @@ def _atomic_write_json(path: Path, payload: Any) -> None:
             tmp_path.unlink()
         except FileNotFoundError:
             pass
+CANDIDATE_DIRS: List[Path] = [_ENV_STORE, _DEFAULT_STORE, _DATA_DIR]
+
+
+def _resolve_store_dir() -> Path:
+    for candidate in CANDIDATE_DIRS:
+        if candidate.exists():
+            candidate.mkdir(parents=True, exist_ok=True)
+            return candidate
+    target = CANDIDATE_DIRS[0]
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+STORE_DIR = _resolve_store_dir()
+VISUALIZATIONS_JSON = STORE_DIR / "visualizations.json"
+DEFAULT_PAGE_SIZE = 20
+
+_ORDERABLE_FIELDS = {"created_at", "updated_at", "title", "type"}
+
+
+class VisualizationBase(BaseModel):
+    title: Optional[str] = None
+    type: Optional[str] = Field(default="chart")
+    dataset_id: Optional[str] = None
+    config: Dict[str, Any] = Field(default_factory=dict)
+    summary: Optional[Dict[str, Any]] = None
+    tags: List[str] = Field(default_factory=list)
+    x_axis: Optional[str] = None
+    y_axis: Optional[str] = None
+    z_axis: Optional[str] = None
+    insights: Optional[List[str]] = None
+
+
+class VisualizationCreate(VisualizationBase):
+    title: str
+    type: str = "chart"
+
+
+class VisualizationUpdate(VisualizationBase):
+    pass
+
+
+class VisualizationFilterRequest(BaseModel):
+    filters: Dict[str, Any] = Field(default_factory=dict)
+    order_by: Optional[str] = "-created_at"
 
 
 def _load_all() -> List[Dict[str, Any]]:

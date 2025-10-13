@@ -696,8 +696,6 @@ def test_upload_rejects_files_over_limit(limit_upload_size, client, oversized_cs
 
     response = client.post(
         f"{API_PREFIX}/upload",
-        files={"file": ("too_big.csv", csv_bytes, "text/csv")},
-        "/api/upload",
         files={"file": ("too_big.csv", oversized_csv_payload, "text/csv")},
         headers=HEADERS,
     )
