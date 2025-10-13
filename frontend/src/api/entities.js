@@ -27,6 +27,20 @@ export const Dataset = {
     });
   },
 
+  async profile(payload) {
+    return request('/api/dataset/profile', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async validate(payload) {
+    return request('/api/dataset/validate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   async update(id, payload) {
     return request(`/api/dataset/${id}`, {
       method: 'PUT',
