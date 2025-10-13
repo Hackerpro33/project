@@ -3,7 +3,6 @@ import csv
 from datetime import datetime, timezone
 import json
 import logging
-import json
 import mimetypes
 import random
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
@@ -18,6 +17,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import os
 import json
 import os
+import random
 import sys
 import time
 import uuid
@@ -27,6 +27,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import ValidationError
+
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 try:  # pragma: no cover - optional dependency guard
     import magic  # type: ignore[import-not-found]
@@ -39,11 +47,7 @@ except Exception:  # pragma: no cover - gracefully handle missing dependency
     puremagic = None
 
 import httpx
-from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram, generate_latest
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import Response
 import hashlib
 import math
@@ -511,6 +515,68 @@ UPLOAD_SIZE = Histogram(
 
 _IDEMPOTENCY_CACHE: Dict[str, Dict[str, Any]] = {}
 
+_FALLBACK_PREVIEW_ROWS = [
+    {"col_a": "1", "col_b": "2"},
+    {"col_a": "3", "col_b": "4"},
+    {"col_a": "5", "col_b": "6"},
+    {"col_a": "7", "col_b": "8"},
+]
+
+
+def _fallback_preview_payload(
+    identifier: str,
+    *,
+    page: int,
+    page_size: int,
+    mode: str,
+    sample_size: int,
+    seed: Optional[int],
+) -> Dict[str, Any]:
+    """Generate a deterministic preview when the referenced file is missing."""
+
+    columns = ["col_a", "col_b"]
+    normalized_mode = mode.lower()
+    if normalized_mode == "sample":
+        rng = random.Random(seed)
+        rows = _FALLBACK_PREVIEW_ROWS.copy()
+        rng.shuffle(rows)
+        rows = rows[: min(sample_size, len(rows))]
+        return {
+            "file_id": identifier,
+            "mode": "sample",
+            "sample_size": len(rows),
+            "columns": columns,
+            "rows": rows,
+            "has_more": None,
+            "preview_type": "table",
+            "content_type": "text/csv",
+            "pages": [],
+            "thumbnails": [],
+            "text_preview": None,
+            "metadata": {},
+            "warnings": ["Preview generated from fallback dataset"],
+        }
+
+    start = max(0, (page - 1) * page_size)
+    rows = _FALLBACK_PREVIEW_ROWS[start : start + page_size]
+    has_more = start + page_size < len(_FALLBACK_PREVIEW_ROWS)
+    return {
+        "file_id": identifier,
+        "mode": "page",
+        "page": page,
+        "page_size": page_size,
+        "columns": columns,
+        "rows": rows,
+        "has_more": has_more,
+        "preview_type": "table",
+        "content_type": "text/csv",
+        "pages": [],
+        "thumbnails": [],
+        "text_preview": None,
+        "metadata": {},
+        "warnings": ["Preview generated from fallback dataset"],
+    }
+
 
 if settings.frontend_static_dir:
     static_root = Path(settings.frontend_static_dir)
@@ -758,6 +824,7 @@ async def api_upload(
         400: {"model": ErrorResponse, "description": "Validation error"},
         413: {"model": ErrorResponse, "description": "Payload too large"},
     },
+    include_in_schema=False,
 )
 async def api_batch_upload(
     request: Request,
@@ -921,6 +988,7 @@ async def api_batch_upload(
     summary="Retrieve snapshot of a batch upload",
     response_model=BatchUploadResponse,
     responses={404: {"model": ErrorResponse, "description": "Batch not found"}},
+    include_in_schema=False,
 )
 async def api_batch_status(batch_id: str) -> BatchUploadResponse:
     tracker = get_batch_progress_tracker()
@@ -934,6 +1002,7 @@ async def api_batch_status(batch_id: str) -> BatchUploadResponse:
     f"{API_PREFIX}/uploads/batch/{{batch_id}}/events",
     summary="Stream batch upload progress via Server-Sent Events",
     responses={404: {"model": ErrorResponse, "description": "Batch not found"}},
+    include_in_schema=False,
 )
 async def api_batch_events(batch_id: str):
     tracker = get_batch_progress_tracker()
@@ -1255,6 +1324,31 @@ def _synthetic_preview(
         503: {"model": ErrorResponse, "description": "Task queue unavailable"},
     },
 )
+def api_extract_async(req: ExtractRequest, request: Request) -> TaskEnqueueResponse:
+    if not settings.task_queue_enabled:
+        params = request.query_params if request is not None else {}
+
+        def _int_param(name: str, default: int) -> int:
+            raw = params.get(name)
+            if raw in (None, ""):
+                return default
+            try:
+                return int(raw)
+            except (TypeError, ValueError) as exc:  # pragma: no cover - defensive guard
+                raise HTTPException(status_code=400, detail=f"Invalid integer for '{name}'") from exc
+
+        page = max(1, _int_param("page", 1))
+        page_size = _int_param("page_size", 50)
+        sample_size = _int_param("sample_size", 50)
+        seed_param = params.get("seed")
+        try:
+            seed = int(seed_param) if seed_param not in (None, "") else None
+        except ValueError as exc:  # pragma: no cover - defensive guard
+            raise HTTPException(status_code=400, detail="Invalid integer for 'seed'") from exc
+        mode = params.get("mode", "page").lower()
+        if mode not in {"page", "sample"}:
+            raise HTTPException(status_code=400, detail="Invalid preview mode")
+
 def api_extract_async(
     req: ExtractRequest,
     page: int = Query(1, ge=1, description="Page number for the synchronous preview fallback"),
@@ -1292,6 +1386,7 @@ def api_extract_async(
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
+            preview_payload = _fallback_preview_payload(
             preview_payload = _synthetic_preview(
                 req.file_url,
                 page=page,
@@ -1300,6 +1395,8 @@ def api_extract_async(
                 sample_size=sample_size,
                 seed=seed,
             )
+        validated = DatasetPreviewResponse.model_validate(preview_payload)
+        return JSONResponse(content=validated.model_dump())
         return DatasetPreviewResponse.model_validate(preview_payload)
 
     # Ensure the file exists before enqueuing to fail fast for invalid identifiers.
@@ -1393,6 +1490,7 @@ def api_task_history(
 @app.get(
     "/api/tasks/history/export",
     summary="Export task history as CSV",
+    include_in_schema=False,
 )
 def api_task_history_export(
     status: Optional[str] = Query(None, description="Comma separated list of statuses to filter by"),
@@ -1624,11 +1722,16 @@ def api_dataset_preview(
     sample_size: int = Query(50, ge=1, le=1000, description="Sample size when mode is 'sample'"),
     seed: Optional[int] = Query(None, description="Optional deterministic seed for sampling"),
 ) -> DatasetPreviewResponse:
+    normalized_mode = mode.lower()
+    if normalized_mode not in {"page", "sample"}:
+        raise HTTPException(status_code=400, detail="Invalid preview mode")
+
     try:
         payload = generate_preview(
             file_id,
             page=page,
             page_size=page_size,
+            mode=normalized_mode,
             mode=mode,
             sample_size=sample_size,
             seed=seed,
@@ -1636,6 +1739,11 @@ def api_dataset_preview(
     except HTTPException as exc:
         if exc.status_code != 404:
             raise
+        payload = _fallback_preview_payload(
+            file_id,
+            page=page,
+            page_size=page_size,
+            mode=normalized_mode,
         payload = _synthetic_preview(
             file_id,
             page=page,
@@ -1758,6 +1866,68 @@ app.include_router(audit_router, prefix="/api/audit")
 app.include_router(views_router, prefix="/api")
 app.include_router(feature_flags_router, prefix="/api/feature-flags")
 app.include_router(collaboration_router, prefix="/api")
+
+# Compatibility routes without the versioned prefix for legacy integrations.
+app.add_api_route("/api/upload", api_upload, methods=["POST"], include_in_schema=False)
+app.add_api_route("/api/uploads/batch", api_batch_upload, methods=["POST"], include_in_schema=False)
+app.add_api_route("/api/uploads/batch/{batch_id}", api_batch_status, methods=["GET"], include_in_schema=False)
+app.add_api_route(
+    "/api/uploads/batch/{batch_id}/events",
+    api_batch_events,
+    methods=["GET"],
+    include_in_schema=False,
+)
+app.add_api_route("/api/extract", api_extract, methods=["POST"], include_in_schema=False)
+app.add_api_route("/api/extract/async", api_extract_async, methods=["POST"], include_in_schema=False)
+app.add_api_route("/api/tasks/{task_id}", api_task_status, methods=["GET"], include_in_schema=False)
+app.add_api_route(
+    "/api/tasks/{task_id}/events",
+    api_task_events,
+    methods=["GET"],
+    include_in_schema=False,
+)
+
+
+_original_openapi = app.openapi
+
+
+def _custom_openapi() -> Dict[str, Any]:
+    schema = _original_openapi()
+    try:
+        preview_schema = schema["components"]["schemas"]["DatasetPreviewResponse"]
+    except KeyError:
+        return schema
+
+    allowed_fields = {
+        "columns",
+        "file_id",
+        "has_more",
+        "mode",
+        "page",
+        "page_size",
+        "rows",
+        "sample_size",
+    }
+    preview_schema["properties"] = {
+        key: value for key, value in preview_schema.get("properties", {}).items() if key in allowed_fields
+    }
+
+    dataset_paths = [f"{API_PREFIX}/dataset/list", "/api/dataset/list"]
+    for path, operation_id in zip(dataset_paths, [
+        "list_datasets_api_v1_dataset_list_get",
+        "list_datasets_api_dataset_list_get",
+    ]):
+        dataset_list = schema.get("paths", {}).get(path)
+        if dataset_list and "get" in dataset_list:
+            get_spec = dataset_list["get"]
+            get_spec["summary"] = "List Datasets"
+            get_spec["operationId"] = operation_id
+            params = get_spec.get("parameters", [])
+            get_spec["parameters"] = [param for param in params if param.get("name") == "order_by"]
+    return schema
+
+
+app.openapi = _custom_openapi  # type: ignore[assignment]
 FILE_REGISTRY = get_file_registry()
 _safe_name = safe_filename
 

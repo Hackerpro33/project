@@ -449,6 +449,17 @@ class RefreshFailureReport(BaseModel):
 
 def _ensure_dates(item: Dict[str, Any]) -> Dict[str, Any]:
     result = dict(item)
+    created_raw = result.get("created_at")
+    if created_raw is None:
+        created_at = int(time.time())
+    else:
+        created_at = int(created_raw)
+
+    updated_raw = result.get("updated_at")
+    if updated_raw is None:
+        updated_at = created_at
+    else:
+        updated_at = int(updated_raw)
 
     raw_created = result.get("created_at")
     if raw_created is None:
@@ -483,22 +494,63 @@ def _normalize_tags(tags: Iterable[str]) -> List[str]:
     return [str(tag) for tag in tags]
 
 
-def _sort_items(items: List[Dict[str, Any]], order_by: Optional[str]) -> List[Dict[str, Any]]:
-    field = (order_by or "-created_at")
-    reverse = field.startswith("-")
-    normalized_field = field.lstrip("-")
-    if normalized_field not in _ORDERABLE_FIELDS:
-        normalized_field = "created_at"
-        reverse = True
+def list_datasets(
+    order_by: Optional[str] = "-created_at",
+    *,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    search: Optional[str] = None,
+    tags: Optional[Iterable[str]] = None,
+) -> Dict[str, Any]:
+    page = max(int(page or 1), 1)
+    page_size = max(1, min(int(page_size or DEFAULT_PAGE_SIZE), 100))
+    search_value = (search or "").strip()
+    tag_values = list(tags or [])
 
-    def _sort_key(item: Dict[str, Any]) -> Any:
-        value = item.get(normalized_field)
-        if isinstance(value, (int, float)):
-            return value
-        return str(value or "")
+    items = [_ensure_summary(_ensure_dates(item)) for item in _load_all()]
+    available_tags = sorted({tag for item in items for tag in item.get("tags", []) if tag})
 
-    return sorted(items, key=_sort_key, reverse=reverse)
+    filtered = items
+    if search_value:
+        query = search_value.lower()
 
+        def _matches(item: Dict[str, Any]) -> bool:
+            haystacks = [
+                (item.get("name") or "").lower(),
+                (item.get("description") or "").lower(),
+            ]
+            haystacks.extend((tag or "").lower() for tag in item.get("tags", []))
+            for column in item.get("columns", []) or []:
+                haystacks.append((column.get("name") or "").lower())
+            return any(query in hay for hay in haystacks if hay)
+
+        filtered = [item for item in filtered if _matches(item)]
+
+    tag_filter = _normalise_tags(tag_values)
+    if tag_filter:
+
+        def _has_tags(item: Dict[str, Any]) -> bool:
+            item_tags = _normalise_tags(item.get("tags", []))
+            return tag_filter.issubset(item_tags)
+
+        filtered = [item for item in filtered if _has_tags(item)]
+
+    if order_by:
+        reverse = order_by.startswith("-")
+        field = order_by.lstrip("-")
+        filtered.sort(
+            key=lambda payload: (
+                _sort_value_for_field(payload.get(field), reverse=reverse),
+                payload.get("name", ""),
+            ),
+            reverse=reverse,
+        )
+
+    total = len(filtered)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paginated = filtered[start:end]
+    total_pages = ceil(total / page_size) if total else 0
 
 def _prepare_listing(
     *,
@@ -581,6 +633,8 @@ def _prepare_listing(
         "total_pages": total_pages,
         "has_next": page < total_pages,
         "has_previous": page > 1,
+        "available_filters": {"tags": available_tags},
+    }
         "available_filters": {
             "tags": available_tags,
             "types": available_types,
@@ -633,8 +687,28 @@ def list_datasets(
     return payload
 
 
-@router.get("/list")
+@router.get("/list", response_model=None)
 def list_datasets_endpoint(
+    order_by: Optional[str] = "-created_at",
+    page: int = Query(1, ge=1, description="Номер страницы"),
+    page_size: int = Query(
+        DEFAULT_PAGE_SIZE,
+        ge=1,
+        le=100,
+        description="Количество элементов на странице",
+    ),
+    search: Optional[str] = Query(None, description="Поисковый запрос по названиям, описанию и тегам"),
+    tags: Optional[List[str]] = Query(None, description="Фильтр по тегам"),
+    request: Request = None,  # type: ignore[assignment]
+    response: Response = None,  # type: ignore[assignment]
+) -> Any:
+    payload = list_datasets(
+        order_by,
+        page=page,
+        page_size=page_size,
+        search=search,
+        tags=tags,
+    )
     order_by: Optional[str] = Query("-created_at", description="Поле сортировки"),
     page: int = Query(1, ge=1, description="Номер страницы"),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=100, description="Количество элементов на странице"),
@@ -664,6 +738,8 @@ def list_datasets_endpoint(
             "page": page,
             "page_size": page_size,
             "search": search,
+            "tags": sorted(_normalise_tags(tags or [])),
+            "payload": payload,
             "tags": tags,
             "types": types,
             "owners": owners,
@@ -680,6 +756,17 @@ def list_datasets_endpoint(
             if cache_control:
                 headers["Cache-Control"] = cache_control
             return Response(status_code=304, headers=headers)
+
+    compatibility_plain = (
+        page == 1
+        and page_size == DEFAULT_PAGE_SIZE
+        and not search
+        and not (tags or [])
+    )
+
+    if compatibility_plain:
+        return payload["items"]
+
 
     if (
         page == 1
@@ -891,6 +978,7 @@ def _resolve_param(value):
     if isinstance(value, params.Param):
         return value.default
     return value
+
 
 
 def _prepare_dataset(dataset: Dict[str, Any]) -> Dict[str, Any]:
@@ -1202,6 +1290,8 @@ def _evaluate_metric(metric: str, series: Sequence[MetricPoint], sensitivity: fl
         "recommendations": recommendations,
         "series": [point.model_dump() for point in series],
     }
+
+
 
 
 @router.get("/refresh/schedules")

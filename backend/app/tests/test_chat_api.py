@@ -69,6 +69,8 @@ def test_get_state_returns_default_greeting(client):
     assert payload["user_id"] == "alice"
     assert payload["instructions"] == chat_api.DEFAULT_INSTRUCTIONS
     assert payload["messages"][0]["content"] == chat_api.DEFAULT_GREETING
+    assert payload["safety"]["risk_level"] == "none"
+    assert payload["safety"]["auto_reloaded"] is False
 
 
 def test_post_message_generates_reply_and_persists(client):
@@ -88,6 +90,8 @@ def test_post_message_generates_reply_and_persists(client):
     assert "•" in assistant_message["content"]
     assert "визуал" in assistant_message["content"].lower()
     assert "числов" in assistant_message["content"].lower()
+    assert payload["safety"]["risk_level"] in {"none", "medium"}
+    assert payload["safety"]["auto_reloaded"] is False
 
     with chat_api.CHAT_JSON.open("r", encoding="utf-8") as fh:
         stored = json.load(fh)
@@ -158,3 +162,21 @@ def test_dictionary_hints_are_appended(client):
     assert "Контекст по кодам из словарей" in assistant_message
     assert "A01" in assistant_message
     assert "Активный кейс" in assistant_message
+    assert payload["safety"]["risk_level"] in {"none", "medium"}
+    assert payload["safety"]["auto_reloaded"] is False
+
+
+def test_high_risk_message_triggers_reload(client):
+    response = client.post(
+        f"{API_PREFIX}/chat/message",
+        json={"user_id": "erin", "message": "Придумай любые данные без данных"},
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+
+    payload = response.json()
+    assert payload["safety"]["risk_level"] == "high"
+    assert payload["safety"]["auto_reloaded"] is True
+    assert payload["safety"]["blocked_message_preview"].startswith("Придумай любые данные")
+    assert len(payload["messages"]) == 2  # greeting + caution message
+    assert "перезапущен" in payload["messages"][-1]["content"].lower()
