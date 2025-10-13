@@ -1,10 +1,15 @@
 import Layout from './Layout.jsx'
-import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom'
 import { PAGES, getCurrentPage } from './pageRegistry'
+import React from 'react';
+import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
+
+import Layout from './Layout.jsx';
+import { PAGES, getCurrentPage } from './pageRegistry';
 
 function PagesContent() {
-  const location = useLocation()
-  const currentPage = getCurrentPage(location.pathname)
+  const location = useLocation();
+  const currentPage = getCurrentPage(location.pathname);
 
   return (
     <Layout currentPageName={currentPage}>
@@ -16,6 +21,7 @@ function PagesContent() {
       </Routes>
     </Layout>
   )
+  );
 }
 
 export default function Pages() {
@@ -23,5 +29,5 @@ export default function Pages() {
     <Router>
       <PagesContent />
     </Router>
-  )
+  );
 }

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   detectFileIcon,
   generateCSV,
+  generateJSON,
+  generatePlainText,
   sanitizeCSVValue,
   getExportContentType,
   __TEST_ONLY__,
@@ -91,6 +93,61 @@ describe("generateCSV", () => {
   it("skips columns without names", () => {
     const csv = generateCSV([{ name: null }, { name: "value" }], [{ value: "ok" }]);
     expect(csv).toBe("value\nok");
+  });
+});
+
+describe("generateJSON", () => {
+  const columns = [
+    { name: "city" },
+    { name: "population" },
+  ];
+
+  it("returns empty array when there is no data", () => {
+    expect(generateJSON(columns, null)).toBe("[]");
+    expect(generateJSON(columns, [])).toBe("[]");
+  });
+
+  it("serializes only known columns", () => {
+    const json = generateJSON(columns, [
+      { city: "Paris", population: 2148327, note: "Capital" },
+      { city: "Berlin", population: 3769495 },
+    ]);
+
+    expect(json).toBe(
+      JSON.stringify(
+        [
+          { city: "Paris", population: 2148327 },
+          { city: "Berlin", population: 3769495 },
+        ],
+        null,
+        2,
+      ),
+    );
+  });
+});
+
+describe("generatePlainText", () => {
+  const columns = [
+    { name: "city" },
+    { name: "population" },
+  ];
+
+  it("returns header for empty datasets", () => {
+    expect(generatePlainText(columns, [])).toBe("city | population");
+  });
+
+  it("aligns rows using column widths", () => {
+    const text = generatePlainText(columns, [
+      { city: "Paris", population: 2148327 },
+      { city: "Berlin", population: 3769495 },
+    ]);
+
+    expect(text.split("\n")).toEqual([
+      "city   | population",
+      "------ | ----------",
+      "Paris  | 2148327",
+      "Berlin | 3769495",
+    ]);
   });
 });
 

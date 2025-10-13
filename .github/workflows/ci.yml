@@ -5,6 +5,9 @@ on:
     branches: ["main", "master", "work"]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -86,3 +89,66 @@ jobs:
           pip install pre-commit
       - name: Run pre-commit
         run: pre-commit run --all-files
+
+  secret-scan:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          version: v8.18.2
+          args: detect --source . --redact
+      - name: TruffleHog
+        uses: trufflesecurity/trufflehog@v3
+        with:
+          scan: git
+          extra_args: >-
+            --no-update
+            --fail
+            --json
+  coverage-badge:
+    name: Publish coverage badge
+    runs-on: ubuntu-latest
+    needs:
+      - backend
+      - frontend
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+      pages: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: true
+      - name: Download backend coverage
+        uses: actions/download-artifact@v4
+        with:
+          pattern: backend-coverage-*
+          path: coverage-artifacts/backend
+          merge-multiple: true
+      - name: Download frontend coverage
+        uses: actions/download-artifact@v4
+        with:
+          pattern: frontend-coverage-*
+          path: coverage-artifacts/frontend
+          merge-multiple: true
+      - name: Build badge assets
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python .github/scripts/build_coverage_badge.py
+      - name: Publish badge to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: coverage
+          keep_files: true
+      - name: Commit README badge link
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: sync coverage badge URL"
+          file_pattern: README.md

@@ -103,6 +103,13 @@ def test_dataset_preview_endpoint(client, tmp_path):
 
     response = client.get(
         "/api/upload/preview-file/preview",
+API_PREFIX = "/api/v1"
+
+
+def test_extract_async_requires_queue_enabled(client):
+    response = client.post(
+        f"{API_PREFIX}/extract/async",
+        json={"file_url": "job-unknown"},
         headers={"host": "localhost"},
         params={"page_size": 2},
     )
@@ -127,6 +134,8 @@ def test_dataset_preview_tsv_sampling(client, tmp_path):
     tsv_path = tmp_path / "preview.tsv"
     tsv_path.write_text("col_a\tcol_b\n1\t2\n3\t4\n5\t6\n", encoding="utf-8")
     register_uploaded_file("preview-tsv", tsv_path)
+def test_task_status_requires_queue_enabled(client):
+    response = client.get(f"{API_PREFIX}/tasks/rq:job:123", headers={"host": "localhost"})
 
     response = client.get(
         "/api/upload/preview-tsv/preview",

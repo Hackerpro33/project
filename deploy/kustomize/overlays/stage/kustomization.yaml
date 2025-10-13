@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: insight-stage
+resources:
+  - ../../base
+patchesStrategicMerge:
+  - backend-patch.yaml
+  - frontend-patch.yaml
+  - configmap-patch.yaml

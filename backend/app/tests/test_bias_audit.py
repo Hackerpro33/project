@@ -1,12 +1,21 @@
 from pathlib import Path
+from typing import Any, Dict
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.audit_api import AUDIT_HISTORY_PATH, AUDIT_SCHEDULES_PATH
+from app.audit_api import (
+    AUDIT_HISTORY_PATH,
+    AUDIT_SCHEDULES_PATH,
+    BiasAuditMetric,
+    BiasAuditResult,
+    GroupStats,
+    _trigger_bias_alert,
+)
 from app.main import app
 
 DEFAULT_HEADERS = {"host": "localhost"}
+API_PREFIX = "/api/v1"
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +52,7 @@ def test_bias_audit_run_and_schedule(tmp_path):
         "notes": "Automated regression check",
     }
 
-    schedule_response = client.post("/api/audit/bias/schedules", json=schedule_payload, headers=DEFAULT_HEADERS)
+    schedule_response = client.post(f"{API_PREFIX}/audit/bias/schedules", json=schedule_payload, headers=DEFAULT_HEADERS)
     assert schedule_response.status_code == 200
     schedule_data = schedule_response.json()["schedule"]
     assert schedule_data["next_run_due"] is not None
@@ -60,7 +69,7 @@ def test_bias_audit_run_and_schedule(tmp_path):
         "schedule_frequency": "monthly",
     }
 
-    audit_response = client.post("/api/audit/bias/run", json=audit_payload, headers=DEFAULT_HEADERS)
+    audit_response = client.post(f"{API_PREFIX}/audit/bias/run", json=audit_payload, headers=DEFAULT_HEADERS)
     assert audit_response.status_code == 200
     audit_result = audit_response.json()["audit"]
     assert audit_result["flagged"] is True
@@ -81,27 +90,27 @@ def test_bias_audit_run_and_schedule(tmp_path):
     assert thresholds["ratio"]["disparate_impact"]["min"] == pytest.approx(0.8)
     assert thresholds["ratio"]["disparate_impact"]["max"] == pytest.approx(1.25)
 
-    history_response = client.get("/api/audit/bias/history", headers=DEFAULT_HEADERS)
+    history_response = client.get(f"{API_PREFIX}/audit/bias/history", headers=DEFAULT_HEADERS)
     assert history_response.status_code == 200
     history_payload = history_response.json()
     assert history_payload["count"] == 1
     assert history_payload["items"][0]["flagged"] is True
 
-    schedules_response = client.get("/api/audit/bias/schedules", headers=DEFAULT_HEADERS)
+    schedules_response = client.get(f"{API_PREFIX}/audit/bias/schedules", headers=DEFAULT_HEADERS)
     assert schedules_response.status_code == 200
     schedules_payload = schedules_response.json()
     assert schedules_payload["count"] == 1
     updated_schedule = schedules_payload["items"][0]
     assert updated_schedule["last_run_at"] is not None
 
-    delete_response = client.delete(f"/api/audit/bias/schedules/{schedule_data['id']}", headers=DEFAULT_HEADERS)
+    delete_response = client.delete(f"{API_PREFIX}/audit/bias/schedules/{schedule_data['id']}", headers=DEFAULT_HEADERS)
     assert delete_response.status_code == 200
     assert delete_response.json()["status"] == "deleted"
 
-    schedules_empty = client.get("/api/audit/bias/schedules", headers=DEFAULT_HEADERS).json()
+    schedules_empty = client.get(f"{API_PREFIX}/audit/bias/schedules", headers=DEFAULT_HEADERS).json()
     assert schedules_empty["count"] == 0
 
-    history_response_after = client.get("/api/audit/bias/history", headers=DEFAULT_HEADERS).json()
+    history_response_after = client.get(f"{API_PREFIX}/audit/bias/history", headers=DEFAULT_HEADERS).json()
     assert history_response_after["count"] == 1
 
 
@@ -128,7 +137,7 @@ def test_bias_audit_threshold_overrides(tmp_path):
         },
     }
 
-    audit_response = client.post("/api/audit/bias/run", json=audit_payload, headers=DEFAULT_HEADERS)
+    audit_response = client.post(f"{API_PREFIX}/audit/bias/run", json=audit_payload, headers=DEFAULT_HEADERS)
     assert audit_response.status_code == 200
     audit_result = audit_response.json()["audit"]
 
@@ -147,3 +156,74 @@ def test_bias_audit_threshold_overrides(tmp_path):
     assert metrics["average_odds_difference"]["threshold"] == "|difference| ≤ 0.300"
 
     assert not AUDIT_HISTORY_PATH.exists()
+
+
+def test_trigger_bias_alert(monkeypatch):
+    captured: Dict[str, Any] = {}
+
+    def fake_dispatch(event_type: str, payload: Dict[str, Any]):
+        captured["event"] = event_type
+        captured["payload"] = payload
+        return {"status": "sent"}
+
+    monkeypatch.setattr("app.audit_api.dispatch_webhook", fake_dispatch)
+
+    result = BiasAuditResult(
+        id="audit-1",
+        dataset_id="dataset-1",
+        file_url="/tmp/data.csv",
+        schedule_id="schedule-1",
+        created_at="2024-01-01T00:00:00Z",
+        parameters={},
+        sample_size=10,
+        dropped_rows=0,
+        metrics=[
+            BiasAuditMetric(
+                name="statistical_parity_difference",
+                value=0.2,
+                threshold="<=0.1",
+                passed=False,
+                interpretation="Факт превышения порога",
+            ),
+            BiasAuditMetric(
+                name="accuracy",
+                value=0.95,
+                threshold=None,
+                passed=True,
+                interpretation="",
+            ),
+        ],
+        group_metrics={
+            "privileged": GroupStats(values=[], count=5),
+            "unprivileged": GroupStats(values=[], count=5),
+        },
+        flagged=True,
+        summary="Метрики отклонены",
+        recommendations=["Провести дополнительную проверку"],
+        next_run_due=None,
+        thresholds={"difference": {"statistical_parity_difference": 0.1}},
+    )
+
+    _trigger_bias_alert(result)
+    assert captured["event"] == "bias_audit.threshold_breached"
+    assert captured["payload"]["audit_id"] == "audit-1"
+    assert captured["payload"]["flagged"] is True
+    assert captured["payload"]["breaches"][0]["name"] == "statistical_parity_difference"
+
+    captured.clear()
+    safe_result = result.model_copy(
+        update={
+            "flagged": False,
+            "metrics": [
+                BiasAuditMetric(
+                    name="accuracy",
+                    value=0.95,
+                    threshold=None,
+                    passed=True,
+                    interpretation="",
+                )
+            ],
+        }
+    )
+    _trigger_bias_alert(safe_result)
+    assert captured == {}

@@ -230,3 +230,134 @@ class ErrorResponse(BaseModel):
     """Generic error response schema."""
 
     detail: str = Field(..., description="Human readable error description", examples=["File too large"])
+
+
+class ResumableUploadInitRequest(BaseModel):
+    """Request body for initiating or resuming a chunked upload."""
+
+    filename: str = Field(..., description="Original file name supplied by the client")
+    total_size: int = Field(..., gt=0, description="Total size of the file in bytes")
+    chunk_size: int = Field(..., gt=0, description="Preferred chunk size in bytes")
+    checksum: Optional[str] = Field(
+        None,
+        description="Optional SHA-256 checksum of the full file for integrity validation",
+        examples=["9c56cc51f1f3"],
+    )
+    upload_id: Optional[str] = Field(
+        None,
+        description="Existing upload identifier to resume if available",
+        examples=["upload-123"],
+    )
+
+
+class ResumableUploadInitResponse(BaseModel):
+    """Server acknowledgement for starting/resuming a chunked upload."""
+
+    upload_id: str = Field(..., description="Identifier that subsequent chunk requests must reference")
+    uploaded_chunks: List[int] = Field(
+        default_factory=list,
+        description="Indices of chunks that have already been persisted on the server",
+    )
+    chunk_size: int = Field(..., description="Chunk size that the server expects")
+    total_chunks: int = Field(..., description="Total number of chunks required to upload the file")
+    total_size: int = Field(..., description="Total size of the file in bytes")
+
+
+class ResumableChunkAck(BaseModel):
+    """Acknowledgement returned when an individual chunk is accepted."""
+
+    status: Literal["accepted"] = Field("accepted", description="Chunk persistence status")
+    chunk_index: int = Field(..., description="Index of the chunk that was stored")
+    stored_checksum: str = Field(..., description="SHA-256 checksum calculated by the server")
+
+
+class UrlImportRequest(BaseModel):
+    """Request payload for importing a dataset from a remote object store or link."""
+
+    url: str = Field(..., description="Direct or pre-signed URL pointing to the dataset")
+    source_type: Literal["s3", "minio", "gdrive", "dropbox", "http", "https"] = Field(
+        "http",
+        description="Type of the remote source to improve logging and error messages",
+    )
+    filename: Optional[str] = Field(
+        None,
+        description="Optional preferred filename that will be used when storing the dataset",
+    )
+    headers: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Optional custom headers that should be passed to the remote server",
+    )
+
+
+class DatasetProfileColumn(BaseModel):
+    """Describes quality metrics that form the dataset passport for a single column."""
+
+    name: str = Field(..., description="Column name")
+    dtype: str = Field(..., description="Detected pandas dtype for the column")
+    non_nulls: int = Field(..., description="Number of non-null values")
+    missing: int = Field(..., description="Number of missing values")
+    missing_percent: float = Field(..., description="Share of missing values in percent")
+    cardinality: int = Field(..., description="Number of unique values")
+    sample_values: List[Any] = Field(default_factory=list, description="Sample of observed values")
+    stats: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional numeric statistics such as min/max/mean when available",
+    )
+
+
+class DatasetProfileResponse(BaseModel):
+    """Dataset passport that summarises structure, completeness and uniqueness."""
+
+    row_count: int = Field(..., description="Number of rows in the dataset")
+    column_count: int = Field(..., description="Number of columns in the dataset")
+    columns: List[DatasetProfileColumn] = Field(..., description="Per-column quality metrics")
+    warnings: List[str] = Field(default_factory=list, description="Optional textual warnings")
+
+
+class DatasetProfileRequest(BaseModel):
+    """Request payload for building a dataset passport."""
+
+    file_url: str = Field(..., description="Identifier of the uploaded dataset to analyse")
+
+
+class ValidationRule(BaseModel):
+    """Schema and constraint definition used for dataset validation."""
+
+    column: str = Field(..., description="Target column for the validation rule")
+    required: bool = Field(False, description="Whether the column must not contain null values")
+    data_type: Optional[Literal["string", "number", "integer", "boolean", "date"]] = Field(
+        None,
+        description="Expected logical data type for the column",
+    )
+    min_value: Optional[float] = Field(None, description="Minimum numeric value allowed (inclusive)")
+    max_value: Optional[float] = Field(None, description="Maximum numeric value allowed (inclusive)")
+    regex: Optional[str] = Field(None, description="Regular expression that textual values must satisfy")
+    allowed_values: Optional[List[str]] = Field(
+        default=None,
+        description="Explicit whitelist of accepted values",
+    )
+    unique: bool = Field(False, description="Whether values in the column must be unique")
+
+
+class DatasetValidationRequest(BaseModel):
+    """Request payload for triggering dataset validation."""
+
+    file_url: str = Field(..., description="Identifier of the uploaded dataset to validate")
+    rules: List[ValidationRule] = Field(..., description="Validation rules to apply")
+
+
+class DatasetValidationIssue(BaseModel):
+    """Individual validation issue detected for a dataset."""
+
+    column: str = Field(..., description="Column associated with the issue")
+    row: Optional[int] = Field(None, description="Optional row index where the issue occurred")
+    message: str = Field(..., description="Human readable description of the issue")
+    severity: Literal["error", "warning"] = Field(..., description="Severity of the issue")
+
+
+class DatasetValidationResponse(BaseModel):
+    """Aggregated validation report."""
+
+    status: Literal["passed", "failed"] = Field(..., description="Overall validation outcome")
+    issues: List[DatasetValidationIssue] = Field(default_factory=list, description="List of detected issues")
+    summary: Dict[str, Any] = Field(default_factory=dict, description="Aggregated metrics about the validation run")

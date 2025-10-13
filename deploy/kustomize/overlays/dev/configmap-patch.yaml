@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-env
+  namespace: insight-dev
+data:
+  UNLEASH_ENVIRONMENT: development
+  DATABASE_URL: postgresql+psycopg://insight:insight@postgres:5432/insight
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-env
+  namespace: insight-dev
+data:
+  VITE_API_BASE: http://backend:8000
