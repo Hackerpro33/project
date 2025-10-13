@@ -17,7 +17,7 @@ import {
   RefreshCw, // Added RefreshCw icon for Data Transformation
   MessageSquare,
   ShieldCheck,
-  FileDiff,
+  Users
 } from "lucide-react";
 import {
   Sidebar,
@@ -99,6 +99,12 @@ const navigationItems = [
     url: createPageUrl("Constructor"),
     icon: Component,
     gradient: "from-slate-500 to-slate-600"
+  },
+  {
+    title: "Совместная работа",
+    url: createPageUrl("Collaboration"),
+    icon: Users,
+    gradient: "from-sky-500 to-blue-600"
   },
   {
     title: "Настройки",

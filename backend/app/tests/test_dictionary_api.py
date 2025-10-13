@@ -1,4 +1,5 @@
 import csv
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -7,6 +8,7 @@ from ..utils import dictionaries as dictionary_store
 from ..utils import files as file_utils
 
 HEADERS = {"host": "localhost"}
+API_PREFIX = "/api/v1"
 
 
 @pytest.fixture(autouse=True)
@@ -48,14 +50,14 @@ def test_create_dictionary_from_entries(client):
         ],
     }
 
-    response = client.post("/api/dictionary/create", json=payload, headers=HEADERS)
+    response = client.post(f"{API_PREFIX}/dictionary/create", json=payload, headers=HEADERS)
     assert response.status_code == 200
     data = response.json()
     dictionary = data["dictionary"]
     assert dictionary["name"] == "Статусы"
     assert len(dictionary["entries"]) == 2
 
-    list_response = client.get("/api/dictionary/list", headers=HEADERS)
+    list_response = client.get(f"{API_PREFIX}/dictionary/list", headers=HEADERS)
     assert list_response.status_code == 200
     listed = list_response.json()
     assert len(listed) == 1
@@ -81,7 +83,7 @@ def test_create_dictionary_from_uploaded_file(client, tmp_path):
         "context_columns": ["description"],
     }
 
-    response = client.post("/api/dictionary/create", json=payload, headers=HEADERS)
+    response = client.post(f"{API_PREFIX}/dictionary/create", json=payload, headers=HEADERS)
     assert response.status_code == 200
     dictionary = response.json()["dictionary"]
     assert dictionary["source_file"] == "dict-file"
@@ -137,7 +139,7 @@ def test_search_dictionaries_returns_grouped_matches(client):
     )
 
     response = client.get(
-        "/api/dictionary/search",
+        f"{API_PREFIX}/dictionary/search",
         params={"q": "активный код", "dataset_id": "dataset-1"},
         headers=HEADERS,
     )
@@ -172,7 +174,7 @@ def test_search_dictionaries_respects_limit(client):
     )
 
     response = client.get(
-        "/api/dictionary/search",
+        f"{API_PREFIX}/dictionary/search",
         params={"q": "категория", "limit": 2},
         headers=HEADERS,
     )
