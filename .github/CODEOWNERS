@@ -1,0 +1,9 @@
+# Правила ревью по компонентам Insight Sphere
+# Формат: <pattern> <owner 1> <owner 2>
+
+*                                   @insight-sphere/maintainers
+/backend/app/                       @insight-sphere/backend @insight-sphere/platform-architects
+/frontend/                          @insight-sphere/frontend
+/docs/                              @insight-sphere/tech-writers @insight-sphere/platform-architects
+/.github/workflows/                 @insight-sphere/devops
+/secrets/                           @insight-sphere/security

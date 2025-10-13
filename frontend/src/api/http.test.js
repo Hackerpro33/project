@@ -24,5 +24,11 @@ describe('buildApiUrl', () => {
       'https://backend.local/api/v1/chat/state/user'
     );
   });
+
+  it('drops the /api/v1 suffix when hitting legacy /api routes', () => {
+    expect(buildApiUrl('/api/dataset/list', 'https://backend.local/api/v1')).toBe(
+      'https://backend.local/api/dataset/list'
+    );
+  });
 });
 
