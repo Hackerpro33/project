@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "insight-sphere.frontendFullname" . }}
+  labels:
+    app: {{ include "insight-sphere.frontendFullname" . }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "insight-sphere.frontendFullname" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "insight-sphere.frontendFullname" . }}
+    spec:
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.service.port }}
+          env:
+            {{- range .Values.frontend.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources: {{ toYaml .Values.frontend.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "insight-sphere.frontendFullname" . }}
+  labels:
+    app: {{ include "insight-sphere.frontendFullname" . }}
+spec:
+  selector:
+    app: {{ include "insight-sphere.frontendFullname" . }}
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: http
+  type: {{ .Values.frontend.service.type }}

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import PageContainer from "@/components/layout/PageContainer";
+import { createPageUrl } from "@/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Slider } from "@/components/ui/slider";
 import { getDatasets, getVisualizations } from "@/api/entities";
+import { useFeatureFlag, useFeatureFlagsState } from "@/contexts/FeatureFlagContext.jsx";
 import {
   Activity,
   AlertTriangle,
@@ -136,14 +138,29 @@ function evaluateScenario(dataset, weights) {
 }
 
 export default function AdvancedAnalytics() {
+  const { loading: flagLoading } = useFeatureFlagsState();
+  const isFeatureEnabled = useFeatureFlag("advanced_analytics", false);
   const [datasets, setDatasets] = useState([]);
   const [visualizations, setVisualizations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedDatasetId, setSelectedDatasetId] = useState(null);
   const [scenarioWeights, setScenarioWeights] = useState(SCENARIO_PRESETS[0].weights);
+  const breadcrumbs = useMemo(
+    () => [
+      { title: "Главная", href: createPageUrl("Dashboard") },
+      { title: "Продвинутая аналитика" },
+    ],
+    [],
+  );
 
   useEffect(() => {
+    if (!isFeatureEnabled) {
+      setDatasets([]);
+      setVisualizations([]);
+      return undefined;
+    }
+
     let isMounted = true;
 
     async function loadData() {
@@ -173,7 +190,7 @@ export default function AdvancedAnalytics() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isFeatureEnabled]);
 
   useEffect(() => {
     if (datasets.length > 0 && !selectedDatasetId) {
@@ -274,10 +291,42 @@ export default function AdvancedAnalytics() {
     [selectedDataset, scenarioWeights],
   );
 
+  if (!isFeatureEnabled && !flagLoading) {
+    return (
+      <PageContainer title="Продвинутая аналитика" breadcrumbs={breadcrumbs}>
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Раздел выключен. Включите фичу <code>advanced_analytics</code> в Unleash, чтобы показать виджеты.
+          </AlertDescription>
+        </Alert>
+      </PageContainer>
+    );
+  }
+
+  if (flagLoading || (isLoading && datasets.length === 0)) {
+    return (
+      <PageContainer title="Продвинутая аналитика" breadcrumbs={breadcrumbs}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Загружаем аналитические панели…</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Мы подтягиваем данные наборов и визуализаций, чтобы построить панели мониторинга.
+            </p>
+            <Progress value={flagLoading ? 20 : 70} aria-label="Прогресс загрузки" />
+          </CardContent>
+        </Card>
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer
       title="Продвинутая аналитика"
       description="Виджеты для аудита смещений, работы с графами знаний и сценариев предиктивного патрулирования"
+      breadcrumbs={breadcrumbs}
     >
       <div className="space-y-6">
         {error && (

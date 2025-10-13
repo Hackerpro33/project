@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FileCheck2, X, AlertTriangle } from 'lucide-react';
 
@@ -24,6 +25,15 @@ function buildInitialTags(datasetInfo) {
   return Array.from(baseTags);
 }
 
+const DATASET_TYPE_OPTIONS = [
+  { value: "general", label: "Общий тип" },
+  { value: "operational", label: "Операционные данные" },
+  { value: "geospatial", label: "Геоданные" },
+  { value: "financial", label: "Финансы и бюджет" },
+  { value: "demographic", label: "Демография" },
+  { value: "logs", label: "Логи и события" },
+];
+
 
 export default function DataImportPreview({ datasetInfo, onConfirmImport, onCancel }) {
   const safeInfo = datasetInfo || {};
@@ -33,6 +43,8 @@ export default function DataImportPreview({ datasetInfo, onConfirmImport, onCanc
   const [tags, setTags] = useState(buildInitialTags(safeInfo));
   const [tagInput, setTagInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [datasetType, setDatasetType] = useState(safeInfo.dataset_type || 'general');
+  const [ownersInput, setOwnersInput] = useState(Array.isArray(safeInfo.owners) ? safeInfo.owners.join(', ') : '');
 
   const hasRealData = useMemo(() => {
     const rows = safeInfo.sample_data;
@@ -82,6 +94,11 @@ export default function DataImportPreview({ datasetInfo, onConfirmImport, onCanc
         description,
         columns: selectedColumns,
         tags,
+        dataset_type: datasetType,
+        owners: ownersInput
+          .split(',')
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0),
       });
     } finally {
       setIsSubmitting(false);
@@ -128,6 +145,34 @@ export default function DataImportPreview({ datasetInfo, onConfirmImport, onCanc
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="Кратко опишите содержимое набора данных"
               />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="dataset-type" className="elegant-text">Тип набора данных</Label>
+                <Select value={datasetType} onValueChange={setDatasetType}>
+                  <SelectTrigger id="dataset-type" className="mt-1">
+                    <SelectValue placeholder="Выберите тип" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DATASET_TYPE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="dataset-owners" className="elegant-text">Ответственные команды</Label>
+                <Input
+                  id="dataset-owners"
+                  value={ownersInput}
+                  onChange={(event) => setOwnersInput(event.target.value)}
+                  placeholder="Например: Аналитический отдел, BI-команда"
+                />
+                <p className="mt-1 text-xs text-slate-500">Укажите одну или несколько команд через запятую.</p>
+              </div>
             </div>
 
             <div>

@@ -11,6 +11,22 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Plus,
   Grip,
   X,
@@ -19,12 +35,15 @@ import {
   Layout,
   Search,
   RotateCcw,
+  Filter,
+  ArrowUpRight,
 } from "lucide-react";
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
 const STORAGE_KEY = 'dashboard-builder-state';
 
 const NONE_DATASET_VALUE = '__none__';
+const ANY_DATASET_VALUE = '__any__';
 
 const WIDGET_DRAG_TYPE = 'application/x-dashboard-widget';
 
@@ -49,6 +68,15 @@ const chartVariants = [
   { value: 'area', label: 'Область значений' },
   { value: 'scatter', label: 'Точечная диаграмма' },
   { value: 'pie', label: 'Круговая диаграмма' },
+];
+
+const filterOperators = [
+  { value: 'equals', label: 'Равно' },
+  { value: 'not_equals', label: 'Не равно' },
+  { value: 'contains', label: 'Содержит' },
+  { value: 'starts_with', label: 'Начинается с' },
+  { value: 'gt', label: 'Больше' },
+  { value: 'lt', label: 'Меньше' },
 ];
 
 const mapVariants = [
@@ -137,6 +165,9 @@ export default function DashboardBuilder({
   const [selectedWidgets, setSelectedWidgets] = useState([]);
   const [librarySearch, setLibrarySearch] = useState('');
   const [isCanvasDragOver, setIsCanvasDragOver] = useState(false);
+  const [globalFilters, setGlobalFilters] = useState([]);
+  const [autoSaveReady, setAutoSaveReady] = useState(false);
+  const [detailContext, setDetailContext] = useState(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -145,19 +176,22 @@ export default function DashboardBuilder({
 
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (!stored) {
-        return;
-      }
-
-      const parsed = JSON.parse(stored);
-      if (parsed?.name) {
-        setDashboardName(parsed.name);
-      }
-      if (Array.isArray(parsed?.widgets)) {
-        setSelectedWidgets(parsed.widgets);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.name) {
+          setDashboardName(parsed.name);
+        }
+        if (Array.isArray(parsed?.widgets)) {
+          setSelectedWidgets(parsed.widgets);
+        }
+        if (Array.isArray(parsed?.filters)) {
+          setGlobalFilters(parsed.filters);
+        }
       }
     } catch (error) {
       console.warn('Не удалось восстановить сохранённый дашборд из localStorage', error);
+    } finally {
+      setAutoSaveReady(true);
     }
   }, []);
 
@@ -209,6 +243,24 @@ export default function DashboardBuilder({
     });
     return map;
   }, [availableWidgets]);
+
+  useEffect(() => {
+    if (!autoSaveReady || typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          name: dashboardName,
+          widgets: selectedWidgets,
+          filters: globalFilters,
+        })
+      );
+    } catch (error) {
+      console.warn('Не удалось автоматически сохранить дашборд', error);
+    }
+  }, [autoSaveReady, dashboardName, selectedWidgets, globalFilters]);
 
   const isWidgetDragEvent = (event) => {
     const types = event?.dataTransfer?.types;
@@ -343,6 +395,272 @@ export default function DashboardBuilder({
     updateWidget(widget.id, { selectedColumns: nextColumns });
   };
 
+  const globalColumnOptions = useMemo(() => {
+    const columnsMap = new Map();
+    datasets.forEach((dataset) => {
+      if (Array.isArray(dataset?.columns)) {
+        dataset.columns.forEach((column) => {
+          if (column?.name && !columnsMap.has(column.name)) {
+            columnsMap.set(column.name, column);
+          }
+        });
+      }
+    });
+    return Array.from(columnsMap.values());
+  }, [datasets]);
+
+  const operatorLabelMap = useMemo(() => {
+    const map = new Map();
+    filterOperators.forEach((operator) => {
+      map.set(operator.value, operator.label.toLowerCase());
+    });
+    return map;
+  }, []);
+
+  const addGlobalFilter = () => {
+    setGlobalFilters((prev) => [
+      ...prev,
+      {
+        id: `filter-${Date.now()}`,
+        datasetId: ANY_DATASET_VALUE,
+        column: '',
+        operator: 'equals',
+        value: '',
+      },
+    ]);
+  };
+
+  const updateGlobalFilter = (filterId, updates) => {
+    setGlobalFilters((prev) =>
+      prev.map((filter) =>
+        filter.id === filterId
+          ? {
+              ...filter,
+              ...updates,
+            }
+          : filter
+      )
+    );
+  };
+
+  const removeGlobalFilter = (filterId) => {
+    setGlobalFilters((prev) => prev.filter((filter) => filter.id !== filterId));
+  };
+
+  const getColumnsForFilter = (datasetId) => {
+    if (datasetId === ANY_DATASET_VALUE) {
+      return globalColumnOptions;
+    }
+    const dataset = datasetMap.get(datasetId);
+    if (dataset && Array.isArray(dataset.columns)) {
+      return dataset.columns;
+    }
+    return [];
+  };
+
+  const evaluateFilter = (row, filter) => {
+    if (!filter?.column) {
+      return true;
+    }
+    const cellValue = row?.[filter.column];
+    if (cellValue === undefined || cellValue === null) {
+      return false;
+    }
+
+    const rawTarget = filter.value ?? '';
+    const stringValue = String(cellValue).toLowerCase();
+    const stringTarget = String(rawTarget).toLowerCase();
+    const numericValue = Number(cellValue);
+    const numericTarget = Number(rawTarget);
+
+    switch (filter.operator) {
+      case 'equals':
+        return stringValue === stringTarget;
+      case 'not_equals':
+        return stringValue !== stringTarget;
+      case 'contains':
+        return stringValue.includes(stringTarget);
+      case 'starts_with':
+        return stringValue.startsWith(stringTarget);
+      case 'gt':
+        return !Number.isNaN(numericValue) && !Number.isNaN(numericTarget)
+          ? numericValue > numericTarget
+          : false;
+      case 'lt':
+        return !Number.isNaN(numericValue) && !Number.isNaN(numericTarget)
+          ? numericValue < numericTarget
+          : false;
+      default:
+        return true;
+    }
+  };
+
+  const applyGlobalFiltersToRows = (rows, datasetId) => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return Array.isArray(rows) ? rows : [];
+    }
+    const relevantFilters = globalFilters.filter(
+      (filter) =>
+        filter.datasetId === ANY_DATASET_VALUE || filter.datasetId === datasetId
+    );
+    if (relevantFilters.length === 0) {
+      return rows;
+    }
+    return rows.filter((row) =>
+      relevantFilters.every((filter) => evaluateFilter(row, filter))
+    );
+  };
+
+  const getWidgetDatasetId = (widget) => {
+    if (widget.datasetId) {
+      return widget.datasetId;
+    }
+    if (widget.dataset_id) {
+      return widget.dataset_id;
+    }
+    if (widget.datasetID) {
+      return widget.datasetID;
+    }
+    return undefined;
+  };
+
+  const getWidgetDataset = (widget) => {
+    const datasetId = getWidgetDatasetId(widget);
+    if (!datasetId) {
+      return undefined;
+    }
+    return datasetMap.get(datasetId);
+  };
+
+  const getFiltersForWidget = (widget) => {
+    const datasetId = getWidgetDatasetId(widget);
+    if (!datasetId) {
+      return [];
+    }
+    return globalFilters.filter(
+      (filter) =>
+        filter.datasetId === ANY_DATASET_VALUE || filter.datasetId === datasetId
+    );
+  };
+
+  const getOperatorLabel = (operatorValue) => {
+    return operatorLabelMap.get(operatorValue) || operatorValue;
+  };
+
+  const formatCellValue = (value) => {
+    if (value && typeof value === 'object' && 'before' in value && 'after' in value) {
+      return (
+        <div className="space-y-1">
+          <div className="text-xs text-red-600 line-through">
+            {value.before === undefined || value.before === null
+              ? '—'
+              : String(value.before)}
+          </div>
+          <div className="text-xs text-emerald-600 font-semibold">
+            {value.after === undefined || value.after === null
+              ? '—'
+              : String(value.after)}
+          </div>
+        </div>
+      );
+    }
+    if (value === undefined || value === null) {
+      return '—';
+    }
+    if (typeof value === 'number') {
+      return value.toLocaleString('ru-RU');
+    }
+    return String(value);
+  };
+
+  const openDetailView = (widget) => {
+    const dataset = getWidgetDataset(widget);
+    if (!dataset) {
+      toast({
+        title: 'Нет источника данных',
+        description: 'Добавьте набор данных к виджету, чтобы открыть детальный просмотр.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const sourceRows = Array.isArray(dataset.sample_data)
+      ? dataset.sample_data
+      : [];
+    const filteredRows = applyGlobalFiltersToRows(sourceRows, dataset.id);
+    const limitedRows = filteredRows.slice(0, 50);
+    const filters = getFiltersForWidget(widget);
+    const columnCandidates = Array.isArray(dataset.columns) && dataset.columns.length > 0
+      ? dataset.columns
+      : Object.keys(limitedRows[0] || {}).map((name) => ({ name, type: typeof limitedRows[0]?.[name] }));
+    const normalizedColumns = columnCandidates.length > 0
+      ? columnCandidates
+      : [{ name: 'значение', type: 'string' }];
+
+    setDetailContext({
+      widget,
+      dataset,
+      filters,
+      rows: limitedRows,
+      totalRows: filteredRows.length,
+      availableRows: sourceRows.length,
+      columns: normalizedColumns,
+      formatCellValue,
+    });
+  };
+
+  const renderWidgetFilters = (widget) => {
+    const filters = getFiltersForWidget(widget);
+    if (filters.length === 0) {
+      return null;
+    }
+    return (
+      <div className="flex flex-wrap gap-2 mb-4">
+        {filters.map((filter) => {
+          const datasetName =
+            filter.datasetId === ANY_DATASET_VALUE
+              ? 'Все наборы'
+              : datasetMap.get(filter.datasetId)?.name || 'Набор данных';
+          return (
+            <Badge
+              key={filter.id}
+              variant="outline"
+              className="text-[11px] uppercase tracking-wide"
+            >
+              {datasetName}: {filter.column || '—'} {getOperatorLabel(filter.operator)}{' '}
+              {filter.value || '—'}
+            </Badge>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderWidgetFooter = (widget) => {
+    const dataset = getWidgetDataset(widget);
+    if (!dataset) {
+      return null;
+    }
+    const baseRows = Array.isArray(dataset.sample_data) ? dataset.sample_data : [];
+    const filteredRows = applyGlobalFiltersToRows(baseRows, dataset.id);
+    const total = dataset.row_count ?? baseRows.length;
+    return (
+      <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-slate-500">
+        <div>
+          {filteredRows.length} строк после фильтров из {total || filteredRows.length}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2"
+          onClick={() => openDetailView(widget)}
+        >
+          <ArrowUpRight className="w-3 h-3" />
+          Детальный просмотр
+        </Button>
+      </div>
+    );
+  };
+
   const handleDragEnd = (result) => {
     if (!result.destination) return;
 
@@ -397,7 +715,7 @@ export default function DashboardBuilder({
       try {
         window.localStorage.setItem(
           STORAGE_KEY,
-          JSON.stringify({ name: trimmedName, widgets: selectedWidgets })
+          JSON.stringify({ name: trimmedName, widgets: selectedWidgets, filters: globalFilters })
         );
       } catch (error) {
         console.warn('Не удалось сохранить дашборд в localStorage', error);
@@ -410,7 +728,7 @@ export default function DashboardBuilder({
       description: 'Конфигурация сохранена локально. Можно вернуться к редактированию в любое время.',
     });
 
-    onSave?.({ name: trimmedName, widgets: selectedWidgets });
+    onSave?.({ name: trimmedName, widgets: selectedWidgets, filters: globalFilters });
   };
 
   const handlePreview = () => {
@@ -422,6 +740,8 @@ export default function DashboardBuilder({
 
   const handleClear = () => {
     setSelectedWidgets([]);
+    setGlobalFilters([]);
+    setDetailContext(null);
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(STORAGE_KEY);
     }
@@ -964,6 +1284,7 @@ export default function DashboardBuilder({
   };
 
   const isCanvasEmpty = selectedWidgets.length === 0;
+  const filterCount = globalFilters.length;
 
   return (
     <div className="grid lg:grid-cols-4 gap-8">
@@ -1109,6 +1430,147 @@ export default function DashboardBuilder({
           </CardContent>
         </Card>
 
+        <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-xl">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-slate-900 heading-text">
+              <Filter className="w-5 h-5 text-emerald-500" />
+              Глобальные фильтры
+              <Badge variant="secondary" className="ml-2 bg-emerald-50 text-emerald-700">
+                {filterCount}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {filterCount === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 p-4 text-sm text-slate-500">
+                Добавьте фильтр, чтобы распространить его на все виджеты. Настройки применяются к связанным наборам данных и учитываются при drill-through.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {globalFilters.map((filter) => {
+                  const columns = getColumnsForFilter(filter.datasetId || ANY_DATASET_VALUE);
+                  return (
+                    <div
+                      key={filter.id}
+                      className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_160px_minmax(0,1fr)_auto] items-end"
+                    >
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Набор данных
+                        </Label>
+                        <Select
+                          value={filter.datasetId || ANY_DATASET_VALUE}
+                          onValueChange={(value) =>
+                            updateGlobalFilter(filter.id, {
+                              datasetId: value,
+                              column: '',
+                              value: '',
+                            })
+                          }
+                        >
+                          <SelectTrigger className="text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={ANY_DATASET_VALUE}>Все наборы</SelectItem>
+                            {datasets.map((dataset) => (
+                              <SelectItem key={dataset.id} value={dataset.id}>
+                                {dataset.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Столбец
+                        </Label>
+                        <Select
+                          value={filter.column || ''}
+                          onValueChange={(value) =>
+                            updateGlobalFilter(filter.id, { column: value })
+                          }
+                        >
+                          <SelectTrigger className="text-sm">
+                            <SelectValue placeholder="Выберите колонку" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">Любой</SelectItem>
+                            {columns.map((column) => (
+                              <SelectItem key={column.name} value={column.name}>
+                                {column.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Условие
+                        </Label>
+                        <Select
+                          value={filter.operator}
+                          onValueChange={(value) =>
+                            updateGlobalFilter(filter.id, { operator: value })
+                          }
+                        >
+                          <SelectTrigger className="text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {filterOperators.map((operator) => (
+                              <SelectItem key={operator.value} value={operator.value}>
+                                {operator.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Значение
+                        </Label>
+                        <Input
+                          value={filter.value || ''}
+                          onChange={(event) =>
+                            updateGlobalFilter(filter.id, { value: event.target.value })
+                          }
+                          placeholder="Например: Москва"
+                          className="text-sm"
+                        />
+                      </div>
+
+                      <div className="flex justify-end pb-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => removeGlobalFilter(filter.id)}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <Button variant="outline" size="sm" className="gap-2" onClick={addGlobalFilter}>
+                <Plus className="w-4 h-4" />
+                Добавить фильтр
+              </Button>
+              <p className="text-xs text-slate-500">
+                Фильтры применяются ко всем виджетам, использующим выбранные наборы данных. Локальные настройки виджетов имеют приоритет.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Dashboard Grid */}
         <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-xl min-h-96">
           <CardHeader>
@@ -1197,7 +1659,9 @@ export default function DashboardBuilder({
                                     </div>
                                   </CardHeader>
                                   <CardContent className="p-4">
+                                    {renderWidgetFilters(widget)}
                                     {renderWidget(widget)}
+                                    {renderWidgetFooter(widget)}
                                   </CardContent>
                                 </Card>
                               </div>
@@ -1214,6 +1678,86 @@ export default function DashboardBuilder({
           </CardContent>
         </Card>
       </div>
+      <Dialog
+        open={Boolean(detailContext)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDetailContext(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl">
+          {detailContext && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  Детальный просмотр — {detailContext.dataset?.name || detailContext.widget?.title}
+                </DialogTitle>
+                <DialogDescription>
+                  Отфильтровано {detailContext.rows.length} из {detailContext.totalRows} строк
+                  {detailContext.availableRows ? ` (в источнике: ${detailContext.availableRows})` : ''}
+                </DialogDescription>
+              </DialogHeader>
+
+              {detailContext.filters.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {detailContext.filters.map((filter) => (
+                    <Badge
+                      key={filter.id}
+                      variant="outline"
+                      className="text-[11px] uppercase tracking-wide"
+                    >
+                      {(filter.datasetId === ANY_DATASET_VALUE
+                        ? 'Все наборы'
+                        : datasetMap.get(filter.datasetId)?.name || 'Набор данных')}
+                      : {filter.column || '—'} {getOperatorLabel(filter.operator)} {filter.value || '—'}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <ScrollArea className="max-h-[420px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {detailContext.columns.map((column) => (
+                          <TableHead key={column.name}>{column.name}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {detailContext.rows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={detailContext.columns.length} className="text-center text-sm text-slate-500">
+                            Нет данных, удовлетворяющих фильтрам
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        detailContext.rows.map((row, rowIndex) => (
+                          <TableRow key={rowIndex}>
+                            {detailContext.columns.map((column) => (
+                              <TableCell key={column.name}>
+                                {detailContext.formatCellValue(row[column.name])}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDetailContext(null)}>
+                  Закрыть
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

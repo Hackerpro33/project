@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-env
+  namespace: insight-stage
+data:
+  UNLEASH_ENVIRONMENT: staging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-env
+  namespace: insight-stage
+data:
+  VITE_API_BASE: https://stage.api.insight.local

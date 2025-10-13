@@ -1,11 +1,11 @@
 
 
-import React from "react";
+import React, { useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { createPageUrl } from "@/utils";
-import { 
-  BarChart3, 
+import {
+  BarChart3,
   Database, 
   Map, 
   TrendingUp, 
@@ -17,7 +17,9 @@ import {
   Settings as SettingsIcon, // Imported SettingsIcon
   RefreshCw, // Added RefreshCw icon for Data Transformation
   MessageSquare,
-  ShieldCheck
+  ShieldCheck,
+  History
+  Users
 } from "lucide-react";
 import {
   Sidebar,
@@ -39,17 +41,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useFeatureFlag } from "@/contexts/FeatureFlagContext.jsx";
 
 const navigationConfig = [
   {
     key: "navigation.dashboard",
     page: "Dashboard",
+    id: "dashboard",
+    title: "Панель управления",
+    url: createPageUrl("Dashboard"),
     icon: Home,
     gradient: "from-emerald-500 to-teal-600",
   },
   {
     key: "navigation.assistant",
     page: "Assistant",
+    id: "assistant",
+    title: "Аналитический ассистент",
+    url: createPageUrl("Assistant"),
     icon: MessageSquare,
     gradient: "from-violet-500 to-purple-600",
   },
@@ -62,48 +71,99 @@ const navigationConfig = [
   {
     key: "navigation.sources",
     page: "DataSources",
+    id: "advanced-analytics",
+    title: "Продвинутая аналитика",
+    url: createPageUrl("AdvancedAnalytics"),
+    icon: ShieldCheck,
+    gradient: "from-blue-600 to-purple-600",
+    featureFlag: "advanced_analytics"
+  },
+  {
+    id: "sources",
+    title: "Источники данных",
+    url: createPageUrl("DataSources"),
     icon: Database,
     gradient: "from-blue-500 to-cyan-600",
   },
   {
     key: "navigation.transformation",
     page: "DataTransformation",
+    id: "transformation",
+    title: "Версии наборов",
+    url: createPageUrl("DatasetVersions"),
+    icon: FileDiff,
+    gradient: "from-indigo-500 to-blue-600",
+  },
+  {
+    title: "Преобразование данных",
+    url: createPageUrl("DataTransformation"),
     icon: RefreshCw,
     gradient: "from-green-500 to-emerald-600",
   },
   {
     key: "navigation.maps",
     page: "Maps",
+    title: "История задач",
+    url: createPageUrl("TaskHistory"),
+    icon: History,
+    gradient: "from-amber-500 to-orange-600"
+  },
+  {
+    id: "maps",
+    title: "Карты",
+    url: createPageUrl("Maps"),
     icon: Map,
     gradient: "from-purple-500 to-indigo-600",
   },
   {
     key: "navigation.charts",
     page: "Charts",
+    id: "charts",
+    title: "Графики",
+    url: createPageUrl("Charts"),
     icon: BarChart3,
     gradient: "from-orange-500 to-red-600",
   },
   {
     key: "navigation.forecasting",
     page: "Forecasting",
+    id: "forecasting",
+    title: "Прогнозирование",
+    url: createPageUrl("Forecasting"),
     icon: TrendingUp,
     gradient: "from-pink-500 to-rose-600",
   },
   {
     key: "navigation.networks",
     page: "NetworkGraphs",
+    id: "network",
+    title: "Графы связей",
+    url: createPageUrl("NetworkGraphs"),
     icon: Network,
     gradient: "from-cyan-500 to-blue-600",
   },
   {
     key: "navigation.constructor",
     page: "Constructor",
+    id: "constructor",
+    title: "Конструктор",
+    url: createPageUrl("Constructor"),
     icon: Component,
     gradient: "from-slate-500 to-slate-600",
   },
   {
     key: "navigation.settings",
     page: "Settings",
+    id: "settings",
+    title: "Совместная работа",
+    url: createPageUrl("Collaboration"),
+    icon: Users,
+    gradient: "from-indigo-500 to-blue-600"
+    gradient: "from-sky-500 to-blue-600"
+  },
+  {
+    title: "Настройки",
+    url: createPageUrl("Settings"),
     icon: SettingsIcon,
     gradient: "from-gray-500 to-slate-600",
   },
@@ -118,6 +178,20 @@ export default function Layout({ children, currentPageName }) {
     title: t(item.key),
     url: createPageUrl(item.page),
   }));
+  const advancedAnalyticsEnabled = useFeatureFlag("advanced_analytics", false);
+  const filteredNavigationItems = useMemo(
+    () =>
+      navigationItems.filter((item) => {
+        if (!item.featureFlag) {
+          return true;
+        }
+        if (item.featureFlag === "advanced_analytics") {
+          return advancedAnalyticsEnabled;
+        }
+        return true;
+      }),
+    [advancedAnalyticsEnabled]
+  );
 
   return (
     <SidebarProvider>
@@ -205,7 +279,7 @@ export default function Layout({ children, currentPageName }) {
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu className="space-y-2">
-                  {navigationItems.map((item) => {
+                  {filteredNavigationItems.map((item) => {
                     const isActive = location.pathname === item.url;
                     return (
                       <SidebarMenuItem key={item.title}>

@@ -14,6 +14,7 @@ import {
   Search,
   Tag
 } from "lucide-react";
+import { BarChart3, LineChart, ScatterChart, TrendingUp, Plus } from "lucide-react";
 import PageContainer from "@/components/layout/PageContainer";
 import PaginationControls from "@/components/common/PaginationControls";
 import SavedViewsManager from "@/components/common/SavedViewsManager";
@@ -23,6 +24,7 @@ import ChartGallery from "../components/charts/ChartGallery";
 import ChartTypeSelector from "../components/charts/ChartTypeSelector";
 import ChartViewer from "../components/charts/ChartViewer";
 import AdvancedChartInsights from "../components/charts/AdvancedChartInsights";
+import ChartTemplateLibrary from "../components/charts/ChartTemplateLibrary";
 
 export default function Charts() {
   const { t } = useTranslation();
@@ -32,7 +34,7 @@ export default function Charts() {
   const [showBuilder, setShowBuilder] = useState(false);
   const [selectedChartType, setSelectedChartType] = useState('line');
   const [editingViz, setEditingViz] = useState(null);
-  const [viewingViz, setViewingViz] =useState(null);
+  const [viewingViz, setViewingViz] = useState(null);
   const [activeSegment, setActiveSegment] = useState(null);
   const [visualizationMeta, setVisualizationMeta] = useState({
     totalPages: 0,
@@ -42,6 +44,7 @@ export default function Charts() {
   const [vizTags, setVizTags] = useState([]);
   const [vizTypes, setVizTypes] = useState([]);
   const [vizPagination, setVizPagination] = useState({ page: 1, pageSize: 9 });
+  const [activeTemplate, setActiveTemplate] = useState(null);
 
   useEffect(() => {
     loadInitialData();
@@ -60,6 +63,8 @@ export default function Charts() {
           tags: vizTags.length ? vizTags : undefined,
           types: vizTypes.length ? vizTypes : undefined,
         }),
+        Dataset.list("-created_at"),
+        Visualization.list("-created_at"),
       ]);
       setDatasets(Array.isArray(datasetsData.items) ? datasetsData.items : datasetsData);
       setVisualizations(Array.isArray(visualizationsData.items) ? visualizationsData.items : []);
@@ -171,12 +176,14 @@ export default function Charts() {
 
   const handleCreateChart = (chartType) => {
     setEditingViz(null);
+    setActiveTemplate(null);
     setSelectedChartType(chartType);
     setShowBuilder(true);
   };
   
   const handleEditChart = (viz) => {
     setEditingViz(viz);
+    setActiveTemplate(null);
     setSelectedChartType(viz.type);
     setShowBuilder(true);
   }
@@ -184,6 +191,7 @@ export default function Charts() {
   const handleCloseBuilder = () => {
     setShowBuilder(false);
     setEditingViz(null);
+    setActiveTemplate(null);
   }
 
   const visualizationViewState = {
@@ -195,6 +203,13 @@ export default function Charts() {
 
   const hasVisualizationFilters =
     Boolean(vizSearch) || vizTags.length > 0 || vizTypes.length > 0;
+
+  const handleApplyTemplate = (template) => {
+    setEditingViz(null);
+    setActiveTemplate(template);
+    setSelectedChartType(template.chartType);
+    setShowBuilder(true);
+  };
 
   return (
     <PageContainer className="space-y-8">
@@ -304,6 +319,7 @@ export default function Charts() {
               </div>
             </CardContent>
           </Card>
+          <ChartTemplateLibrary onApplyTemplate={handleApplyTemplate} />
         )}
 
         {/* Chart Builder */}
@@ -314,6 +330,7 @@ export default function Charts() {
             onClose={handleCloseBuilder}
             onSave={() => loadVisualizations({ page: 1 })}
             existingViz={editingViz}
+            templatePreset={activeTemplate}
           />
         )}
 

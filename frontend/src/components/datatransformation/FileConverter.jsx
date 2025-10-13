@@ -19,7 +19,13 @@ import {
   Download,
   Info
 } from "lucide-react";
-import { detectFileIcon, generateCSV } from "@/utils/dataTransformation";
+import {
+  detectFileIcon,
+  generateCSV,
+  generateJSON,
+  generatePlainText,
+  getExportContentType,
+} from "@/utils/dataTransformation";
 
 export default function FileConverter({ supportedFormats, onConversionComplete, onDatasetCreated }) {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -31,6 +37,43 @@ export default function FileConverter({ supportedFormats, onConversionComplete, 
   const [dragActive, setDragActive] = useState(false);
   const [downloadableContent, setDownloadableContent] = useState(null);
   const fileInputRef = useRef(null);
+
+  const prepareDownloadableContent = (format, columns, data) => {
+    const normalizedFormat = (format || "").toLowerCase();
+    const label = normalizedFormat.toUpperCase() || "CSV";
+
+    if (normalizedFormat === "csv") {
+      const content = generateCSV(columns, data);
+      return {
+        content,
+        mimeType: getExportContentType("csv"),
+        extension: "csv",
+        label,
+      };
+    }
+
+    if (normalizedFormat === "json") {
+      const content = generateJSON(columns, data);
+      return {
+        content,
+        mimeType: getExportContentType("json"),
+        extension: "json",
+        label,
+      };
+    }
+
+    if (normalizedFormat === "txt") {
+      const content = generatePlainText(columns, data);
+      return {
+        content,
+        mimeType: getExportContentType("txt"),
+        extension: "txt",
+        label,
+      };
+    }
+
+    return null;
+  };
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -133,19 +176,21 @@ export default function FileConverter({ supportedFormats, onConversionComplete, 
         await Dataset.create(datasetData);
 
         // Создаем файл для скачивания с реальными данными
-        if (outputFormat === 'csv') {
-          const csvContent = generateCSV(extractedData.columns, extractedData.sample_data);
-          setDownloadableContent(csvContent);
-        } else {
-          setDownloadableContent(`Данные в формате ${outputFormat} (${extractedData.sample_data.length} строк)`);
-        }
+        const downloadPayload = prepareDownloadableContent(
+          outputFormat,
+          extractedData.columns,
+          extractedData.sample_data,
+        );
+        setDownloadableContent(downloadPayload || null);
+
+        const downloadLabel = downloadPayload?.label || outputFormat.toUpperCase();
 
         setConversionProgress(100);
         setConversionResult({
           success: true,
           dataset: datasetData,
           extractionMode: 'automatic',
-          message: 'Данные успешно извлечены из файла!'
+          message: `Данные успешно извлечены из файла и готовы к скачиванию в формате ${downloadLabel}.`
         });
 
         onConversionComplete({
@@ -214,12 +259,14 @@ export default function FileConverter({ supportedFormats, onConversionComplete, 
   const handleDownload = () => {
     if (!downloadableContent) return;
 
-    const blob = new Blob([downloadableContent], { type: 'text/csv' });
+    const { content, mimeType, extension } = downloadableContent;
+    const safeExtension = extension || 'csv';
+    const blob = new Blob([content ?? ""], { type: mimeType || getExportContentType(safeExtension) });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     const originalNameWithoutExt = selectedFile.name.replace(/\.[^/.]+$/, "");
-    link.download = `${originalNameWithoutExt}_extracted.csv`;
+    link.download = `${originalNameWithoutExt}_extracted.${safeExtension}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -409,12 +456,12 @@ export default function FileConverter({ supportedFormats, onConversionComplete, 
                 </Alert>
 
                 {downloadableContent && (
-                  <Button 
-                    onClick={handleDownload} 
+                  <Button
+                    onClick={handleDownload}
                     className="w-full gap-2"
                   >
                     <Download className="mr-2 h-4 w-4" />
-                    Скачать извлеченные данные (CSV)
+                    Скачать извлеченные данные ({downloadableContent.label})
                   </Button>
                 )}
               </div>

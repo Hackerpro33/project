@@ -1,0 +1,67 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "insight-sphere.postgresFullname" . }}
+stringData:
+  password: insight
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "insight-sphere.postgresFullname" . }}
+  labels:
+    app: {{ include "insight-sphere.postgresFullname" . }}
+spec:
+  serviceName: {{ include "insight-sphere.postgresFullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "insight-sphere.postgresFullname" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "insight-sphere.postgresFullname" . }}
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          env:
+            - name: POSTGRES_DB
+              value: insight
+            - name: POSTGRES_USER
+              value: insight
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "insight-sphere.postgresFullname" . }}
+                  key: password
+          ports:
+            - name: postgres
+              containerPort: {{ .Values.postgres.port }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "insight-sphere.postgresFullname" . }}
+  labels:
+    app: {{ include "insight-sphere.postgresFullname" . }}
+spec:
+  selector:
+    app: {{ include "insight-sphere.postgresFullname" . }}
+  ports:
+    - name: postgres
+      port: {{ .Values.postgres.port }}
+      targetPort: postgres
+{{- end }}

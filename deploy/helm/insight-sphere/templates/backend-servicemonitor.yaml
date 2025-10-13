@@ -1,0 +1,17 @@
+{{- if .Values.backend.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "insight-sphere.backendFullname" . }}
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "insight-sphere.backendFullname" . }}
+  endpoints:
+    - port: http
+      interval: {{ .Values.backend.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.backend.metrics.serviceMonitor.scrapeTimeout }}
+      path: /metrics
+{{- end }}

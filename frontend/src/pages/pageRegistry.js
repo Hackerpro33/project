@@ -8,6 +8,8 @@ import Constructor from './Constructor'
 import Settings from './Settings'
 import DataTransformation from './DataTransformation'
 import Assistant from './Assistant'
+import TaskHistory from './TaskHistory'
+import Collaboration from './Collaboration'
 
 export const PAGES = {
   Dashboard,
@@ -20,6 +22,8 @@ export const PAGES = {
   Settings,
   DataTransformation,
   Assistant,
+  TaskHistory,
+  Collaboration,
 }
 
 export function getCurrentPage(url) {
