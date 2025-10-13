@@ -34,5 +34,48 @@ export async function extractDataFromUploadedFile(args) { return _ExtractDataFro
 export async function SendEmail(args) { return _SendEmail_impl(args); }
 export async function sendEmail(args) { return _SendEmail_impl(args); }
 
+export async function startResumableUpload(payload) {
+  return jsonRequest('/api/upload/resumable/start', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function uploadResumableChunk({ uploadId, chunkIndex, chunkChecksum, chunkSize, chunk }) {
+  const form = new FormData()
+  form.append('chunk_index', String(chunkIndex))
+  if (chunkChecksum) {
+    form.append('chunk_checksum', chunkChecksum)
+  }
+  if (chunkSize) {
+    form.append('chunk_size', String(chunkSize))
+  }
+  form.append('chunk', chunk)
+
+  const response = await fetch(buildApiUrl(`/api/upload/resumable/${uploadId}/chunk`), {
+    method: 'PUT',
+    body: form,
+  })
+
+  if (!response.ok) {
+    throw new Error(await response.text())
+  }
+
+  return response.json()
+}
+
+export async function finishResumableUpload(uploadId) {
+  return jsonRequest(`/api/upload/resumable/${uploadId}/finish`, {
+    method: 'POST',
+  })
+}
+
+export async function importDatasetFromUrl(payload) {
+  return jsonRequest('/api/upload/from-url', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 // заглушки для совместимости со старыми импортами
 export const GenerateImage = async () => { throw new Error('GenerateImage: not implemented locally'); }
