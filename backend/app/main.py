@@ -1,6 +1,13 @@
 import asyncio
 import json
 import mimetypes
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+import os
+import json
 import os
 import sys
 import time
@@ -26,8 +33,34 @@ from fastapi.responses import PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram, generate_latest
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import Response
+import hashlib
+import math
+import shutil
+import time
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+from typing import Optional, Dict, Any, List
+
+from .utils import files as files_utils
+from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
+import httpx
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Histogram,
+    generate_latest,
+)
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import get_settings
+from .version import __version__
 from .schemas import (
     EmailRequest,
     EmailResponse,
@@ -36,10 +69,16 @@ from .schemas import (
     ExtractResponse,
     FileUploadResponse,
     QuickExtraction,
+    ResumableChunkAck,
+    ResumableUploadInitRequest,
+    ResumableUploadInitResponse,
     TaskEnqueueResponse,
     TaskStatusResponse,
+    UrlImportRequest,
 )
 from .utils import files as files_utils
+from .services.extraction import build_extraction
+from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
 from .utils.files import (
     DATA_DIR,
     UPLOAD_DIR,
@@ -49,8 +88,6 @@ from .utils.files import (
     resolve_file_path,
     safe_filename,
 )
-from .services.extraction import build_extraction
-from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
 
 settings = get_settings()
 
@@ -314,11 +351,12 @@ def _build_csp_policy(allowed_connect_origins: List[str]) -> str:
         "object-src 'none'",
     ]
     return "; ".join(directives)
+API_PREFIX = "/api/v1"
 
 
 app = FastAPI(
     title="Insight Sphere Backend",
-    version="0.1.0",
+    version=__version__,
     description=(
         "API for managing analytical datasets, providing upload/extraction capabilities "
         "with strong validation, observability, and documentation."
@@ -327,6 +365,9 @@ app = FastAPI(
         "name": "Insight Sphere Team",
         "url": "https://github.com/insight-sphere",
     },
+    docs_url=f"{API_PREFIX}/docs",
+    redoc_url=f"{API_PREFIX}/redoc",
+    openapi_url=f"{API_PREFIX}/openapi.json",
 )
 
 # --- CORS ---
@@ -368,12 +409,15 @@ app.state.idempotency = IDEMPOTENCY_COORDINATOR
 
 EMAIL_LOG_PATH = DATA_DIR / "email_log.jsonl"
 
-FILE_REGISTRY = files_utils._FILE_REGISTRY
-_safe_name = safe_filename
+FILE_REGISTRY = get_file_registry()
 
 MAX_UPLOAD_SIZE = settings.max_upload_size
 MAX_UPLOAD_SIZE_MB = settings.max_upload_size_mb
 ALLOWED_EXTENSIONS = {ext.lower() for ext in settings.allowed_upload_extensions}
+
+
+RESUMABLE_DIR = Path(UPLOAD_DIR) / "resumable"
+RESUMABLE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 REGISTRY = CollectorRegistry()
@@ -404,6 +448,104 @@ async def _scan_for_malware(file_bytes: bytes) -> None:
     payload = response.json()
     if payload.get("status") != "clean":
         raise HTTPException(status_code=400, detail="File failed malware scan")
+
+
+def _calculate_sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _resumable_state_path(upload_id: str) -> Path:
+    return RESUMABLE_DIR / f"{upload_id}.json"
+
+
+def _resumable_chunk_dir(upload_id: str) -> Path:
+    return RESUMABLE_DIR / upload_id
+
+
+def _load_resumable_state(upload_id: str) -> Dict[str, Any]:
+    state_path = _resumable_state_path(upload_id)
+    if not state_path.exists():
+        raise HTTPException(status_code=404, detail="Upload session not found")
+    with state_path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _save_resumable_state(upload_id: str, state: Dict[str, Any]) -> None:
+    state_path = _resumable_state_path(upload_id)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = state_path.with_suffix(".tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        json.dump(state, handle, ensure_ascii=False, indent=2)
+    tmp_path.replace(state_path)
+
+
+async def _persist_uploaded_bytes(
+    data: bytes,
+    original_filename: Optional[str],
+    *,
+    idempotency_key: Optional[str] = None,
+) -> FileUploadResponse:
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(data) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Max allowed size is {settings.max_upload_size_mb} MB",
+        )
+
+    _ensure_allowed_extension(original_filename)
+    await _scan_for_malware(data)
+
+    file_id = str(uuid.uuid4())
+    safe_name = safe_filename(original_filename or "file")
+    upload_root = Path(UPLOAD_DIR)
+    upload_root.mkdir(parents=True, exist_ok=True)
+    path = upload_root / f"{file_id}_{safe_name}"
+    with path.open("wb") as handle:
+        handle.write(data)
+    register_uploaded_file(file_id, path)
+
+    try:
+        df = read_table_bytes(data, original_filename or path.name)
+        extraction = build_extraction(df)
+    except Exception:
+        extraction = None
+
+    quick = QuickExtraction.model_validate(extraction) if extraction else None
+    payload = FileUploadResponse(
+        status="success",
+        file_url=file_id,
+        filename=original_filename,
+        quick_extraction=quick,
+    )
+
+    UPLOAD_COUNTER.inc()
+    UPLOAD_SIZE.observe(len(data))
+
+    if idempotency_key:
+        _IDEMPOTENCY_CACHE[idempotency_key] = payload.model_dump()
+
+    return payload
+
+
+def _derive_filename_from_remote(url: str, headers: Optional[Dict[str, str]], fallback: Optional[str]) -> str:
+    if fallback:
+        return fallback
+    if headers:
+        content_disposition = headers.get("content-disposition") or headers.get("Content-Disposition")
+        if content_disposition:
+            for part in content_disposition.split(";"):
+                part = part.strip()
+                if part.lower().startswith("filename="):
+                    value = part.split("=", 1)[1].strip().strip('"')
+                    if value:
+                        return unquote(value)
+    parsed = urlparse(url)
+    if parsed.path:
+        filename = Path(parsed.path).name
+        if filename:
+            return unquote(filename)
+    return "dataset"
 
 
 @app.get("/healthz", summary="Liveness probe", response_model=Dict[str, str])
@@ -441,7 +583,7 @@ def _ensure_allowed_extension(filename: Optional[str]) -> None:
 
 
 @app.post(
-    "/api/upload",
+    f"{API_PREFIX}/upload",
     summary="Upload dataset",
     response_model=FileUploadResponse,
     responses={
@@ -512,10 +654,231 @@ async def api_upload(
     if idempotency_key and pending_future is not None:
         await IDEMPOTENCY_COORDINATOR.complete(idempotency_key, pending_future, payload.model_dump())
     return payload
+    if idempotency_key and idempotency_key in _IDEMPOTENCY_CACHE:
+        return FileUploadResponse(**_IDEMPOTENCY_CACHE[idempotency_key])
+
+    data = await file.read()
+    return await _persist_uploaded_bytes(
+        data,
+        file.filename,
+        idempotency_key=idempotency_key,
+    )
 
 
 @app.post(
-    "/api/extract",
+    "/api/upload/resumable/start",
+    response_model=ResumableUploadInitResponse,
+    summary="Initialise or resume a resumable upload session",
+)
+async def resumable_upload_start(payload: ResumableUploadInitRequest) -> ResumableUploadInitResponse:
+    _ensure_allowed_extension(payload.filename)
+    upload_id = payload.upload_id or str(uuid.uuid4())
+    state_path = _resumable_state_path(upload_id)
+
+    if state_path.exists():
+        state = _load_resumable_state(upload_id)
+        if (
+            state.get("filename") != payload.filename
+            or state.get("total_size") != payload.total_size
+        ):
+            upload_id = str(uuid.uuid4())
+            state = {}
+        else:
+            state.setdefault("uploaded_chunks", [])
+    else:
+        state = {}
+
+    chunk_dir = _resumable_chunk_dir(upload_id)
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+
+    total_chunks = max(1, math.ceil(payload.total_size / payload.chunk_size))
+    state.update(
+        {
+            "upload_id": upload_id,
+            "filename": payload.filename,
+            "total_size": payload.total_size,
+            "chunk_size": payload.chunk_size,
+            "checksum": payload.checksum,
+            "uploaded_chunks": sorted({int(idx) for idx in state.get("uploaded_chunks", [])}),
+            "total_chunks": total_chunks,
+            "created_at": state.get("created_at") or time.time(),
+            "updated_at": time.time(),
+        }
+    )
+
+    _save_resumable_state(upload_id, state)
+
+    return ResumableUploadInitResponse(
+        upload_id=upload_id,
+        uploaded_chunks=state["uploaded_chunks"],
+        chunk_size=state["chunk_size"],
+        total_chunks=state["total_chunks"],
+        total_size=state["total_size"],
+    )
+
+
+@app.put(
+    "/api/upload/resumable/{upload_id}/chunk",
+    response_model=ResumableChunkAck,
+    summary="Persist a single chunk for a resumable upload",
+)
+async def resumable_upload_chunk(
+    upload_id: str,
+    chunk_index: int = Form(..., description="Zero-based chunk index"),
+    chunk_checksum: Optional[str] = Form(
+        None, description="Optional SHA-256 checksum calculated by the client"
+    ),
+    chunk: UploadFile = File(..., description="Binary payload for the chunk"),
+) -> ResumableChunkAck:
+    state = _load_resumable_state(upload_id)
+    total_chunks = int(state.get("total_chunks", 0))
+    if chunk_index < 0 or chunk_index >= total_chunks:
+        raise HTTPException(status_code=400, detail="Chunk index out of range")
+
+    chunk_dir = _resumable_chunk_dir(upload_id)
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    part_path = chunk_dir / f"{chunk_index:06d}.part"
+
+    if part_path.exists():
+        existing_checksum = _calculate_sha256(part_path.read_bytes())
+        if not chunk_checksum or existing_checksum == chunk_checksum:
+            return ResumableChunkAck(chunk_index=chunk_index, stored_checksum=existing_checksum)
+
+    data = await chunk.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Chunk is empty")
+
+    expected_size = int(state.get("chunk_size", len(data)))
+    if chunk_index < total_chunks - 1 and len(data) != expected_size:
+        raise HTTPException(status_code=400, detail="Chunk size mismatch")
+
+    checksum = _calculate_sha256(data)
+    if chunk_checksum and checksum != chunk_checksum:
+        raise HTTPException(status_code=400, detail="Chunk checksum mismatch")
+
+    with part_path.open("wb") as handle:
+        handle.write(data)
+
+    uploaded_chunks = set(state.get("uploaded_chunks", []))
+    uploaded_chunks.add(int(chunk_index))
+    state["uploaded_chunks"] = sorted(uploaded_chunks)
+    state["updated_at"] = time.time()
+    _save_resumable_state(upload_id, state)
+
+    return ResumableChunkAck(chunk_index=int(chunk_index), stored_checksum=checksum)
+
+
+@app.post(
+    "/api/upload/resumable/{upload_id}/finish",
+    response_model=FileUploadResponse,
+    summary="Finalize a resumable upload and assemble the stored chunks",
+)
+async def resumable_upload_finish(upload_id: str) -> FileUploadResponse:
+    state = _load_resumable_state(upload_id)
+    total_chunks = int(state.get("total_chunks", 0))
+    uploaded = set(int(idx) for idx in state.get("uploaded_chunks", []))
+    missing = [idx for idx in range(total_chunks) if idx not in uploaded]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not all chunks uploaded: missing {missing[:5]}{'...' if len(missing) > 5 else ''}",
+        )
+
+    chunk_dir = _resumable_chunk_dir(upload_id)
+    combined_path = chunk_dir / "__combined__"
+    with combined_path.open("wb") as destination:
+        for idx in range(total_chunks):
+            part_path = chunk_dir / f"{idx:06d}.part"
+            if not part_path.exists():
+                raise HTTPException(status_code=500, detail="Chunk file missing on disk")
+            with part_path.open("rb") as source:
+                shutil.copyfileobj(source, destination)
+
+    if combined_path.stat().st_size != int(state.get("total_size", 0)):
+        combined_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Combined file size does not match expected total size")
+
+    data = combined_path.read_bytes()
+    combined_path.unlink(missing_ok=True)
+
+    expected_checksum = state.get("checksum")
+    if expected_checksum:
+        calculated_checksum = _calculate_sha256(data)
+        if calculated_checksum != expected_checksum:
+            raise HTTPException(status_code=400, detail="File checksum mismatch after assembly")
+
+    response = await _persist_uploaded_bytes(data, state.get("filename"))
+
+    for part in chunk_dir.glob("*.part"):
+        part.unlink(missing_ok=True)
+    await _scan_for_malware(data)
+    # save
+    fid = str(uuid.uuid4())
+    safe = safe_filename(file.filename or "file")
+    upload_root = Path(UPLOAD_DIR)
+    upload_root.mkdir(parents=True, exist_ok=True)
+    path = upload_root / f"{fid}_{safe}"
+    with path.open("wb") as f:
+        f.write(data)
+    register_uploaded_file(fid, path)
+    # quick extraction for preview (optional)
+    try:
+        chunk_dir.rmdir()
+    except OSError:
+        pass
+
+    state_path = _resumable_state_path(upload_id)
+    state_path.unlink(missing_ok=True)
+
+    return response
+
+
+@app.post(
+    "/api/upload/from-url",
+    response_model=FileUploadResponse,
+    summary="Download a dataset from a remote URL and store it locally",
+)
+async def upload_from_url(request: UrlImportRequest) -> FileUploadResponse:
+    headers = request.headers or {}
+    timeout = httpx.Timeout(30.0, read=120.0)
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream("GET", request.url, headers=headers) as response:
+                if response.status_code >= 400:
+                    body = await response.aread()
+                    preview = body.decode("utf-8", errors="ignore")[:200]
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Failed to download remote file (status {response.status_code}): {preview}",
+                    )
+
+                data_chunks: List[bytes] = []
+                downloaded = 0
+                async for chunk in response.aiter_bytes():
+                    if not chunk:
+                        continue
+                    downloaded += len(chunk)
+                    if downloaded > MAX_UPLOAD_SIZE:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"Remote file exceeds maximum allowed size of {MAX_UPLOAD_SIZE_MB} MB",
+                        )
+                    data_chunks.append(chunk)
+
+                remote_headers = dict(response.headers)
+    except HTTPException:
+        raise
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to download remote file: {exc}") from exc
+
+    data = b"".join(data_chunks)
+    filename = _derive_filename_from_remote(request.url, remote_headers, request.filename)
+    return await _persist_uploaded_bytes(data, filename)
+
+
+@app.post(
+    f"{API_PREFIX}/extract",
     summary="Extract dataset metadata",
     response_model=ExtractResponse,
     responses={400: {"model": ErrorResponse, "description": "Unable to process dataset"}},
@@ -533,7 +896,7 @@ def api_extract(req: ExtractRequest) -> ExtractResponse:
 
 
 @app.post(
-    "/api/extract/async",
+    f"{API_PREFIX}/extract/async",
     summary="Schedule dataset metadata extraction",
     response_model=TaskEnqueueResponse,
     responses={
@@ -554,7 +917,7 @@ def api_extract_async(req: ExtractRequest) -> TaskEnqueueResponse:
 
 
 @app.get(
-    "/api/tasks/{task_id}",
+    f"{API_PREFIX}/tasks/{{task_id}}",
     summary="Inspect background task status",
     response_model=TaskStatusResponse,
     responses={
@@ -580,7 +943,7 @@ def api_task_status(task_id: str) -> TaskStatusResponse:
 
 
 @app.post(
-    "/api/utils/send-email",
+    f"{API_PREFIX}/utils/send-email",
     summary="Log outgoing email",
     response_model=EmailResponse,
     responses={500: {"model": ErrorResponse, "description": "Failed to write audit log"}},
@@ -595,6 +958,7 @@ async def api_send_email(payload: EmailRequest) -> EmailResponse:
     log_path = Path(EMAIL_LOG_PATH)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
+        with log_path.open("a", encoding="utf-8") as log_file:
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as exc:
@@ -615,27 +979,40 @@ if __package__ in {None, ""}:
     if current_dir not in sys.path:
         sys.path.append(current_dir)
     import audit_api as audit_router_module
+    import collaboration_api as collaboration_router_module
     import chat_api as chat_router_module
     import datasets_api as datasets_router_module
+    import dataset_versions_api as dataset_versions_router_module
     import dictionary_api as dictionary_router_module
     import visualizations_api as visualizations_router_module
 else:
     from . import audit_api as audit_router_module
+    from . import collaboration_api as collaboration_router_module
     from . import chat_api as chat_router_module
     from . import datasets_api as datasets_router_module
+    from . import dataset_versions_api as dataset_versions_router_module
     from . import dictionary_api as dictionary_router_module
     from . import visualizations_api as visualizations_router_module
 
 datasets_router = datasets_router_module.router
+dataset_versions_router = dataset_versions_router_module.router
 dictionary_router = dictionary_router_module.router
 visualizations_router = visualizations_router_module.router
 chat_router = chat_router_module.router
 audit_router = audit_router_module.router
+collaboration_router = collaboration_router_module.router
 
+app.include_router(datasets_router, prefix=f"{API_PREFIX}/dataset")
+app.include_router(dictionary_router, prefix=f"{API_PREFIX}/dictionary")
+app.include_router(visualizations_router, prefix=f"{API_PREFIX}/visualization")
+app.include_router(chat_router, prefix=f"{API_PREFIX}/chat")
+app.include_router(audit_router, prefix=f"{API_PREFIX}/audit")
 app.include_router(datasets_router, prefix="/api/dataset")
+app.include_router(dataset_versions_router, prefix="/api/dataset")
 app.include_router(dictionary_router, prefix="/api/dictionary")
 app.include_router(visualizations_router, prefix="/api/visualization")
 app.include_router(chat_router, prefix="/api/chat")
 app.include_router(audit_router, prefix="/api/audit")
+app.include_router(collaboration_router, prefix="/api")
 FILE_REGISTRY = get_file_registry()
 _safe_name = safe_filename

@@ -4,18 +4,27 @@
 Этот документ описывает локальный запуск, а также инфраструктурные практики, которые мы
 используем для обеспечения качества и стабильности.
 
-![Coverage badge](https://img.shields.io/badge/coverage-80%25-brightgreen.svg)
+![Coverage badge](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/OWNER/REPO/gh-pages/coverage/coverage.json)
+
+## Управление релизами
+
+- Заголовки pull request-ов должны соответствовать [Conventional Commit](https://www.conventionalcommits.org/ru/v1.0.0/) — это проверяется GitHub Actions (`semantic-pull-requests`).
+- После слияния в `main` [Release Drafter](.github/release-drafter.yml) обновляет черновик следующего релиза и группирует изменения по SemVer.
+- Для публикации стабильной версии создайте аннотированный тег `vMAJOR.MINOR.PATCH` и запушьте его. Workflow [`publish-release`](.github/workflows/publish-release.yml) автоматически опубликует релиз на GitHub, используя описание из черновика.
+- Версия приложения хранится в `backend/app/version.py`. Обновлять её и переносить записи из `CHANGELOG.md` помогает утилита `./scripts/bump_version.py <major|minor|patch>` — она откажется работать, если секция `Unreleased` пуста.
+- После публикации синхронизируйте `CHANGELOG.md`, перенеся записи из секции `Unreleased` в новую версию.
 
 ## Быстрый старт
 
 1. Склонируйте репозиторий и установите зависимости для фронтенда и бэкенда.
-2. Поднимите сопутствующие сервисы (Postgres, Redis, MinIO) через `docker-compose`.
-3. Запустите бэкенд и фронтенд в отдельных терминалах.
-4. Выполните автоматические тесты и линтеры (см. раздел «Проверка работоспособности»).
+2. **Вариант для VS Code/Dev Containers:** откройте папку в контейнере разработки — сервисы Postgres/Redis/MinIO поднимутся автоматически, а зависимости установятся через `postCreateCommand`.
+3. При локальном запуске без devcontainer поднимите сопутствующие сервисы (Postgres, Redis, MinIO) через `docker-compose`.
+4. Запустите бэкенд и фронтенд в отдельных терминалах.
+5. Выполните автоматические тесты и линтеры (см. раздел «Проверка работоспособности»).
 
 > Подробный план развития проекта смотрите в [ROADMAP.md](ROADMAP.md), требования к
-> контрибьюторам — в [CONTRIBUTING.md](CONTRIBUTING.md), архитектурные решения описаны в
-> [docs/architecture.md](docs/architecture.md).
+> контрибьюторам — в [CONTRIBUTING.md](CONTRIBUTING.md), архитектурные решения и диаграммы —
+> в [docs/architecture.md](docs/architecture.md).
 
 ## Запуск фронтенда
 
@@ -40,7 +49,7 @@ uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 
 ### Политика загрузки и документация API
 
-- `POST /api/upload` принимает файлы с расширениями, перечисленными в переменной окружения
+- `POST /api/v1/upload` принимает файлы с расширениями, перечисленными в переменной окружения
   `ALLOWED_UPLOAD_EXTENSIONS` (по умолчанию CSV/TSV/XLSX/XLS) и автоматически отклоняет
   превышающие лимит размера (`MAX_UPLOAD_SIZE_MB`). Для повторяющихся запросов используйте
   заголовок `Idempotency-Key`, чтобы повторно получить сохранённый результат без дублирования
@@ -49,8 +58,8 @@ uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 - При наличии переменной `CLAMAV_SCAN_URL` каждый файл отправляется на проверку ClamAV перед
   сохранением.
 - Эндпоинты документированы в интерактивной Swagger-спецификации `http://localhost:8000/docs`.
-- Для тяжёлых наборов данных доступна асинхронная обработка: запрос `POST /api/extract/async`
-  ставит задачу в очередь Redis/RQ и возвращает `task_id`, а `GET /api/tasks/{task_id}` позволяет
+- Для тяжёлых наборов данных доступна асинхронная обработка: запрос `POST /api/v1/extract/async`
+  ставит задачу в очередь Redis/RQ и возвращает `task_id`, а `GET /api/v1/tasks/{task_id}` позволяет
   отслеживать статусы (`queued`, `started`, `finished`, `failed`) и получать итоговый payload.
 
 ### Асинхронная обработка и фоновые задачи
@@ -65,7 +74,7 @@ uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
    python -m app.worker
    ```
 
-3. Клиенты могут проверять статус фоновых задач через `GET /api/tasks/{task_id}` или подписаться
+3. Клиенты могут проверять статус фоновых задач через `GET /api/v1/tasks/{task_id}` или подписаться
    на обновления (например, с помощью периодического polling/SSE на фронтенде). Ошибки обработки
    возвращаются в поле `error` и логируются для дальнейшего анализа.
 
@@ -95,13 +104,29 @@ npm test
 pre-commit run --all-files
 pytest --cov=backend/app backend/app/tests
 cd frontend && npm run lint && npm run test -- --coverage
+
+# Контрактные и e2e тесты
+pytest -m contract
+npm run test:contracts
+PLAYWRIGHT_BASE_URL=http://localhost:5173 npm run test:e2e
 ```
 
 Набор тестов бэкенда охватывает загрузку файлов, CRUD-операции с наборами данных и визуализациями, генерацию аналитики и логирование писем. Тесты Vitest проверяют вспомогательные утилиты фронтенда и работу API-обёрток.
 
+Контрактные тесты Pact фиксируют схему обмена для `/api/v1/utils/send-email`, а снапшот OpenAPI (`backend/app/tests/snapshots/openapi_v1.json`) защищает общую спецификацию. E2E тест на Playwright запускается против любого стенда, базовый URL передаётся переменной `PLAYWRIGHT_BASE_URL`.
+
+## Нагрузочные проверки
+
+Базовый профиль на k6 (`tests/load/upload.js`) моделирует массовые загрузки файлов и контролирует SLO: `p(95) < 2.5s`, `error rate < 1%`. Запуск локально:
+
+```bash
+k6 run tests/load/upload.js -e K6_BASE_URL=http://localhost:8000
+```
+
 ## Дополнительные материалы
 
 - [Современные аналитические модули правоохранительных систем](docs/predictive_analytics_overview.md) — обзор подходов к мониторингу смещений в данных, построению графов знаний и использованию симуляторов предиктивного патрулирования.
+- [Спецификации функций визуализации](docs/dashboard_feature_specs.md) — требования к конструктору дашбордов, библиотеке шаблонов и сравнению версий наборов данных.
 
 ## Новые возможности веб-приложения
 
@@ -122,6 +147,28 @@ npm run build
 Проект поставляется с эндпоинтами `/metrics`, `/healthz` и `/readiness` для интеграции с
 Prometheus и оркестраторами. Логи формируются в формате JSON и включают trace-id для связывания
 с трассировками OpenTelemetry. Для отслеживания исключений используется Sentry.
+
+## Версионирование и релизы
+
+- Основной веткой служит `main`, релизы публикуются с помощью GitHub Release Drafter и следуют
+  [Semantic Versioning](https://semver.org/lang/ru/). Для генерации черновиков релизов достаточно
+  оформлять PR в формате [Conventional Commits](https://www.conventionalcommits.org/ru/v1.0.0/) —
+  валидация заголовков выполняется отдельным GitHub Actions workflow.
+- Версию можно обновить командой `./scripts/bump_version.py <major|minor|patch>` — она переносит
+  список изменений из секции `Unreleased` в новую версию, убеждается, что она не пуста, и оставляет черновик пустым. Workflow
+  публикации проверяет, что SemVer-тег совпадает со значением `__version__` в
+  `backend/app/version.py`.
+- История изменений фиксируется в [CHANGELOG.md](CHANGELOG.md). Перед публикацией релиза
+  перенесите соответствующий блок из секции `Unreleased` в новую версию.
+
+## Безопасность контейнеров
+
+- Dockerfile бэкенда использует многоэтапную сборку: зависимости устанавливаются в промежуточном
+  образе `python:3.11-slim`, после чего рабочая среда переносится в финальный минимальный образ
+  [Distroless](https://github.com/GoogleContainerTools/distroless) с непривилегированным
+  пользователем.
+- Workflow `Container Security` собирает образ, формирует SBOM в формате SPDX с помощью Syft и
+  подписывает артефакт Cosign (keyless). SBOM и подпись публикуются как артефакты пайплайна.
 
 ## CI/CD
 
