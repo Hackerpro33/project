@@ -2,6 +2,7 @@ const RAW_API_BASE = (import.meta?.env?.VITE_API_BASE ?? '').trim();
 
 const NORMALIZED_API_BASE = RAW_API_BASE.replace(/\/+$/, '');
 const API_PATH_PREFIX = '/api/v1';
+const LEGACY_API_PREFIX = '/api/';
 
 export function buildApiUrl(path, base = NORMALIZED_API_BASE) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
@@ -12,8 +13,17 @@ export function buildApiUrl(path, base = NORMALIZED_API_BASE) {
 
   const trimmedBase = base.replace(/\/+$/, '');
 
-  if (trimmedBase.endsWith(API_PATH_PREFIX) && normalizedPath.startsWith(`${API_PATH_PREFIX}/`)) {
-    return `${trimmedBase}${normalizedPath.slice(API_PATH_PREFIX.length)}`;
+  if (trimmedBase.endsWith(API_PATH_PREFIX)) {
+    if (normalizedPath.startsWith(`${API_PATH_PREFIX}/`)) {
+      return `${trimmedBase}${normalizedPath.slice(API_PATH_PREFIX.length)}`;
+    }
+
+    if (
+      normalizedPath.startsWith(LEGACY_API_PREFIX) &&
+      !normalizedPath.startsWith(`${API_PATH_PREFIX}/`)
+    ) {
+      return `${trimmedBase.slice(0, -API_PATH_PREFIX.length)}${normalizedPath}`;
+    }
   }
 
   return `${trimmedBase}${normalizedPath}`;
