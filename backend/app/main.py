@@ -1,4 +1,5 @@
 import asyncio
+import csv
 from datetime import datetime, timezone
 import json
 import logging
@@ -19,6 +20,7 @@ import sys
 import time
 import uuid
 from collections import defaultdict, deque
+from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -77,6 +79,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .config import get_settings
 from .version import __version__
 from .schemas import (
+    BatchUploadItem,
+    BatchUploadResponse,
     ConfigExportResponse,
     ConfigImportRequest,
     ConfigImportResponse,
@@ -102,6 +106,9 @@ from .schemas import (
 from .utils import files as files_utils
 from .services.extraction import build_extraction
 from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
+from .utils.preview import generate_preview
+from .utils.batch_progress import get_batch_progress_tracker
+from .utils.task_history import get_task_history_store
 from .utils.files import (
     DATA_DIR,
     UPLOAD_DIR,
@@ -323,6 +330,7 @@ def _detect_mime_type(data: bytes, filename: Optional[str]) -> Tuple[Optional[st
         b"%PDF": "application/pdf",
         b"PK\x03\x04": "application/zip",
         b"MZ": "application/x-dosexec",
+        b"\xff\xd8\xff": "image/jpeg",
     }
     for signature, mime in signature_map.items():
         if data.startswith(signature):
@@ -343,6 +351,10 @@ def _assert_allowed_mime(data: bytes, filename: Optional[str]) -> None:
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "application/zip",
         },
+        ".pdf": {"application/pdf"},
+        ".png": {"image/png"},
+        ".jpg": {"image/jpeg"},
+        ".jpeg": {"image/jpeg"},
     }.get(ext)
 
     if not allowed_mimes:
@@ -735,6 +747,204 @@ async def api_upload(
 
 
 @app.post(
+    f"{API_PREFIX}/uploads/batch",
+    summary="Upload multiple datasets in a single batch",
+    response_model=BatchUploadResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Validation error"},
+        413: {"model": ErrorResponse, "description": "Payload too large"},
+    },
+)
+async def api_batch_upload(
+    request: Request,
+    files: List[UploadFile] = File(..., description="Collection of files to upload"),
+    idempotency_key: Optional[str] = Header(None, convert_underscores=False, alias="Idempotency-Key"),
+) -> BatchUploadResponse:
+    fingerprint = _client_fingerprint(request)
+    await UPLOAD_RATE_LIMITER.check(fingerprint)
+
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one file must be provided")
+
+    cached, pending_future, should_process = await IDEMPOTENCY_COORDINATOR.enter(idempotency_key)
+    if not should_process:
+        if cached is not None:
+            return BatchUploadResponse(**cached)
+        if pending_future is not None:
+            try:
+                cached_payload = await pending_future
+            except Exception as exc:  # pragma: no cover - propagate worker failure
+                raise exc
+            if cached_payload is None:
+                raise HTTPException(status_code=500, detail="Idempotent request state unavailable")
+            return BatchUploadResponse(**cached_payload)
+
+    batch_id = idempotency_key or str(uuid.uuid4())
+    tracker = get_batch_progress_tracker()
+    uploads = [(f"{batch_id}:{index}", upload) for index, upload in enumerate(files)]
+    initial_items = [
+        BatchUploadItem(upload_id=identifier, filename=upload.filename, status="queued")
+        for identifier, upload in uploads
+    ]
+
+    payload: Optional[BatchUploadResponse] = None
+    results: Dict[str, BatchUploadItem] = {}
+    failures = 0
+    batch_started = False
+
+    try:
+        await tracker.start_batch(batch_id, initial_items)
+        batch_started = True
+
+        for upload_identifier, upload in uploads:
+            try:
+                await tracker.update_item(
+                    batch_id,
+                    upload_identifier,
+                    status="processing",
+                    filename=upload.filename,
+                )
+                _ensure_allowed_extension(upload.filename)
+                data = await upload.read()
+                if not data:
+                    raise HTTPException(status_code=400, detail="Empty file")
+                _assert_allowed_mime(data, upload.filename)
+                response = await _persist_uploaded_bytes(
+                    data,
+                    upload.filename,
+                    idempotency_key=upload_identifier if idempotency_key else None,
+                )
+                item = BatchUploadItem(
+                    upload_id=upload_identifier,
+                    filename=upload.filename,
+                    status="success",
+                    file_url=response.file_url,
+                    quick_extraction=response.quick_extraction,
+                )
+                results[upload_identifier] = item
+                await tracker.update_item(
+                    batch_id,
+                    upload_identifier,
+                    status="success",
+                    filename=upload.filename,
+                    file_url=response.file_url,
+                    quick_extraction=response.quick_extraction,
+                )
+            except HTTPException as exc:
+                failures += 1
+                detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+                item = BatchUploadItem(
+                    upload_id=upload_identifier,
+                    filename=upload.filename,
+                    status="failed",
+                    error=detail,
+                )
+                results[upload_identifier] = item
+                await tracker.update_item(
+                    batch_id,
+                    upload_identifier,
+                    status="failed",
+                    filename=upload.filename,
+                    error=detail,
+                )
+            except Exception as exc:  # pragma: no cover - unexpected runtime issues
+                failures += 1
+                detail = str(exc)
+                item = BatchUploadItem(
+                    upload_id=upload_identifier,
+                    filename=upload.filename,
+                    status="failed",
+                    error=detail,
+                )
+                results[upload_identifier] = item
+                await tracker.update_item(
+                    batch_id,
+                    upload_identifier,
+                    status="failed",
+                    filename=upload.filename,
+                    error=detail,
+                )
+
+        ordered_items = [results[identifier] for identifier, _ in uploads]
+        overall_status = "success"
+        if failures:
+            overall_status = "failed" if failures == len(ordered_items) else "partial"
+        payload = BatchUploadResponse(batch_id=batch_id, status=overall_status, items=ordered_items)
+        await tracker.finish_batch(batch_id, payload)
+    except Exception as exc:
+        if batch_started:
+            fallback_items: List[BatchUploadItem] = []
+            for identifier, upload in uploads:
+                item = results.get(identifier)
+                if item is None:
+                    item = BatchUploadItem(
+                        upload_id=identifier,
+                        filename=upload.filename,
+                        status="failed",
+                        error="Batch terminated unexpectedly",
+                    )
+                    try:
+                        await tracker.update_item(
+                            batch_id,
+                            identifier,
+                            status="failed",
+                            filename=upload.filename,
+                            error="Batch terminated unexpectedly",
+                        )
+                    except KeyError:
+                        pass
+                fallback_items.append(item)
+            failure_payload = BatchUploadResponse(
+                batch_id=batch_id,
+                status="failed",
+                items=fallback_items,
+            )
+            try:
+                await tracker.finish_batch(batch_id, failure_payload)
+            except Exception:
+                pass
+        if idempotency_key and pending_future is not None:
+            await IDEMPOTENCY_COORDINATOR.fail(idempotency_key, pending_future, exc)
+        raise
+
+    if idempotency_key and pending_future is not None and payload is not None:
+        await IDEMPOTENCY_COORDINATOR.complete(idempotency_key, pending_future, payload.model_dump())
+    return payload
+
+
+@app.get(
+    f"{API_PREFIX}/uploads/batch/{{batch_id}}",
+    summary="Retrieve snapshot of a batch upload",
+    response_model=BatchUploadResponse,
+    responses={404: {"model": ErrorResponse, "description": "Batch not found"}},
+)
+async def api_batch_status(batch_id: str) -> BatchUploadResponse:
+    tracker = get_batch_progress_tracker()
+    try:
+        return await tracker.get_snapshot(batch_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Batch not found") from exc
+
+
+@app.get(
+    f"{API_PREFIX}/uploads/batch/{{batch_id}}/events",
+    summary="Stream batch upload progress via Server-Sent Events",
+    responses={404: {"model": ErrorResponse, "description": "Batch not found"}},
+)
+async def api_batch_events(batch_id: str):
+    tracker = get_batch_progress_tracker()
+    try:
+        async def event_generator():
+            async for event in tracker.stream(batch_id):
+                data = json.dumps(event.model_dump(), ensure_ascii=False)
+                yield f"event: {event.event}\ndata: {data}\n\n"
+
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Batch not found") from exc
+
+
+@app.post(
     "/api/upload/resumable/start",
     response_model=ResumableUploadInitResponse,
     summary="Initialise or resume a resumable upload session",
@@ -1017,6 +1227,20 @@ def _build_task_event_payload(task_id: str, status_payload: Dict[str, Any]) -> D
     return event_payload
 
 
+def _parse_iso8601_timestamp(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
 @app.get(
     "/api/tasks/history",
     summary="List processed background tasks",
@@ -1048,6 +1272,69 @@ def api_task_history(
     window = items[offset : offset + limit]
     models = [TaskHistoryEntry.model_validate(item) for item in window]
     return TaskHistoryListResponse(items=models, count=total, limit=limit, offset=offset)
+
+
+@app.get(
+    "/api/tasks/history/export",
+    summary="Export task history as CSV",
+)
+def api_task_history_export(
+    status: Optional[str] = Query(None, description="Comma separated list of statuses to filter by"),
+    task_type: Optional[str] = Query(None, alias="type", description="Comma separated list of task types"),
+    query: Optional[str] = Query(None, alias="q", description="Free text search across task metadata and logs"),
+    since: Optional[str] = Query(
+        None,
+        description="Return tasks updated at or after this ISO 8601 timestamp",
+    ),
+    until: Optional[str] = Query(
+        None,
+        description="Return tasks updated at or before this ISO 8601 timestamp",
+    ),
+) -> Response:
+    store = get_task_history_store()
+    statuses = [value.strip() for value in status.split(",") if value.strip()] if status else None
+    types = [value.strip() for value in task_type.split(",") if value.strip()] if task_type else None
+    try:
+        items = store.list(statuses=statuses, task_types=types, query=query, since=since, until=until)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    buffer = StringIO()
+    fieldnames = [
+        "task_id",
+        "task_type",
+        "status",
+        "created_at",
+        "updated_at",
+        "duration_seconds",
+        "error",
+        "params",
+    ]
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+
+    for item in items:
+        created = _parse_iso8601_timestamp(item.get("created_at"))
+        updated = _parse_iso8601_timestamp(item.get("updated_at"))
+        duration = None
+        if created and updated:
+            duration = max(0.0, (updated - created).total_seconds())
+        writer.writerow(
+            {
+                "task_id": item.get("task_id"),
+                "task_type": item.get("task_type"),
+                "status": item.get("status"),
+                "created_at": item.get("created_at"),
+                "updated_at": item.get("updated_at"),
+                "duration_seconds": f"{duration:.2f}" if duration is not None else "",
+                "error": item.get("metadata", {}).get("error") or item.get("error", ""),
+                "params": json.dumps(item.get("params", {}), ensure_ascii=False),
+            }
+        )
+
+    csv_content = buffer.getvalue()
+    headers = {"Content-Disposition": 'attachment; filename="task-history.csv"'}
+    return Response(content=csv_content, media_type="text/csv", headers=headers)
 
 
 @app.get(

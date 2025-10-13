@@ -2,14 +2,32 @@
 from __future__ import annotations
 
 import csv
+import base64
+import mimetypes
 import random
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 from fastapi import HTTPException
 
+from PIL import Image, UnidentifiedImageError
+
+try:  # pragma: no cover - optional dependency handled in runtime tests
+    import pdfplumber
+except Exception:  # pragma: no cover - safety net for environments without pdfplumber
+    pdfplumber = None
+
+from ..config import get_settings
 from .files import resolve_file_path
+
+settings = get_settings()
+
+MAX_ROWS = settings.preview_max_rows
+MAX_PAGES = settings.preview_max_pages
+MAX_IMAGE_PIXELS = settings.preview_image_max_pixels
+TEXT_PREVIEW_LIMIT = 4000
 
 
 def _sanitize_value(value: Any) -> Any:
@@ -122,10 +140,16 @@ def generate_preview(
 ) -> Dict[str, Any]:
     if page < 1:
         raise HTTPException(status_code=400, detail="Page number must be greater than zero")
-    if page_size < 1 or page_size > 500:
-        raise HTTPException(status_code=400, detail="Page size must be between 1 and 500")
-    if sample_size < 1 or sample_size > 1000:
-        raise HTTPException(status_code=400, detail="Sample size must be between 1 and 1000")
+    if page_size < 1 or page_size > MAX_ROWS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Page size must be between 1 and {MAX_ROWS}",
+        )
+    if sample_size < 1 or sample_size > MAX_ROWS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Sample size must be between 1 and {MAX_ROWS}",
+        )
 
     mode = mode.lower()
     if mode not in {"page", "sample"}:
@@ -133,6 +157,9 @@ def generate_preview(
 
     path = resolve_file_path(identifier)
     suffix = path.suffix.lower()
+
+    warnings: List[str] = []
+    content_type, _ = mimetypes.guess_type(path.name)
 
     if suffix in {".csv", ".txt"}:
         headers, rows, has_more = _preview_csv(
@@ -144,6 +171,7 @@ def generate_preview(
             sample_size=sample_size,
             seed=seed,
         )
+        preview_type = "table"
     elif suffix == ".tsv":
         headers, rows, has_more = _preview_csv(
             path,
@@ -154,6 +182,7 @@ def generate_preview(
             sample_size=sample_size,
             seed=seed,
         )
+        preview_type = "table"
     elif suffix in {".xlsx", ".xls"}:
         headers, rows, has_more = _preview_excel(
             path,
@@ -163,6 +192,93 @@ def generate_preview(
             sample_size=sample_size,
             seed=seed,
         )
+        preview_type = "table"
+    elif suffix == ".pdf":
+        if pdfplumber is None:
+            raise HTTPException(status_code=400, detail="PDF preview is not available in this deployment")
+        try:
+            with pdfplumber.open(path) as document:
+                total_pages = len(document.pages)
+                limit = min(total_pages, MAX_PAGES)
+                page_payload: List[Dict[str, Any]] = []
+                for index in range(limit):
+                    page_obj = document.pages[index]
+                    text = (page_obj.extract_text() or "").strip()
+                    if len(text) > TEXT_PREVIEW_LIMIT:
+                        warnings.append(
+                            f"Страница {index + 1} сокращена до {TEXT_PREVIEW_LIMIT} символов для предпросмотра"
+                        )
+                        text = text[:TEXT_PREVIEW_LIMIT].rstrip()
+                    page_payload.append({"page": index + 1, "text": text})
+                has_more = total_pages > limit
+                if has_more:
+                    warnings.append(
+                        f"Показаны первые {limit} страниц из {total_pages}. Загрузите файл для полного просмотра."
+                    )
+        except Exception as exc:  # pragma: no cover - pdf parsing edge cases
+            raise HTTPException(status_code=400, detail=f"Не удалось построить предпросмотр PDF: {exc}") from exc
+
+        headers, rows = [], []
+        preview_type = "pdf"
+        return {
+            "file_id": identifier,
+            "mode": "page",
+            "page": 1,
+            "page_size": None,
+            "sample_size": None,
+            "columns": headers,
+            "rows": rows,
+            "has_more": has_more,
+            "preview_type": preview_type,
+            "content_type": content_type or "application/pdf",
+            "pages": page_payload,
+            "thumbnails": [],
+            "text_preview": None,
+            "metadata": {"total_pages": total_pages},
+            "warnings": warnings,
+        }
+    elif suffix in {".png", ".jpg", ".jpeg"}:
+        try:
+            with Image.open(path) as image:
+                original_size = image.size
+                thumbnail = image.copy()
+                thumbnail.thumbnail((MAX_IMAGE_PIXELS, MAX_IMAGE_PIXELS))
+                buffer = BytesIO()
+                thumbnail.save(buffer, format="PNG")
+                encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+                thumbnail_uri = f"data:image/png;base64,{encoded}"
+                thumbnail_size = thumbnail.size
+                if thumbnail_size != original_size:
+                    warnings.append(
+                        "Миниатюра уменьшена для быстрой загрузки. Загрузите файл, чтобы увидеть оригинал."
+                    )
+        except UnidentifiedImageError as exc:
+            raise HTTPException(status_code=400, detail="Не удалось распознать изображение для предпросмотра") from exc
+
+        headers, rows, has_more = [], [], None
+        preview_type = "image"
+        return {
+            "file_id": identifier,
+            "mode": "page",
+            "page": 1,
+            "page_size": None,
+            "sample_size": None,
+            "columns": headers,
+            "rows": rows,
+            "has_more": has_more,
+            "preview_type": preview_type,
+            "content_type": content_type or "image/png",
+            "pages": [],
+            "thumbnails": [thumbnail_uri],
+            "text_preview": None,
+            "metadata": {
+                "original_width": original_size[0],
+                "original_height": original_size[1],
+                "thumbnail_width": thumbnail_size[0],
+                "thumbnail_height": thumbnail_size[1],
+            },
+            "warnings": warnings,
+        }
     else:
         raise HTTPException(status_code=400, detail=f"Preview is not supported for '{suffix}' files")
 
@@ -175,6 +291,13 @@ def generate_preview(
         "columns": headers,
         "rows": rows,
         "has_more": has_more if mode == "page" else None,
+        "preview_type": preview_type,
+        "content_type": content_type,
+        "pages": [],
+        "thumbnails": [],
+        "text_preview": None,
+        "metadata": {},
+        "warnings": warnings,
     }
 
 

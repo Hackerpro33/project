@@ -82,7 +82,16 @@ class Settings(BaseSettings):
         description="Maximum upload size in megabytes for dataset files.",
     )
     allowed_upload_extensions: List[str] = Field(
-        default_factory=lambda: [".csv", ".tsv", ".xlsx", ".xls"],
+        default_factory=lambda: [
+            ".csv",
+            ".tsv",
+            ".xlsx",
+            ".xls",
+            ".pdf",
+            ".png",
+            ".jpg",
+            ".jpeg",
+        ],
         alias="ALLOWED_UPLOAD_EXTENSIONS",
         description="List of file extensions allowed for upload.",
     )
@@ -172,6 +181,25 @@ class Settings(BaseSettings):
         alias="ALERT_WEBHOOK_TIMEOUT",
         description="Timeout in seconds for webhook delivery attempts.",
         ge=0.1,
+    )
+
+    preview_max_rows: int = Field(
+        500,
+        alias="PREVIEW_MAX_ROWS",
+        description="Maximum number of rows returned by tabular previews.",
+        ge=1,
+    )
+    preview_max_pages: int = Field(
+        5,
+        alias="PREVIEW_MAX_PAGES",
+        description="Maximum number of pages rendered when previewing paged documents like PDF.",
+        ge=1,
+    )
+    preview_image_max_pixels: int = Field(
+        512,
+        alias="PREVIEW_IMAGE_MAX_PIXELS",
+        description="Maximum size in pixels for the longest side of generated image thumbnails.",
+        ge=32,
     )
 
     upload_rate_limit_requests: int = Field(

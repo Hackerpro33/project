@@ -18,6 +18,11 @@ from .. import datasets_api
 from .. import visualizations_api
 from .. import main
 from ..services import extraction
+from ..utils.batch_progress import (
+    BatchProgressTracker,
+    reset_batch_progress_tracker,
+    set_batch_progress_tracker,
+)
 from .factories import DatasetCreateFactory
 
 HEADERS = {"host": "localhost"}
@@ -64,6 +69,14 @@ def isolate_upload_dir(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def isolate_batch_tracker():
+    tracker = BatchProgressTracker()
+    set_batch_progress_tracker(tracker)
+    yield tracker
+    reset_batch_progress_tracker()
+
+
+@pytest.fixture(autouse=True)
 def isolate_email_log(tmp_path, monkeypatch):
     log_path = tmp_path / "email_log.jsonl"
     monkeypatch.setattr(main, "EMAIL_LOG_PATH", log_path)
@@ -99,6 +112,76 @@ def test_upload_and_extract_roundtrip(client):
     extracted = extract_response.json()
     assert extracted["output"]["row_count"] == 2
     assert extracted["output"]["sample_data"][0]["city"] == "Paris"
+
+
+def test_batch_upload_multiple_files(client):
+    files = [
+        ("files", ("first.csv", b"col\n1\n", "text/csv")),
+        ("files", ("second.csv", b"col\n2\n", "text/csv")),
+    ]
+
+    response = client.post(
+        f"{API_PREFIX}/uploads/batch",
+        files=files,
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert len(payload["items"]) == 2
+    assert all(item["status"] == "success" for item in payload["items"])
+
+
+def test_batch_upload_partial_failure(client):
+    files = [
+        ("files", ("valid.csv", b"col\n1\n", "text/csv")),
+        ("files", ("bad.exe", b"binary", "application/octet-stream")),
+    ]
+
+    response = client.post(
+        f"{API_PREFIX}/uploads/batch",
+        files=files,
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "partial"
+    statuses = {item["status"] for item in payload["items"]}
+    assert statuses == {"success", "failed"}
+    failed = next(item for item in payload["items"] if item["status"] == "failed")
+    assert "Unsupported file extension" in failed["error"]
+
+
+def test_batch_upload_progress_snapshot(client):
+    files = [
+        ("files", ("first.csv", b"col\n1\n", "text/csv")),
+        ("files", ("second.csv", b"col\n2\n", "text/csv")),
+    ]
+
+    response = client.post(
+        f"{API_PREFIX}/uploads/batch",
+        files=files,
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    batch_id = payload["batch_id"]
+
+    snapshot = client.get(
+        f"{API_PREFIX}/uploads/batch/{batch_id}",
+        headers=HEADERS,
+    )
+
+    assert snapshot.status_code == 200
+    snapshot_payload = snapshot.json()
+    assert snapshot_payload["batch_id"] == batch_id
+    assert snapshot_payload["status"] == payload["status"]
+    assert {item["upload_id"] for item in snapshot_payload["items"]} == {
+        item["upload_id"] for item in payload["items"]
+    }
 
 
 def test_extract_missing_file_returns_404(client):

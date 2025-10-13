@@ -58,6 +58,68 @@ class FileUploadResponse(BaseModel):
     )
 
 
+class BatchUploadItem(BaseModel):
+    """Outcome of processing a single file within a batch upload."""
+
+    upload_id: str = Field(..., description="Server-assigned identifier for tracking this upload")
+    filename: Optional[str] = Field(
+        None,
+        description="Original filename supplied by the client",
+        examples=["dataset.csv"],
+    )
+    status: Literal["queued", "processing", "success", "failed"] = Field(
+        ...,
+        description="Processing status for this particular file",
+    )
+    file_url: Optional[str] = Field(
+        None,
+        description="Identifier that can be reused in subsequent API calls when the upload succeeded",
+    )
+    quick_extraction: Optional[QuickExtraction] = Field(
+        None,
+        description="Optional quick extraction payload mirroring the single upload response",
+    )
+    error: Optional[str] = Field(
+        None,
+        description="Error message describing why the upload failed when status is 'failed'",
+    )
+
+
+class BatchUploadResponse(BaseModel):
+    """Aggregated response for the batch upload endpoint."""
+
+    batch_id: str = Field(..., description="Identifier assigned to the entire batch request")
+    status: Literal["processing", "success", "partial", "failed"] = Field(
+        ...,
+        description="Overall outcome considering all files in the batch",
+    )
+    items: List[BatchUploadItem] = Field(
+        ..., description="Detailed results for every file that was part of the batch"
+    )
+
+
+class BatchUploadProgressEvent(BaseModel):
+    """Server-sent event payload describing batch progress."""
+
+    batch_id: str = Field(..., description="Identifier assigned to the tracked batch")
+    event: Literal[
+        "batch-start",
+        "batch-snapshot",
+        "item-progress",
+        "item-complete",
+        "batch-complete",
+    ] = Field(..., description="Type of progress event")
+    timestamp: str = Field(..., description="UTC timestamp when the event was generated")
+    item: Optional[BatchUploadItem] = Field(
+        None,
+        description="Latest snapshot for the file referenced by the event, when applicable",
+    )
+    summary: Optional[BatchUploadResponse] = Field(
+        None,
+        description="Current batch snapshot allowing clients to update aggregate state",
+    )
+
+
 class ExtractRequest(BaseModel):
     """Request body for extracting metadata of a previously uploaded dataset."""
 
@@ -182,6 +244,31 @@ class DatasetPreviewResponse(BaseModel):
         None,
         description="Whether more rows are available when ``mode`` is 'page'",
     )
+    preview_type: Literal["table", "pdf", "image", "binary"] = Field(
+        "table",
+        description="Detected preview type allowing the frontend to choose a renderer",
+    )
+    content_type: Optional[str] = Field(
+        None,
+        description="Best-effort MIME type associated with the previewed file",
+    )
+    pages: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Structured representation of document pages when applicable (e.g. PDF)",
+    )
+    thumbnails: List[str] = Field(
+        default_factory=list,
+        description="Base64 encoded thumbnails for binary assets like images",
+    )
+    text_preview: Optional[str] = Field(
+        None,
+        description="Optional extracted textual preview for binary formats",
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata such as dimensions or total pages",
+    )
+    warnings: List[str] = Field(default_factory=list, description="Non-fatal preview warnings")
 
 
 class ConfigExportResponse(BaseModel):
