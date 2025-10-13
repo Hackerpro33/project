@@ -8,12 +8,23 @@ from .upload import (
     ExtractResponse,
     FileUploadResponse,
     QuickExtraction,
+    TaskHistoryEntry,
+    TaskHistoryListResponse,
+    TaskLogEntry,
     TaskEnqueueResponse,
     TaskStatusResponse,
+    DatasetPreviewResponse,
+    ConfigExportResponse,
+    ConfigImportRequest,
+    ConfigImportResponse,
 )
 
 __all__ = [
     "ColumnPreview",
+    "ConfigExportResponse",
+    "ConfigImportRequest",
+    "ConfigImportResponse",
+    "DatasetPreviewResponse",
     "EmailRequest",
     "EmailResponse",
     "ErrorResponse",
@@ -21,6 +32,9 @@ __all__ = [
     "ExtractResponse",
     "FileUploadResponse",
     "QuickExtraction",
+    "TaskHistoryEntry",
+    "TaskHistoryListResponse",
+    "TaskLogEntry",
     "TaskEnqueueResponse",
     "TaskStatusResponse",
 ]

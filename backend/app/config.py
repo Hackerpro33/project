@@ -1,15 +1,19 @@
 """Application configuration powered by environment variables."""
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import AnyHttpUrl, AnyUrl, Field, field_validator
+from pydantic import AnyHttpUrl, AnyUrl, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from .utils.files import DATA_DIR, export_json_atomic
 
 
 ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+CONFIG_OVERRIDES_PATH = DATA_DIR / "config_overrides.json"
 
 
 class Settings(BaseSettings):
@@ -70,6 +74,7 @@ class Settings(BaseSettings):
         env_file=str(ENV_FILE),
         env_file_encoding="utf-8",
         case_sensitive=False,
+        populate_by_name=True,
     )
 
     @field_validator("allowed_upload_extensions", mode="before")
@@ -104,4 +109,34 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached :class:`Settings` instance."""
 
-    return Settings()  # type: ignore[call-arg]
+    overrides: Dict[str, Any] = {}
+    if CONFIG_OVERRIDES_PATH.exists():
+        try:
+            with CONFIG_OVERRIDES_PATH.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if isinstance(payload, dict):
+                overrides = payload
+        except json.JSONDecodeError:
+            overrides = {}
+    return Settings(**overrides)  # type: ignore[call-arg]
+
+
+def apply_settings_overrides(payload: Dict[str, Any]) -> Settings:
+    """Persist overrides to disk and refresh the cached settings instance."""
+
+    try:
+        settings = Settings(**payload)  # type: ignore[call-arg]
+    except ValidationError as exc:  # pragma: no cover - validation handled by caller
+        raise exc
+
+    export_json_atomic(CONFIG_OVERRIDES_PATH, settings.model_dump(mode="json"))
+    get_settings.cache_clear()
+    refreshed = get_settings()
+    return refreshed
+
+
+__all__ = [
+    "Settings",
+    "get_settings",
+    "apply_settings_overrides",
+]

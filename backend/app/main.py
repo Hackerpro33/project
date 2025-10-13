@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -8,16 +8,19 @@ import json
 import sys
 import uuid
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List, Optional
 
-from .utils import files as files_utils
-from typing import Optional, Dict, Any
-
+import yaml
 import httpx
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, CollectorRegistry, generate_latest
 
-from .config import get_settings
+from .config import apply_settings_overrides, get_settings
+from .utils import files as files_utils
 from .schemas import (
+    ConfigExportResponse,
+    ConfigImportRequest,
+    ConfigImportResponse,
+    DatasetPreviewResponse,
     EmailRequest,
     EmailResponse,
     ErrorResponse,
@@ -25,6 +28,8 @@ from .schemas import (
     ExtractResponse,
     FileUploadResponse,
     QuickExtraction,
+    TaskHistoryEntry,
+    TaskHistoryListResponse,
     TaskEnqueueResponse,
     TaskStatusResponse,
 )
@@ -39,6 +44,9 @@ from .utils.files import (
 )
 from .services.extraction import build_extraction
 from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
+from .utils.preview import generate_preview
+from .utils.task_history import get_task_history_store
+from pydantic import ValidationError
 
 settings = get_settings()
 
@@ -261,6 +269,90 @@ def api_extract_async(req: ExtractRequest) -> TaskEnqueueResponse:
 
 
 @app.get(
+    "/api/tasks/history",
+    summary="List processed background tasks",
+    response_model=TaskHistoryListResponse,
+)
+def api_task_history(
+    status: Optional[str] = Query(None, description="Comma separated list of statuses to filter by"),
+    task_type: Optional[str] = Query(None, alias="type", description="Comma separated list of task types"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of items to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    query: Optional[str] = Query(None, alias="q", description="Free text search across task metadata and logs"),
+    since: Optional[str] = Query(
+        None,
+        description="Return tasks updated at or after this ISO 8601 timestamp",
+    ),
+    until: Optional[str] = Query(
+        None,
+        description="Return tasks updated at or before this ISO 8601 timestamp",
+    ),
+) -> TaskHistoryListResponse:
+    store = get_task_history_store()
+    statuses = [value.strip() for value in status.split(",") if value.strip()] if status else None
+    types = [value.strip() for value in task_type.split(",") if value.strip()] if task_type else None
+    try:
+        items = store.list(statuses=statuses, task_types=types, query=query, since=since, until=until)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    total = len(items)
+    window = items[offset : offset + limit]
+    models = [TaskHistoryEntry.model_validate(item) for item in window]
+    return TaskHistoryListResponse(items=models, count=total, limit=limit, offset=offset)
+
+
+@app.get(
+    "/api/tasks/history/{task_id}",
+    summary="Retrieve task history details",
+    response_model=TaskHistoryEntry,
+    responses={404: {"model": ErrorResponse, "description": "Task not found"}},
+)
+def api_task_history_detail(task_id: str) -> TaskHistoryEntry:
+    store = get_task_history_store()
+    entry = store.get(task_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return TaskHistoryEntry.model_validate(entry)
+
+
+@app.post(
+    "/api/tasks/history/{task_id}/retry",
+    summary="Retry a completed task as a new job",
+    response_model=TaskEnqueueResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Retry is not possible"},
+        404: {"model": ErrorResponse, "description": "Task not found"},
+        503: {"model": ErrorResponse, "description": "Task queue unavailable"},
+    },
+)
+def api_task_history_retry(task_id: str) -> TaskEnqueueResponse:
+    store = get_task_history_store()
+    entry = store.get(task_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if not settings.task_queue_enabled:
+        raise HTTPException(status_code=503, detail="Task queue is disabled")
+
+    task_type = entry.get("task_type")
+    if task_type != "extraction":
+        raise HTTPException(status_code=400, detail="Retry is only supported for extraction tasks")
+
+    params = entry.get("params") or {}
+    file_url = params.get("file_url")
+    if not file_url:
+        raise HTTPException(status_code=400, detail="Original task is missing the file reference")
+
+    try:
+        new_task_id = enqueue_extraction(file_url)
+    except TaskQueueUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    store.record_retry(task_id, new_task_id, task_type, params={"file_url": file_url}, metadata=entry.get("metadata") or {})
+    return TaskEnqueueResponse(task_id=new_task_id, status="queued", queue=settings.task_queue_name)
+
+
+@app.get(
     "/api/tasks/{task_id}",
     summary="Inspect background task status",
     response_model=TaskStatusResponse,
@@ -302,12 +394,87 @@ async def api_send_email(payload: EmailRequest) -> EmailResponse:
     log_path = Path(EMAIL_LOG_PATH)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(EMAIL_LOG_PATH, "a", encoding="utf-8") as log_file:
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to log email: {exc}")
     return EmailResponse(status="queued", logged=True)
+
+
+@app.get(
+    "/api/upload/{file_id}/preview",
+    summary="Preview a portion of an uploaded dataset",
+    response_model=DatasetPreviewResponse,
+    responses={400: {"model": ErrorResponse, "description": "Invalid request"}},
+)
+def api_dataset_preview(
+    file_id: str,
+    page: int = Query(1, ge=1, description="Page number for paginated preview"),
+    page_size: int = Query(50, ge=1, le=500, description="Number of rows per page"),
+    mode: str = Query("page", description="Preview mode: 'page' or 'sample'"),
+    sample_size: int = Query(50, ge=1, le=1000, description="Sample size when mode is 'sample'"),
+    seed: Optional[int] = Query(None, description="Optional deterministic seed for sampling"),
+) -> DatasetPreviewResponse:
+    payload = generate_preview(
+        file_id,
+        page=page,
+        page_size=page_size,
+        mode=mode,
+        sample_size=sample_size,
+        seed=seed,
+    )
+    return DatasetPreviewResponse.model_validate(payload)
+
+
+@app.get(
+    "/api/config/export",
+    summary="Export backend configuration",
+    response_model=ConfigExportResponse,
+)
+def api_config_export(format: str = Query("json", description="Export format: json or yaml")) -> ConfigExportResponse:
+    fmt = format.lower()
+    if fmt not in {"json", "yaml"}:
+        raise HTTPException(status_code=400, detail="Unsupported export format")
+
+    current_settings = get_settings()
+    payload = current_settings.model_dump(mode="json")
+    if fmt == "yaml":
+        content = yaml.safe_dump(payload, sort_keys=True, allow_unicode=True)
+    else:
+        content = json.dumps(payload, ensure_ascii=False, indent=2)
+    return ConfigExportResponse(format=fmt, content=content, values=payload)
+
+
+@app.post(
+    "/api/config/import",
+    summary="Import backend configuration overrides",
+    response_model=ConfigImportResponse,
+    responses={400: {"model": ErrorResponse, "description": "Invalid configuration payload"}},
+)
+def api_config_import(payload: ConfigImportRequest) -> ConfigImportResponse:
+    fmt = payload.format.lower()
+    if fmt not in {"json", "yaml"}:
+        raise HTTPException(status_code=400, detail="Unsupported configuration format")
+
+    try:
+        if fmt == "json":
+            parsed = json.loads(payload.content)
+        else:
+            parsed = yaml.safe_load(payload.content)
+    except (json.JSONDecodeError, yaml.YAMLError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid {fmt.upper()} payload: {exc}") from exc
+
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=400, detail="Configuration payload must be a mapping")
+
+    try:
+        updated = apply_settings_overrides(parsed)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=json.loads(exc.json())) from exc
+
+    global settings
+    settings = updated
+    return ConfigImportResponse(format=fmt, values=updated.model_dump(mode="json"))
 
 if __name__ == "__main__":
     import uvicorn

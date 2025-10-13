@@ -16,7 +16,8 @@ import {
   Settings as SettingsIcon, // Imported SettingsIcon
   RefreshCw, // Added RefreshCw icon for Data Transformation
   MessageSquare,
-  ShieldCheck
+  ShieldCheck,
+  History
 } from "lucide-react";
 import {
   Sidebar,
@@ -62,6 +63,12 @@ const navigationItems = [
     url: createPageUrl("DataTransformation"),
     icon: RefreshCw,
     gradient: "from-green-500 to-emerald-600"
+  },
+  {
+    title: "История задач",
+    url: createPageUrl("TaskHistory"),
+    icon: History,
+    gradient: "from-amber-500 to-orange-600"
   },
   {
     title: "Карты",

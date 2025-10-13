@@ -6,13 +6,14 @@ from typing import Any, Dict
 from fastapi import HTTPException
 from redis import Redis
 from redis.exceptions import RedisError
-from rq import Queue
+from rq import Queue, get_current_job
 from rq.exceptions import NoSuchJobError
 from rq.job import Job
 
 from .config import get_settings
 from .services.extraction import build_extraction
 from .utils.files import load_dataframe_from_identifier
+from .utils.task_history import get_task_history_store
 
 
 class TaskQueueUnavailable(RuntimeError):
@@ -42,8 +43,46 @@ def _ensure_queue() -> Queue:
 def process_extraction_job(file_url: str) -> Dict[str, Any]:
     """Worker-side execution for dataset extraction."""
 
-    df = load_dataframe_from_identifier(file_url)
-    return build_extraction(df)
+    job = get_current_job()
+    task_id = job.id if job else None
+    history = get_task_history_store()
+    if task_id:
+        history.update_status(
+            task_id,
+            "running",
+            message="Extraction started",
+            task_type="extraction",
+        )
+
+    try:
+        df = load_dataframe_from_identifier(file_url)
+        result = build_extraction(df)
+    except Exception as exc:  # pragma: no cover - safeguarding unexpected errors
+        if task_id:
+            history.update_status(
+                task_id,
+                "failed",
+                message=f"Extraction failed: {exc}",
+                level="error",
+                task_type="extraction",
+                extra={"error": str(exc)},
+            )
+        raise
+
+    if task_id:
+        history.update_status(
+            task_id,
+            "finished",
+            message="Extraction completed",
+            task_type="extraction",
+            extra={
+                "result_summary": {
+                    "row_count": result.get("row_count"),
+                    "column_count": len(result.get("columns", [])),
+                }
+            },
+        )
+    return result
 
 
 def enqueue_extraction(file_url: str) -> str:
@@ -54,6 +93,8 @@ def enqueue_extraction(file_url: str) -> str:
         job = queue.enqueue(process_extraction_job, file_url)
     except RedisError as exc:  # pragma: no cover - network/infra failure
         raise TaskQueueUnavailable(f"Failed to enqueue task: {exc}") from exc
+    history = get_task_history_store()
+    history.record_enqueued(job.id, "extraction", params={"file_url": file_url})
     return job.id
 
 
