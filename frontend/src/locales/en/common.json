@@ -67,6 +67,90 @@
     },
     "statusLabel": "Status"
   },
+  "loading": {
+    "default": "Loading data..."
+  },
+  "errors": {
+    "boundaryTitle": "We couldn't load the page",
+    "boundaryDescription": "Something went wrong while loading data. Please try again.",
+    "retry": "Try again",
+    "defaultTitle": "Failed to load data",
+    "defaultDescription": "We could not fetch fresh data. Try again in a moment.",
+    "mutationTitle": "Action failed",
+    "mutationDescription": "The operation did not complete successfully. Please retry."
+  },
+  "notifications": {
+    "successTitle": "Action completed",
+    "successDescription": "Data has been updated."
+  },
+  "taskHistory": {
+    "title": "Background task history",
+    "subtitle": "Inspect completed jobs, review logs and restart processing when necessary.",
+    "invalidRangeTitle": "Invalid period",
+    "invalidRangeDescription": "Start date cannot be later than end date.",
+    "emptyHistory": "The task history is empty for now.",
+    "noAdditionalInfo": "No additional information",
+    "selectTaskPlaceholder": "Choose a task from the list on the left to view its details.",
+    "detailLoadError": "We couldn't load task details.",
+    "retryLoad": "Retry",
+    "logTitle": "Execution log",
+    "total": "Total:",
+    "retryFailed": "Restart as new",
+    "retryGeneral": "Retry processing",
+    "retrySuccessTitle": "Task queued",
+    "retrySuccessDescription": "A new task {{taskId}} was created.",
+    "retryErrorTitle": "Retry failed",
+    "retryErrorDescription": "We couldn't retry the task. Please check the queue.",
+    "loadErrorTitle": "History request failed",
+    "loadErrorDescription": "Unable to retrieve background jobs right now. Try later.",
+    "detailErrorTitle": "Details request failed",
+    "detailErrorDescription": "Unable to fetch task details. Please try again.",
+    "previewErrorTitle": "Preview unavailable",
+    "previewErrorDescription": "File preview is temporarily unavailable.",
+    "detail": {
+      "title": "Task {{taskId}}",
+      "emptyTitle": "Select a task",
+      "timestamps": "Created {{created}} • Updated {{updated}}",
+      "status": "Status",
+      "type": "Task type",
+      "file": "Linked file",
+      "parent": "Parent task",
+      "rows": "Rows",
+      "columns": "Columns"
+    },
+    "preview": {
+      "title": "Data preview",
+      "previous": "Previous",
+      "next": "Next",
+      "random": "Random sample",
+      "loading": "Loading preview...",
+      "empty": "No preview data available."
+    },
+    "filters": {
+      "title": "Filters & status",
+      "searchLabel": "Search",
+      "searchPlaceholder": "Task ID, type, log message...",
+      "statusLabel": "Task status",
+      "statusPlaceholder": "Select status",
+      "typeLabel": "Task type",
+      "typePlaceholder": "Select type",
+      "dateFrom": "From",
+      "dateTo": "To",
+      "reset": "Reset filters",
+      "refresh": "Refresh",
+      "status": {
+        "all": "All statuses",
+        "queued": "Queued",
+        "running": "Running",
+        "finished": "Finished",
+        "failed": "Failed"
+      },
+      "type": {
+        "all": "All types",
+        "extraction": "Data extraction"
+      }
+    }
+  },
   "charts": {
     "title": "Chart builder",
     "subtitle": "Create beautiful interactive charts from your data. Choose from many chart types and tailor them to your needs.",

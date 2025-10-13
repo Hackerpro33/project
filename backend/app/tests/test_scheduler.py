@@ -71,3 +71,42 @@ def test_scheduler_validates_cron_and_completion(tmp_path):
     assert completed["retry_count"] == 0
     assert completed["last_error"] is None
     assert completed["next_run_due"].startswith("2024-01-01T01:00:00")
+
+
+def test_scheduler_pause_resume_update_and_preview(tmp_path):
+    scheduler = TaskScheduler(tmp_path / "schedules.json")
+    config = ScheduleConfig(
+        name="nightly cleanup",
+        task="cleanup",
+        cron="0 0 * * *",
+        sla_seconds=300,
+        max_retries=2,
+        payload={"region": "us"},
+    )
+
+    schedule = scheduler.register_job(config, now=_utc(2024, 1, 1, 0, 0, 0))
+    paused = scheduler.pause_schedule(schedule["id"], paused_at=_utc(2024, 1, 1, 0, 10, 0))
+    assert paused["status"] == "paused"
+    assert paused["next_run_due"] is None
+
+    resumed = scheduler.resume_schedule(schedule["id"], resumed_at=_utc(2024, 1, 2, 0, 0, 0))
+    assert resumed["status"] == "pending"
+    assert resumed["next_run_due"].startswith("2024-01-03T00:00:00")
+
+    updated = scheduler.update_schedule(
+        schedule["id"],
+        cron="0 12 * * 1-5",
+        name="weekday cleanup",
+        now=_utc(2024, 1, 2, 0, 0, 0),
+    )
+    assert updated["name"] == "weekday cleanup"
+    assert updated["cron"] == "0 12 * * 1-5"
+    assert updated["next_run_due"].startswith("2024-01-02T12:00:00")
+    assert updated["status"] == "pending"
+
+    preview = scheduler.preview_runs(schedule["id"], count=3, reference_time=_utc(2024, 1, 2, 0, 0, 0))
+    assert preview[:3] == [
+        "2024-01-02T12:00:00Z",
+        "2024-01-03T12:00:00Z",
+        "2024-01-04T12:00:00Z",
+    ]

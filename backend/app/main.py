@@ -1304,6 +1304,7 @@ if __package__ in {None, ""}:
     import visualizations_api as visualizations_router_module
     import views_api as views_router_module
     import feature_flags_api as feature_flags_router_module
+    import schedules_api as schedules_router_module
 else:
     from . import audit_api as audit_router_module
     from . import collaboration_api as collaboration_router_module
@@ -1314,6 +1315,7 @@ else:
     from . import visualizations_api as visualizations_router_module
     from . import views_api as views_router_module
     from . import feature_flags_api as feature_flags_router_module
+    from . import schedules_api as schedules_router_module
 
 datasets_router = datasets_router_module.router
 dataset_versions_router = dataset_versions_router_module.router
@@ -1324,12 +1326,14 @@ audit_router = audit_router_module.router
 views_router = views_router_module.router
 feature_flags_router = feature_flags_router_module.router
 collaboration_router = collaboration_router_module.router
+schedules_router = schedules_router_module.router
 
 app.include_router(datasets_router, prefix=f"{API_PREFIX}/dataset")
 app.include_router(dictionary_router, prefix=f"{API_PREFIX}/dictionary")
 app.include_router(visualizations_router, prefix=f"{API_PREFIX}/visualization")
 app.include_router(chat_router, prefix=f"{API_PREFIX}/chat")
 app.include_router(audit_router, prefix=f"{API_PREFIX}/audit")
+app.include_router(schedules_router, prefix=f"{API_PREFIX}")
 app.include_router(datasets_router, prefix="/api/dataset")
 app.include_router(dataset_versions_router, prefix="/api/dataset")
 app.include_router(dictionary_router, prefix="/api/dictionary")

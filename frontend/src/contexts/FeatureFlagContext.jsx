@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import PropTypes from 'prop-types'
 import { jsonRequest } from '@/api/http.js'
 
-const FeatureFlagContext = createContext({ flags: {}, loading: true, error: null })
+export const FeatureFlagContext = createContext({ flags: {}, loading: true, error: null })
 
 async function fetchFeatureFlags(signal) {
   const payload = await jsonRequest('/feature-flags', { signal })
