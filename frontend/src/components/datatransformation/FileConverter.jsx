@@ -26,6 +26,7 @@ import {
   generatePlainText,
   getExportContentType,
 } from "@/utils/dataTransformation";
+import { downloadBlob } from "@/utils/download";
 
 export default function FileConverter({ supportedFormats, onConversionComplete, onDatasetCreated }) {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -262,15 +263,8 @@ export default function FileConverter({ supportedFormats, onConversionComplete, 
     const { content, mimeType, extension } = downloadableContent;
     const safeExtension = extension || 'csv';
     const blob = new Blob([content ?? ""], { type: mimeType || getExportContentType(safeExtension) });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
     const originalNameWithoutExt = selectedFile.name.replace(/\.[^/.]+$/, "");
-    link.download = `${originalNameWithoutExt}_extracted.${safeExtension}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `${originalNameWithoutExt}_extracted.${safeExtension}`);
   };
 
   const fileIcon = selectedFile ? detectFileIcon(selectedFile.name) : null;
