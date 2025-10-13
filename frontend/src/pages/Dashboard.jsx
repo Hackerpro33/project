@@ -7,6 +7,7 @@ import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import StatsGrid from "../components/dashboard/StatsGrid";
 import QuickActions from "../components/dashboard/QuickActions";
 import RecentActivity from "../components/dashboard/RecentActivity";
+import TaskStatusPanel from "../components/dashboard/TaskStatusPanel";
 import TrendingCharts from "../components/dashboard/TrendingCharts";
 import PageContainer from "@/components/layout/PageContainer";
 
@@ -324,9 +325,9 @@ export default function Dashboard() {
       {/* Quick Actions */}
       <QuickActions />
 
-      <div className="grid lg:grid-cols-3 gap-8">
+      <div className="grid gap-8 lg:grid-cols-3">
         {/* Recent Activity */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-8">
           <RecentActivity
             datasets={datasets}
             visualizations={visualizations}
@@ -334,8 +335,9 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* Trending Charts */}
-        <div>
+        {/* Live Task Panel & Trends */}
+        <div className="space-y-8">
+          <TaskStatusPanel />
           <TrendingCharts
             data={metrics.trendData}
             summary={metrics.summary}

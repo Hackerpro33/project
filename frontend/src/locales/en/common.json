@@ -11,10 +11,13 @@
     "sources": "Data sources",
     "transformation": "Data transformation",
     "maps": "Maps",
+    "taskHistory": "Task history",
     "charts": "Charts",
     "forecasting": "Forecasting",
     "networks": "Network graphs",
     "constructor": "Constructor",
+    "datasetVersions": "Dataset versions",
+    "collaboration": "Collaboration",
     "settings": "Settings"
   },
   "language": {
@@ -66,6 +69,106 @@
       "error": "Error"
     },
     "statusLabel": "Status"
+  },
+  "dashboard": {
+    "taskStatus": {
+      "title": "Live task statuses",
+      "refresh": "Refresh",
+      "pause": "Pause auto updates",
+      "resume": "Resume auto updates",
+      "liveLabel_on": "Live updates enabled",
+      "liveLabel_off": "Live updates paused",
+      "updatedAt": "Updated at {{time}}",
+      "startedAt": "Started: {{time}}",
+      "finishedAt": "Finished: {{time}}",
+      "empty": "There are no active background tasks right now.",
+      "status": {
+        "queued": "Queued",
+        "running": "Running",
+        "finished": "Finished",
+        "failed": "Failed",
+        "unknown": "Unknown"
+      },
+      "sidebarTitle": "Local analytics",
+      "sidebarDescription": "Track model performance and data processing progress.",
+      "sidebarModel": "Model accuracy",
+      "sidebarDataPoints": "Data points"
+    }
+  },
+  "onboarding": {
+    "steps": {
+      "welcome": {
+        "title": "Welcome!",
+        "content": "A short tour will highlight the main features of the workspace. Use the buttons to move between steps."
+      },
+      "navigation": {
+        "title": "Navigation",
+        "content": "The sidebar contains analytical modules, data sources and platform settings."
+      },
+      "quickActions": {
+        "title": "Quick actions",
+        "content": "Start by uploading data, building a chart or launching a forecast from this panel."
+      },
+      "taskPanel": {
+        "title": "Task monitor",
+        "content": "Follow the real-time task queue, pause updates or refresh manually when needed."
+      },
+      "theme": {
+        "title": "Theme toggle",
+        "content": "Switch between light and dark themes instantly with the toggle in the header."
+      }
+    },
+    "controls": {
+      "back": "Back",
+      "close": "Close",
+      "finish": "Finish",
+      "next": "Next",
+      "skip": "Skip tour"
+    }
+  },
+  "userSettings": {
+    "title": "Personal settings",
+    "description": "Update your profile details, interface language and notification preferences.",
+    "profile": {
+      "title": "User profile",
+      "description": "These details appear in notifications and collaboration tools.",
+      "name": "Name",
+      "email": "Email",
+      "bio": "About you",
+      "bioPlaceholder": "Share your role or domain expertise"
+    },
+    "preferences": {
+      "title": "Preferences",
+      "description": "Pick the interface language and customise the appearance.",
+      "language": "Language",
+      "theme": "Theme",
+      "themeDescription": "Use the header toggle to switch themes.",
+      "themeHint": "Use the toggle above to switch between light and dark looks at any time."
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "Choose how you would like to be notified about system events.",
+      "email": {
+        "title": "Email updates",
+        "description": "Send task statuses and reports to my inbox."
+      },
+      "desktop": {
+        "title": "Desktop alerts",
+        "description": "Show in-app pop ups while I am working."
+      },
+      "weekly": {
+        "title": "Weekly digest",
+        "description": "Receive a recap with key metrics and suggestions."
+      },
+      "savedTitle": "Preferences saved",
+      "savedDescription": "Your personal settings were updated successfully.",
+      "errorTitle": "Unable to save settings",
+      "errorDescription": "Check your connection and try again."
+    },
+    "actions": {
+      "save": "Save changes",
+      "saving": "Saving..."
+    }
   },
   "charts": {
     "title": "Chart builder",

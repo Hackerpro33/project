@@ -1,55 +1,62 @@
-import { jsonRequest as request } from './http';
+import { jsonRequest as request } from "./http";
 
 function buildQuery(params = {}) {
   const search = new URLSearchParams();
+
   Object.entries(params).forEach(([key, value]) => {
-    if (value === undefined || value === null) return;
-    if (Array.isArray(value)) {
-      value.forEach((entry) => {
-        if (entry !== undefined && entry !== null && entry !== '') {
-          search.append(key, entry);
-        }
-      });
-      return;
     if (value === undefined || value === null) {
       return;
     }
+
     if (Array.isArray(value)) {
       value
-        .filter((item) => item !== undefined && item !== null && item !== '')
-        .forEach((item) => {
-          search.append(key, item);
-        });
+        .filter((item) => item !== undefined && item !== null && item !== "")
+        .forEach((item) => search.append(key, item));
       return;
     }
-    if (value !== '') {
+
+    if (value !== "") {
       search.append(key, value);
     }
-    if (value === '') return;
-    search.append(key, value);
   });
+
   const query = search.toString();
-  return query ? `?${query}` : '';
+  return query ? `?${query}` : "";
+}
+
+function normalizeListArgs(args, defaults) {
+  if (typeof args === "string") {
+    return { ...defaults, orderBy: args };
+  }
+  if (args && typeof args === "object") {
+    return { ...defaults, ...args };
+  }
+  return { ...defaults };
 }
 
 export const Dataset = {
-  async list({
-    orderBy = '-created_at',
-    page = 1,
-    pageSize = 20,
-    search,
-    tags,
-  } = {}) {
+  async list(args) {
+    const options = normalizeListArgs(args, {
+      orderBy: "-created_at",
+      page: 1,
+      pageSize: 20,
+      search: undefined,
+      tags: undefined,
+      types: undefined,
+      owners: undefined,
+    });
+
     return request(
-      `/api/dataset/list${buildQuery({
-        order_by: orderBy,
-        page,
-        page_size: pageSize,
-        search,
-        tags,
-      })}`
-  async list(orderBy = '-created_at') {
-    return request(`/api/v1/dataset/list${buildQuery({ order_by: orderBy })}`);
+      `/api/v1/dataset/list${buildQuery({
+        order_by: options.orderBy,
+        page: options.page,
+        page_size: options.pageSize,
+        search: options.search,
+        tags: options.tags,
+        dataset_types: options.types,
+        owners: options.owners,
+      })}`,
+    );
   },
 
   async search({
@@ -57,6 +64,8 @@ export const Dataset = {
     tags = [],
     types = [],
     owners = [],
+    page,
+    pageSize,
     limit,
     orderBy,
   } = {}) {
@@ -66,6 +75,8 @@ export const Dataset = {
         tags,
         dataset_types: types,
         owners,
+        page,
+        page_size: pageSize,
         limit,
         order_by: orderBy,
       })}`,
@@ -73,58 +84,73 @@ export const Dataset = {
   },
 
   async get(id) {
+    if (!id) {
+      throw new Error("dataset id is required");
+    }
     return request(`/api/v1/dataset/${id}`);
   },
 
   async create(payload) {
-    return request('/api/v1/dataset/create', {
-      method: 'POST',
+    return request("/api/v1/dataset/create", {
+      method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
   async profile(payload) {
-    return request('/api/dataset/profile', {
-      method: 'POST',
+    return request("/api/dataset/profile", {
+      method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
   async validate(payload) {
-    return request('/api/dataset/validate', {
-      method: 'POST',
+    return request("/api/dataset/validate", {
+      method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
   async update(id, payload) {
+    if (!id) {
+      throw new Error("dataset id is required");
+    }
     return request(`/api/v1/dataset/${id}`, {
-      method: 'PUT',
+      method: "PUT",
       body: JSON.stringify(payload),
     });
   },
 
   async delete(id) {
+    if (!id) {
+      throw new Error("dataset id is required");
+    }
     return request(`/api/v1/dataset/${id}`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   },
 
   async similar(id, options = {}) {
+    if (!id) {
+      throw new Error("dataset id is required");
+    }
     return request(
       `/api/dataset/${id}/similar${buildQuery({ limit: options.limit })}`,
     );
   },
 
   async regenerateSummary(id) {
+    if (!id) {
+      throw new Error("dataset id is required");
+    }
     return request(`/api/dataset/${id}/auto-summary`, {
-      method: 'POST',
+      method: "POST",
     });
   },
 
   async monitorMetrics(payload) {
-    return request('/api/dataset/monitor', {
-      method: 'POST',
+    return request("/api/dataset/monitor", {
+      method: "POST",
       body: JSON.stringify(payload),
     });
   },
@@ -133,89 +159,98 @@ export const Dataset = {
 export const DatasetVersions = {
   async list(datasetId) {
     if (!datasetId) {
-      throw new Error('datasetId is required');
+      throw new Error("datasetId is required");
     }
     return request(`/api/dataset/${datasetId}/versions`);
   },
 
   async create(datasetId, payload = {}) {
     if (!datasetId) {
-      throw new Error('datasetId is required');
+      throw new Error("datasetId is required");
     }
     return request(`/api/dataset/${datasetId}/versions`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
   async diff(datasetId, currentId, previousId) {
     if (!datasetId || !currentId || !previousId) {
-      throw new Error('datasetId, currentId и previousId обязательны');
+      throw new Error("datasetId, currentId и previousId обязательны");
     }
     return request(`/api/dataset/${datasetId}/versions/${currentId}/diff/${previousId}`);
   },
 
   async restore(datasetId, versionId) {
     if (!datasetId || !versionId) {
-      throw new Error('datasetId и versionId обязательны');
+      throw new Error("datasetId и versionId обязательны");
     }
     return request(`/api/dataset/${datasetId}/versions/${versionId}/restore`, {
-      method: 'POST',
+      method: "POST",
     });
   },
 };
 
 export const Visualization = {
-  async list({
-    orderBy = '-created_at',
-    page = 1,
-    pageSize = 20,
-    search,
-    tags,
-    types,
-  } = {}) {
+  async list(args) {
+    const options = normalizeListArgs(args, {
+      orderBy: "-created_at",
+      page: 1,
+      pageSize: 20,
+      search: undefined,
+      tags: undefined,
+      types: undefined,
+    });
+
     return request(
-      `/api/visualization/list${buildQuery({
-        order_by: orderBy,
-        page,
-        page_size: pageSize,
-        search,
-        tags,
-        types,
-      })}`
+      `/api/v1/visualization/list${buildQuery({
+        order_by: options.orderBy,
+        page: options.page,
+        page_size: options.pageSize,
+        search: options.search,
+        tags: options.tags,
+        types: options.types,
+      })}`,
     );
-  async list(orderBy = '-created_at') {
-    return request(`/api/v1/visualization/list${buildQuery({ order_by: orderBy })}`);
   },
 
-  async filter(filters = {}, orderBy = '-created_at') {
-    return request('/api/v1/visualization/filter', {
-      method: 'POST',
+  async filter(filters = {}, orderBy = "-created_at") {
+    return request("/api/v1/visualization/filter", {
+      method: "POST",
       body: JSON.stringify({ filters, order_by: orderBy }),
     });
   },
 
   async get(id) {
+    if (!id) {
+      throw new Error("visualization id is required");
+    }
     return request(`/api/v1/visualization/${id}`);
   },
 
   async create(payload) {
-    return request('/api/v1/visualization/create', {
-      method: 'POST',
+    return request("/api/v1/visualization/create", {
+      method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
   async update(id, payload) {
+    if (!id) {
+      throw new Error("visualization id is required");
+    }
     return request(`/api/v1/visualization/${id}`, {
-      method: 'PUT',
+      method: "PUT",
       body: JSON.stringify(payload),
     });
   },
 
   async delete(id) {
+    if (!id) {
+      throw new Error("visualization id is required");
+    }
     return request(`/api/v1/visualization/${id}`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   },
 };

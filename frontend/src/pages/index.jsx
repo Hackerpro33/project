@@ -1,18 +1,12 @@
-import Layout from './Layout.jsx'
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom'
-import { PAGES, getCurrentPage } from './pageRegistry'
-import React from 'react';
-import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
+import React from 'react'
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 
-import Layout from './Layout.jsx';
-import { PAGES, getCurrentPage } from './pageRegistry';
+import Layout from './Layout.jsx'
+import { PAGES } from './pageRegistry'
 
 function PagesContent() {
-  const location = useLocation();
-  const currentPage = getCurrentPage(location.pathname);
-
   return (
-    <Layout currentPageName={currentPage}>
+    <Layout>
       <Routes>
         <Route path="/" element={<PAGES.Dashboard />} />
         {Object.entries(PAGES).map(([name, Component]) => (
@@ -21,7 +15,6 @@ function PagesContent() {
       </Routes>
     </Layout>
   )
-  );
 }
 
 export default function Pages() {
@@ -29,5 +22,5 @@ export default function Pages() {
     <Router>
       <PagesContent />
     </Router>
-  );
+  )
 }

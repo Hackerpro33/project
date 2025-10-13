@@ -12,9 +12,8 @@ import {
   Plus,
   Filter,
   Search,
-  Tag
+  Tag,
 } from "lucide-react";
-import { BarChart3, LineChart, ScatterChart, TrendingUp, Plus } from "lucide-react";
 import PageContainer from "@/components/layout/PageContainer";
 import PaginationControls from "@/components/common/PaginationControls";
 import SavedViewsManager from "@/components/common/SavedViewsManager";
@@ -54,17 +53,15 @@ export default function Charts() {
     setIsLoading(true);
     try {
       const [datasetsData, visualizationsData] = await Promise.all([
-        Dataset.list({ orderBy: '-created_date', pageSize: 100 }),
+        Dataset.list({ orderBy: "-created_date", pageSize: 100 }),
         Visualization.list({
-          orderBy: '-created_date',
+          orderBy: "-created_date",
           page: vizPagination.page,
           pageSize: vizPagination.pageSize,
           search: vizSearch || undefined,
           tags: vizTags.length ? vizTags : undefined,
           types: vizTypes.length ? vizTypes : undefined,
         }),
-        Dataset.list("-created_at"),
-        Visualization.list("-created_at"),
       ]);
       setDatasets(Array.isArray(datasetsData.items) ? datasetsData.items : datasetsData);
       setVisualizations(Array.isArray(visualizationsData.items) ? visualizationsData.items : []);
@@ -93,7 +90,7 @@ export default function Charts() {
     setIsLoading(true);
     try {
       const response = await Visualization.list({
-        orderBy: '-created_date',
+        orderBy: "-created_date",
         page: nextPage,
         pageSize: nextPageSize,
         search: nextSearch || undefined,
@@ -171,7 +168,7 @@ export default function Charts() {
     setVizTags([]);
     setVizTypes([]);
     setVizPagination((prev) => ({ ...prev, page: 1 }));
-    loadVisualizations({ page: 1, search: '', tags: [], types: [] });
+    loadVisualizations({ page: 1, search: "", tags: [], types: [] });
   };
 
   const handleCreateChart = (chartType) => {
@@ -240,8 +237,9 @@ export default function Charts() {
         )}
 
         {!showBuilder && (
-          <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-lg">
-            <CardContent className="space-y-4 p-6">
+          <>
+            <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-lg">
+              <CardContent className="space-y-4 p-6">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="relative w-full md:max-w-lg">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-slate-400" />
@@ -317,9 +315,10 @@ export default function Charts() {
                   onApplyView={handleApplyVisualizationView}
                 />
               </div>
-            </CardContent>
-          </Card>
-          <ChartTemplateLibrary onApplyTemplate={handleApplyTemplate} />
+              </CardContent>
+            </Card>
+            <ChartTemplateLibrary onApplyTemplate={handleApplyTemplate} />
+          </>
         )}
 
         {/* Chart Builder */}

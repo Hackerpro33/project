@@ -51,7 +51,10 @@ export default function QuickActions() {
   ];
 
   return (
-    <Card className="border-0 bg-white/50 backdrop-blur-xl shadow-xl">
+    <Card
+      className="border-0 bg-white/50 backdrop-blur-xl shadow-xl dark:bg-slate-900/60"
+      data-tour="quick-actions"
+    >
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-slate-900">
           <Sparkles className="w-5 h-5 text-purple-500" />
