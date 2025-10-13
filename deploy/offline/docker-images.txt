@@ -1,0 +1,9 @@
+# Base images required for offline builds
+python:3.11-slim
+node:20-alpine
+postgres:15-alpine
+redis:7-alpine
+unleashorg/unleash-server:4.22
+clamav/clamav:stable
+verdaccio/verdaccio:5
+minio/minio:RELEASE.2024-08-03T04-33-23Z

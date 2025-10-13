@@ -1,0 +1,15 @@
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/node_modules
+backend/uploads
+backend/data
+frontend/coverage
+frontend/dist
+secrets/*.yaml
+secrets/**/*.yaml
+!secrets/example.secrets.yaml
+deploy/offline/images

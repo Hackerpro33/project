@@ -1,29 +1,3 @@
-FROM python:3.11-slim AS base
-
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
-
-WORKDIR /app
-
-COPY app/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY app ./app
-COPY alembic ./alembic
-COPY alembic.ini ./alembic.ini
-COPY scripts ./scripts
-
-ENV PYTHONPATH=/app
-
-RUN useradd --create-home appuser && \
-    chown -R appuser:appuser /app
-
-USER appuser
-
-EXPOSE 8000
-
-CMD ["/app/scripts/start.sh"]
 # syntax=docker/dockerfile:1.6
 
 ARG PYTHON_VERSION=3.11
@@ -31,22 +5,29 @@ ARG PYTHON_VERSION=3.11
 FROM python:${PYTHON_VERSION}-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-RUN apt-get update \
-    && apt-get install --no-install-recommends -y build-essential curl \
-    && rm -rf /var/lib/apt/lists/*
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
 COPY backend/app/requirements.txt ./requirements.txt
 
-RUN pip install --upgrade pip \
-    && pip install --prefix=/install --no-warn-script-location -r requirements.txt
+ARG PIP_WHEEL_DIR=deploy/offline/python
+COPY ${PIP_WHEEL_DIR}/ /tmp/wheels/
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    if find /tmp/wheels -maxdepth 1 -type f -name '*.whl' -print -quit >/dev/null; then \
+        pip install --prefix=/install --no-warn-script-location --no-index --find-links=/tmp/wheels -r requirements.txt; \
+    else \
+        pip install --prefix=/install --no-warn-script-location -r requirements.txt; \
+    fi
 
 COPY backend/app /app
+COPY backend/alembic /alembic
+COPY backend/alembic.ini /alembic.ini
+COPY backend/scripts /scripts
 
-FROM gcr.io/distroless/python3-debian12:latest AS runtime
+FROM python:${PYTHON_VERSION}-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -55,11 +36,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY --from=builder /install /usr/local
-COPY --chown=65532:65532 backend/app /app
+COPY --from=builder /app /app
+COPY --from=builder /alembic /alembic
+COPY --from=builder /alembic.ini /alembic.ini
+COPY --from=builder /scripts /scripts
 
-USER 65532
+RUN useradd --create-home --uid 1000 appuser && \
+    chown -R appuser:appuser /app /alembic /alembic.ini /scripts && \
+    chmod +x /scripts/start.sh
+
+USER appuser
 
 EXPOSE 8000
 
-ENTRYPOINT ["python", "-m", "uvicorn", "app.main:app"]
-CMD ["--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/scripts/start.sh"]

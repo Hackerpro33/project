@@ -35,3 +35,6 @@ htmlcov/
 frontend/coverage/
 .coverage
 coverage/
+
+frontend/node_modules/
+backend/node_modules/

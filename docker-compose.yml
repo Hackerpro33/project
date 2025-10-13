@@ -38,7 +38,11 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        PYTHON_VERSION: 3.11
+        PIP_WHEEL_DIR: deploy/offline/python
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://insight:insight@db:5432/insight
@@ -56,15 +60,18 @@ services:
       - ./backend/app/uploads:/app/app/uploads
 
   frontend:
-    image: node:20-alpine
-    working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host"
-    ports:
-      - "5173:5173"
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        NODE_VERSION: 20-alpine
+        NPM_CACHE_DIR: deploy/offline/npm/frontend
+        NPM_REGISTRY_URL: '${NPM_REGISTRY_URL:-https://registry.npmjs.org/}'
+    restart: unless-stopped
     environment:
       VITE_API_BASE: http://backend:8000
-    volumes:
-      - ./frontend:/app
+    ports:
+      - "5173:5173"
     depends_on:
       - backend
 
