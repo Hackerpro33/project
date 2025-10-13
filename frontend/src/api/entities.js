@@ -2,18 +2,12 @@ import { jsonRequest as request } from './http';
 
 function buildQuery(params = {}) {
   const search = new URLSearchParams();
+
   Object.entries(params).forEach(([key, value]) => {
-    if (value === undefined || value === null) return;
-    if (Array.isArray(value)) {
-      value.forEach((entry) => {
-        if (entry !== undefined && entry !== null && entry !== '') {
-          search.append(key, entry);
-        }
-      });
-      return;
     if (value === undefined || value === null) {
       return;
     }
+
     if (Array.isArray(value)) {
       value
         .filter((item) => item !== undefined && item !== null && item !== '')
@@ -22,34 +16,68 @@ function buildQuery(params = {}) {
         });
       return;
     }
-    if (value !== '') {
-      search.append(key, value);
+
+    if (value === '') {
+      return;
     }
-    if (value === '') return;
+
     search.append(key, value);
   });
+
   const query = search.toString();
   return query ? `?${query}` : '';
 }
 
+function hasUsableValue(options, key) {
+  if (!Object.prototype.hasOwnProperty.call(options, key)) {
+    return false;
+  }
+
+  const value = options[key];
+
+  if (Array.isArray(value)) {
+    return value.some(
+      (item) => item !== undefined && item !== null && item !== '',
+    );
+  }
+
+  return value !== undefined && value !== null && value !== '';
+}
+
+function shouldUseLegacyList(options, keys) {
+  return keys.some((key) => hasUsableValue(options, key));
+}
+
 export const Dataset = {
-  async list({
-    orderBy = '-created_at',
-    page = 1,
-    pageSize = 20,
-    search,
-    tags,
-  } = {}) {
-    return request(
-      `/api/dataset/list${buildQuery({
-        order_by: orderBy,
-        page,
-        page_size: pageSize,
-        search,
-        tags,
-      })}`
-  async list(orderBy = '-created_at') {
-    return request(`/api/v1/dataset/list${buildQuery({ order_by: orderBy })}`);
+  async list(options = {}) {
+    const {
+      orderBy = '-created_at',
+      page = 1,
+      pageSize = 20,
+      search,
+      tags,
+    } = options;
+
+    const useLegacyList = shouldUseLegacyList(options, [
+      'page',
+      'pageSize',
+      'search',
+      'tags',
+    ]);
+
+    const query = useLegacyList
+      ? buildQuery({
+          order_by: orderBy,
+          page,
+          page_size: pageSize,
+          search,
+          tags,
+        })
+      : buildQuery({ order_by: orderBy });
+
+    const endpoint = useLegacyList ? '/api/dataset/list' : '/api/v1/dataset/list';
+
+    return request(`${endpoint}${query}`);
   },
 
   async search({
@@ -152,7 +180,9 @@ export const DatasetVersions = {
     if (!datasetId || !currentId || !previousId) {
       throw new Error('datasetId, currentId и previousId обязательны');
     }
-    return request(`/api/dataset/${datasetId}/versions/${currentId}/diff/${previousId}`);
+    return request(
+      `/api/dataset/${datasetId}/versions/${currentId}/diff/${previousId}`,
+    );
   },
 
   async restore(datasetId, versionId) {
@@ -166,26 +196,40 @@ export const DatasetVersions = {
 };
 
 export const Visualization = {
-  async list({
-    orderBy = '-created_at',
-    page = 1,
-    pageSize = 20,
-    search,
-    tags,
-    types,
-  } = {}) {
-    return request(
-      `/api/visualization/list${buildQuery({
-        order_by: orderBy,
-        page,
-        page_size: pageSize,
-        search,
-        tags,
-        types,
-      })}`
-    );
-  async list(orderBy = '-created_at') {
-    return request(`/api/v1/visualization/list${buildQuery({ order_by: orderBy })}`);
+  async list(options = {}) {
+    const {
+      orderBy = '-created_at',
+      page = 1,
+      pageSize = 20,
+      search,
+      tags,
+      types,
+    } = options;
+
+    const useLegacyList = shouldUseLegacyList(options, [
+      'page',
+      'pageSize',
+      'search',
+      'tags',
+      'types',
+    ]);
+
+    const query = useLegacyList
+      ? buildQuery({
+          order_by: orderBy,
+          page,
+          page_size: pageSize,
+          search,
+          tags,
+          types,
+        })
+      : buildQuery({ order_by: orderBy });
+
+    const endpoint = useLegacyList
+      ? '/api/visualization/list'
+      : '/api/v1/visualization/list';
+
+    return request(`${endpoint}${query}`);
   },
 
   async filter(filters = {}, orderBy = '-created_at') {
@@ -220,12 +264,12 @@ export const Visualization = {
   },
 };
 
-export async function getDatasets() {
-  const response = await Dataset.list();
-  return response.items ?? response;
+export async function getDatasets(options) {
+  const response = await Dataset.list(options);
+  return response?.items ?? response;
 }
 
-export async function getVisualizations() {
-  const response = await Visualization.list();
-  return response.items ?? response;
+export async function getVisualizations(options) {
+  const response = await Visualization.list(options);
+  return response?.items ?? response;
 }
