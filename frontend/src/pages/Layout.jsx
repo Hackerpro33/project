@@ -17,6 +17,7 @@ import {
   RefreshCw, // Added RefreshCw icon for Data Transformation
   MessageSquare,
   ShieldCheck,
+  History
   Users
 } from "lucide-react";
 import {
@@ -76,6 +77,12 @@ const navigationItems = [
     url: createPageUrl("DataTransformation"),
     icon: RefreshCw,
     gradient: "from-green-500 to-emerald-600"
+  },
+  {
+    title: "История задач",
+    url: createPageUrl("TaskHistory"),
+    icon: History,
+    gradient: "from-amber-500 to-orange-600"
   },
   {
     id: "maps",

@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Dataset, Visualization, getDatasets, getVisualizations } from "@/api/entities";
+import { exportConfig, importConfigPayload } from "@/api/config";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { AlertTriangle, HardDrive, Database, BarChart3 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/components/ui/use-toast";
+import { AlertTriangle, HardDrive, Database, BarChart3, Download, Upload, Loader2 } from "lucide-react";
 
 export default function DataManagement() {
   const [datasets, setDatasets] = useState([]);
@@ -14,6 +18,13 @@ export default function DataManagement() {
   const [isLoading, setIsLoading] = useState(true);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [exportFormat, setExportFormat] = useState('json');
+  const [exportedConfig, setExportedConfig] = useState('');
+  const [importFormat, setImportFormat] = useState('json');
+  const [importContent, setImportContent] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     loadData();
@@ -91,6 +102,56 @@ export default function DataManagement() {
     } finally {
       setIsDeleting(false);
       setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleExportConfig = async () => {
+    setIsExporting(true);
+    try {
+      const response = await exportConfig(exportFormat);
+      setExportedConfig(response.content || '');
+      toast({
+        title: 'Конфигурация выгружена',
+        description: `Текущие настройки получены в формате ${exportFormat.toUpperCase()}.`
+      });
+    } catch (error) {
+      console.error('Ошибка экспорта конфигурации:', error);
+      toast({
+        title: 'Ошибка экспорта',
+        description: 'Не удалось получить конфигурацию. Попробуйте позже.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImportConfig = async () => {
+    if (!importContent.trim()) {
+      toast({
+        title: 'Пустое содержимое',
+        description: 'Добавьте содержимое конфигурации перед импортом.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      await importConfigPayload({ format: importFormat, content: importContent });
+      toast({
+        title: 'Конфигурация применена',
+        description: 'Новые настройки успешно сохранены.'
+      });
+    } catch (error) {
+      console.error('Ошибка импорта конфигурации:', error);
+      toast({
+        title: 'Ошибка импорта',
+        description: 'Не удалось применить конфигурацию. Проверьте формат данных.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -213,6 +274,76 @@ export default function DataManagement() {
                 </div>
               ))
             )}
+          </div>
+      </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Download className="w-5 h-5 text-blue-500" />
+            Экспорт и импорт конфигураций
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-slate-900">Экспорт</h4>
+              <Select value={exportFormat} onValueChange={setExportFormat}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="json">JSON</SelectItem>
+                  <SelectItem value="yaml">YAML</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              variant="outline"
+              onClick={handleExportConfig}
+              disabled={isExporting}
+              className="gap-2"
+            >
+              {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              Выгрузить конфигурацию
+            </Button>
+            <Textarea
+              value={exportedConfig}
+              onChange={(event) => setExportedConfig(event.target.value)}
+              placeholder="Здесь появится выгруженная конфигурация"
+              className="min-h-[200px] bg-slate-50"
+              readOnly
+            />
+          </div>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-slate-900">Импорт</h4>
+              <Select value={importFormat} onValueChange={setImportFormat}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="json">JSON</SelectItem>
+                  <SelectItem value="yaml">YAML</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Textarea
+              value={importContent}
+              onChange={(event) => setImportContent(event.target.value)}
+              placeholder="Вставьте конфигурацию для импорта"
+              className="min-h-[200px]"
+            />
+            <Button
+              variant="default"
+              onClick={handleImportConfig}
+              disabled={isImporting}
+              className="gap-2"
+            >
+              {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              Применить конфигурацию
+            </Button>
           </div>
         </CardContent>
       </Card>
