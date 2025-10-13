@@ -2,14 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Dataset, Visualization } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  BarChart3,
-  LineChart,
-  ScatterChart,
-  TrendingUp,
-  Plus,
-  Filter
-} from "lucide-react";
+import { BarChart3, LineChart, ScatterChart, TrendingUp, Plus } from "lucide-react";
 import PageContainer from "@/components/layout/PageContainer";
 
 import ChartBuilder from "../components/charts/ChartBuilder";
@@ -17,6 +10,7 @@ import ChartGallery from "../components/charts/ChartGallery";
 import ChartTypeSelector from "../components/charts/ChartTypeSelector";
 import ChartViewer from "../components/charts/ChartViewer";
 import AdvancedChartInsights from "../components/charts/AdvancedChartInsights";
+import ChartTemplateLibrary from "../components/charts/ChartTemplateLibrary";
 
 export default function Charts() {
   const [datasets, setDatasets] = useState([]);
@@ -25,8 +19,9 @@ export default function Charts() {
   const [showBuilder, setShowBuilder] = useState(false);
   const [selectedChartType, setSelectedChartType] = useState('line');
   const [editingViz, setEditingViz] = useState(null);
-  const [viewingViz, setViewingViz] =useState(null);
+  const [viewingViz, setViewingViz] = useState(null);
   const [activeSegment, setActiveSegment] = useState(null);
+  const [activeTemplate, setActiveTemplate] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -36,8 +31,8 @@ export default function Charts() {
     setIsLoading(true);
     try {
       const [datasetsData, visualizationsData] = await Promise.all([
-        Dataset.list('-created_date'),
-        Visualization.list('-created_date')
+        Dataset.list("-created_at"),
+        Visualization.list("-created_at"),
       ]);
       setDatasets(datasetsData);
       setVisualizations(visualizationsData);
@@ -49,12 +44,14 @@ export default function Charts() {
 
   const handleCreateChart = (chartType) => {
     setEditingViz(null);
+    setActiveTemplate(null);
     setSelectedChartType(chartType);
     setShowBuilder(true);
   };
   
   const handleEditChart = (viz) => {
     setEditingViz(viz);
+    setActiveTemplate(null);
     setSelectedChartType(viz.type);
     setShowBuilder(true);
   }
@@ -62,7 +59,15 @@ export default function Charts() {
   const handleCloseBuilder = () => {
     setShowBuilder(false);
     setEditingViz(null);
+    setActiveTemplate(null);
   }
+
+  const handleApplyTemplate = (template) => {
+    setEditingViz(null);
+    setActiveTemplate(template);
+    setSelectedChartType(template.chartType);
+    setShowBuilder(true);
+  };
 
   return (
     <PageContainer className="space-y-8">
@@ -92,14 +97,19 @@ export default function Charts() {
           />
         )}
 
+        {!showBuilder && (
+          <ChartTemplateLibrary onApplyTemplate={handleApplyTemplate} />
+        )}
+
         {/* Chart Builder */}
         {showBuilder && (
-          <ChartBuilder 
+          <ChartBuilder
             chartType={selectedChartType}
             datasets={datasets}
             onClose={handleCloseBuilder}
             onSave={loadData}
             existingViz={editingViz}
+            templatePreset={activeTemplate}
           />
         )}
 

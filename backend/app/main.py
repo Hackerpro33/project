@@ -5,6 +5,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 import os
 import json
+import os
 import sys
 import uuid
 import hashlib
@@ -17,11 +18,24 @@ from typing import Optional, Dict, Any, List
 
 from .utils import files as files_utils
 from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 import httpx
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, CollectorRegistry, generate_latest
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Histogram,
+    generate_latest,
+)
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import get_settings
+from .version import __version__
 from .schemas import (
     EmailRequest,
     EmailResponse,
@@ -37,24 +51,27 @@ from .schemas import (
     TaskStatusResponse,
     UrlImportRequest,
 )
+from .services.extraction import build_extraction
+from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
 from .utils.files import (
     DATA_DIR,
     UPLOAD_DIR,
+    get_file_registry,
     read_table_bytes,
     register_uploaded_file,
     resolve_file_path,
     safe_filename,
-    get_file_registry,
 )
-from .services.extraction import build_extraction
-from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
 
 settings = get_settings()
 
 
+API_PREFIX = "/api/v1"
+
+
 app = FastAPI(
     title="Insight Sphere Backend",
-    version="0.1.0",
+    version=__version__,
     description=(
         "API for managing analytical datasets, providing upload/extraction capabilities "
         "with strong validation, observability, and documentation."
@@ -63,6 +80,9 @@ app = FastAPI(
         "name": "Insight Sphere Team",
         "url": "https://github.com/insight-sphere",
     },
+    docs_url=f"{API_PREFIX}/docs",
+    redoc_url=f"{API_PREFIX}/redoc",
+    openapi_url=f"{API_PREFIX}/openapi.json",
 )
 
 
@@ -99,11 +119,8 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 EMAIL_LOG_PATH = DATA_DIR / "email_log.jsonl"
 
-FILE_REGISTRY = files_utils._FILE_REGISTRY
-_safe_name = safe_filename
+FILE_REGISTRY = get_file_registry()
 
-MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "25"))
-MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 MAX_UPLOAD_SIZE = settings.max_upload_size
 MAX_UPLOAD_SIZE_MB = settings.max_upload_size_mb
 ALLOWED_EXTENSIONS = {ext.lower() for ext in settings.allowed_upload_extensions}
@@ -279,7 +296,7 @@ def _ensure_allowed_extension(filename: Optional[str]) -> None:
 
 
 @app.post(
-    "/api/upload",
+    f"{API_PREFIX}/upload",
     summary="Upload dataset",
     response_model=FileUploadResponse,
     responses={
@@ -449,6 +466,17 @@ async def resumable_upload_finish(upload_id: str) -> FileUploadResponse:
 
     for part in chunk_dir.glob("*.part"):
         part.unlink(missing_ok=True)
+    await _scan_for_malware(data)
+    # save
+    fid = str(uuid.uuid4())
+    safe = safe_filename(file.filename or "file")
+    upload_root = Path(UPLOAD_DIR)
+    upload_root.mkdir(parents=True, exist_ok=True)
+    path = upload_root / f"{fid}_{safe}"
+    with path.open("wb") as f:
+        f.write(data)
+    register_uploaded_file(fid, path)
+    # quick extraction for preview (optional)
     try:
         chunk_dir.rmdir()
     except OSError:
@@ -505,7 +533,7 @@ async def upload_from_url(request: UrlImportRequest) -> FileUploadResponse:
 
 
 @app.post(
-    "/api/extract",
+    f"{API_PREFIX}/extract",
     summary="Extract dataset metadata",
     response_model=ExtractResponse,
     responses={400: {"model": ErrorResponse, "description": "Unable to process dataset"}},
@@ -523,7 +551,7 @@ def api_extract(req: ExtractRequest) -> ExtractResponse:
 
 
 @app.post(
-    "/api/extract/async",
+    f"{API_PREFIX}/extract/async",
     summary="Schedule dataset metadata extraction",
     response_model=TaskEnqueueResponse,
     responses={
@@ -544,7 +572,7 @@ def api_extract_async(req: ExtractRequest) -> TaskEnqueueResponse:
 
 
 @app.get(
-    "/api/tasks/{task_id}",
+    f"{API_PREFIX}/tasks/{{task_id}}",
     summary="Inspect background task status",
     response_model=TaskStatusResponse,
     responses={
@@ -570,7 +598,7 @@ def api_task_status(task_id: str) -> TaskStatusResponse:
 
 
 @app.post(
-    "/api/utils/send-email",
+    f"{API_PREFIX}/utils/send-email",
     summary="Log outgoing email",
     response_model=EmailResponse,
     responses={500: {"model": ErrorResponse, "description": "Failed to write audit log"}},
@@ -585,7 +613,7 @@ async def api_send_email(payload: EmailRequest) -> EmailResponse:
     log_path = Path(EMAIL_LOG_PATH)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(EMAIL_LOG_PATH, "a", encoding="utf-8") as log_file:
+        with log_path.open("a", encoding="utf-8") as log_file:
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as exc:
@@ -606,27 +634,40 @@ if __package__ in {None, ""}:
     if current_dir not in sys.path:
         sys.path.append(current_dir)
     import audit_api as audit_router_module
+    import collaboration_api as collaboration_router_module
     import chat_api as chat_router_module
     import datasets_api as datasets_router_module
+    import dataset_versions_api as dataset_versions_router_module
     import dictionary_api as dictionary_router_module
     import visualizations_api as visualizations_router_module
 else:
     from . import audit_api as audit_router_module
+    from . import collaboration_api as collaboration_router_module
     from . import chat_api as chat_router_module
     from . import datasets_api as datasets_router_module
+    from . import dataset_versions_api as dataset_versions_router_module
     from . import dictionary_api as dictionary_router_module
     from . import visualizations_api as visualizations_router_module
 
 datasets_router = datasets_router_module.router
+dataset_versions_router = dataset_versions_router_module.router
 dictionary_router = dictionary_router_module.router
 visualizations_router = visualizations_router_module.router
 chat_router = chat_router_module.router
 audit_router = audit_router_module.router
+collaboration_router = collaboration_router_module.router
 
+app.include_router(datasets_router, prefix=f"{API_PREFIX}/dataset")
+app.include_router(dictionary_router, prefix=f"{API_PREFIX}/dictionary")
+app.include_router(visualizations_router, prefix=f"{API_PREFIX}/visualization")
+app.include_router(chat_router, prefix=f"{API_PREFIX}/chat")
+app.include_router(audit_router, prefix=f"{API_PREFIX}/audit")
 app.include_router(datasets_router, prefix="/api/dataset")
+app.include_router(dataset_versions_router, prefix="/api/dataset")
 app.include_router(dictionary_router, prefix="/api/dictionary")
 app.include_router(visualizations_router, prefix="/api/visualization")
 app.include_router(chat_router, prefix="/api/chat")
 app.include_router(audit_router, prefix="/api/audit")
+app.include_router(collaboration_router, prefix="/api")
 FILE_REGISTRY = get_file_registry()
 _safe_name = safe_filename

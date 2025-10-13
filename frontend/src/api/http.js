@@ -1,7 +1,7 @@
 const RAW_API_BASE = (import.meta?.env?.VITE_API_BASE ?? '').trim();
 
 const NORMALIZED_API_BASE = RAW_API_BASE.replace(/\/+$/, '');
-const API_PATH_PREFIX = '/api';
+const API_PATH_PREFIX = '/api/v1';
 
 export function buildApiUrl(path, base = NORMALIZED_API_BASE) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;

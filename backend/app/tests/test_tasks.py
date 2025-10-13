@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from .. import main
 from ..tasks import process_extraction_job
-from ..utils.files import register_uploaded_file, get_file_registry
+from ..utils.files import get_file_registry, register_uploaded_file
 
 
 @pytest.fixture(autouse=True)
@@ -32,9 +32,12 @@ def test_process_extraction_job_generates_preview(tmp_path):
     assert payload["insights"]  # domain insights are populated for crime column
 
 
+API_PREFIX = "/api/v1"
+
+
 def test_extract_async_requires_queue_enabled(client):
     response = client.post(
-        "/api/extract/async",
+        f"{API_PREFIX}/extract/async",
         json={"file_url": "job-unknown"},
         headers={"host": "localhost"},
     )
@@ -44,7 +47,7 @@ def test_extract_async_requires_queue_enabled(client):
 
 
 def test_task_status_requires_queue_enabled(client):
-    response = client.get("/api/tasks/rq:job:123", headers={"host": "localhost"})
+    response = client.get(f"{API_PREFIX}/tasks/rq:job:123", headers={"host": "localhost"})
 
     assert response.status_code == 503
     assert response.json()["detail"] == "Task queue is disabled"
