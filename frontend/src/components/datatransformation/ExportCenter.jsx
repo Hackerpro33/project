@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getExportContentType } from "@/utils/dataTransformation";
 import { convertDataset } from "@/utils/localAnalysis";
+import { downloadBlob } from "@/utils/download";
 import { 
   Download, 
   Database, 
@@ -51,14 +52,7 @@ export default function ExportCenter({ datasets, supportedFormats, isLoading }) 
         type: getExportContentType(exportFormat)
       });
       
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${dataset.name}.${exportFormat.toLowerCase()}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `${dataset.name}.${exportFormat.toLowerCase()}`);
 
       setExportResult({
         success: true,

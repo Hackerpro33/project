@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { downloadTextFile } from "@/utils/download";
 import { 
   Activity, 
   Download, 
@@ -133,19 +134,11 @@ export default function SystemLogs() {
   };
 
   const exportLogs = () => {
-    const logsText = filteredLogs.map(log => 
+    const logsText = filteredLogs.map(log =>
       `[${log.timestamp.toLocaleString()}] ${log.level.toUpperCase()} [${log.category}] ${log.message}\nДетали: ${log.details}\n`
     ).join('\n');
-    
-    const blob = new Blob([logsText], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `system_logs_${new Date().toISOString().split('T')[0]}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+
+    downloadTextFile(logsText, `system_logs_${new Date().toISOString().split('T')[0]}.txt`);
   };
 
   const getLevelIcon = (level) => {
