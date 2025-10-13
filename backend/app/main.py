@@ -1,20 +1,24 @@
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
-from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-import os
+import asyncio
+from datetime import datetime, timezone
 import json
+import logging
+import os
 import sys
 import uuid
 from pathlib import Path
-from typing import Optional, Dict, Any, List
-
-from .utils import files as files_utils
-from typing import Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 import httpx
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, CollectorRegistry, generate_latest
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
+from prometheus_client import (CollectorRegistry, CONTENT_TYPE_LATEST, Counter,
+                               Histogram, generate_latest)
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.responses import StreamingResponse
+
+from .utils import files as files_utils
 
 from .config import get_settings
 from .schemas import (
@@ -41,6 +45,7 @@ from .services.extraction import build_extraction
 from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -260,6 +265,38 @@ def api_extract_async(req: ExtractRequest) -> TaskEnqueueResponse:
     return TaskEnqueueResponse(task_id=task_id, status="queued", queue=settings.task_queue_name)
 
 
+async def _notify_task_webhook(event: str, payload: Dict[str, Any]) -> None:
+    """Deliver task status events to an optional webhook."""
+
+    url = settings.task_status_webhook_url
+    if not url:
+        return
+
+    timeout = httpx.Timeout(5.0, connect=2.0, read=5.0)
+    body = {"event": event, "data": payload}
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            await client.post(str(url), json=body)
+    except httpx.HTTPError as exc:  # pragma: no cover - network/infra failures
+        logger.warning("Failed to post task webhook event: %s", exc)
+
+
+def _build_task_event_payload(task_id: str, status_payload: Dict[str, Any]) -> Dict[str, Any]:
+    status = status_payload.get("status", "unknown")
+    timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    event_payload: Dict[str, Any] = {
+        "task_id": task_id,
+        "status": status,
+        "timestamp": timestamp,
+    }
+    if status_payload.get("error"):
+        event_payload["error"] = status_payload["error"]
+    if status_payload.get("result"):
+        event_payload["result"] = status_payload["result"]
+    return event_payload
+
+
 @app.get(
     "/api/tasks/{task_id}",
     summary="Inspect background task status",
@@ -269,13 +306,15 @@ def api_extract_async(req: ExtractRequest) -> TaskEnqueueResponse:
         503: {"model": ErrorResponse, "description": "Task queue unavailable"},
     },
 )
-def api_task_status(task_id: str) -> TaskStatusResponse:
+async def api_task_status(task_id: str) -> TaskStatusResponse:
     if not settings.task_queue_enabled:
         raise HTTPException(status_code=503, detail="Task queue is disabled")
     try:
         status_payload = get_task_status(task_id)
     except TaskQueueUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    event_payload = _build_task_event_payload(task_id, status_payload)
+    await _notify_task_webhook("status", event_payload)
     result_payload = status_payload.get("result")
     quick = QuickExtraction.model_validate(result_payload) if result_payload else None
     return TaskStatusResponse(
@@ -284,6 +323,61 @@ def api_task_status(task_id: str) -> TaskStatusResponse:
         result=quick,
         error=status_payload.get("error"),
     )
+
+
+@app.get(
+    "/api/tasks/{task_id}/events",
+    summary="Stream task status updates via Server-Sent Events",
+    responses={
+        404: {"model": ErrorResponse, "description": "Task not found"},
+        503: {"model": ErrorResponse, "description": "Task queue unavailable"},
+    },
+)
+async def api_task_events(task_id: str):
+    if not settings.task_queue_enabled:
+        raise HTTPException(status_code=503, detail="Task queue is disabled")
+
+    async def event_generator():
+        last_status: Optional[str] = None
+        while True:
+            try:
+                status_payload = get_task_status(task_id)
+            except TaskQueueUnavailable as exc:
+                payload_dict = {"task_id": task_id, "error": str(exc)}
+                await _notify_task_webhook("error", payload_dict)
+                payload = json.dumps(payload_dict, ensure_ascii=False)
+                yield f"event: error\ndata: {payload}\n\n"
+                break
+            except HTTPException as exc:
+                if exc.status_code == 404:
+                    payload_dict = {"task_id": task_id, "error": exc.detail}
+                    await _notify_task_webhook("error", payload_dict)
+                    payload = json.dumps(payload_dict, ensure_ascii=False)
+                    yield f"event: error\ndata: {payload}\n\n"
+                    break
+                raise
+
+            event_payload = _build_task_event_payload(task_id, status_payload)
+            status = event_payload["status"]
+
+            if status != last_status:
+                data = json.dumps(event_payload, ensure_ascii=False)
+                await _notify_task_webhook("status", event_payload)
+                yield f"event: status\ndata: {data}\n\n"
+                last_status = status
+            else:
+                heartbeat = json.dumps(
+                    {"task_id": task_id, "status": status, "timestamp": event_payload["timestamp"]},
+                    ensure_ascii=False,
+                )
+                yield f"event: heartbeat\ndata: {heartbeat}\n\n"
+
+            if status in {"finished", "failed"}:
+                break
+
+            await asyncio.sleep(2)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.post(
@@ -302,7 +396,6 @@ async def api_send_email(payload: EmailRequest) -> EmailResponse:
     log_path = Path(EMAIL_LOG_PATH)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(EMAIL_LOG_PATH, "a", encoding="utf-8") as log_file:
         with open(log_path, "a", encoding="utf-8") as log_file:
             log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as exc:
@@ -327,23 +420,27 @@ if __package__ in {None, ""}:
     import datasets_api as datasets_router_module
     import dictionary_api as dictionary_router_module
     import visualizations_api as visualizations_router_module
+    import views_api as views_router_module
 else:
     from . import audit_api as audit_router_module
     from . import chat_api as chat_router_module
     from . import datasets_api as datasets_router_module
     from . import dictionary_api as dictionary_router_module
     from . import visualizations_api as visualizations_router_module
+    from . import views_api as views_router_module
 
 datasets_router = datasets_router_module.router
 dictionary_router = dictionary_router_module.router
 visualizations_router = visualizations_router_module.router
 chat_router = chat_router_module.router
 audit_router = audit_router_module.router
+views_router = views_router_module.router
 
 app.include_router(datasets_router, prefix="/api/dataset")
 app.include_router(dictionary_router, prefix="/api/dictionary")
 app.include_router(visualizations_router, prefix="/api/visualization")
 app.include_router(chat_router, prefix="/api/chat")
 app.include_router(audit_router, prefix="/api/audit")
+app.include_router(views_router, prefix="/api")
 FILE_REGISTRY = get_file_registry()
 _safe_name = safe_filename

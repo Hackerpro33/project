@@ -3,17 +3,39 @@ import { jsonRequest as request } from './http';
 function buildQuery(params = {}) {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      search.append(key, value);
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value)) {
+      value.forEach((entry) => {
+        if (entry !== undefined && entry !== null && entry !== '') {
+          search.append(key, entry);
+        }
+      });
+      return;
     }
+    if (value === '') return;
+    search.append(key, value);
   });
   const query = search.toString();
   return query ? `?${query}` : '';
 }
 
 export const Dataset = {
-  async list(orderBy = '-created_at') {
-    return request(`/api/dataset/list${buildQuery({ order_by: orderBy })}`);
+  async list({
+    orderBy = '-created_at',
+    page = 1,
+    pageSize = 20,
+    search,
+    tags,
+  } = {}) {
+    return request(
+      `/api/dataset/list${buildQuery({
+        order_by: orderBy,
+        page,
+        page_size: pageSize,
+        search,
+        tags,
+      })}`
+    );
   },
 
   async get(id) {
@@ -42,8 +64,24 @@ export const Dataset = {
 };
 
 export const Visualization = {
-  async list(orderBy = '-created_at') {
-    return request(`/api/visualization/list${buildQuery({ order_by: orderBy })}`);
+  async list({
+    orderBy = '-created_at',
+    page = 1,
+    pageSize = 20,
+    search,
+    tags,
+    types,
+  } = {}) {
+    return request(
+      `/api/visualization/list${buildQuery({
+        order_by: orderBy,
+        page,
+        page_size: pageSize,
+        search,
+        tags,
+        types,
+      })}`
+    );
   },
 
   async filter(filters = {}, orderBy = '-created_at') {
@@ -79,9 +117,11 @@ export const Visualization = {
 };
 
 export async function getDatasets() {
-  return Dataset.list('-created_at');
+  const response = await Dataset.list();
+  return response.items ?? response;
 }
 
 export async function getVisualizations() {
-  return Visualization.list('-created_at');
+  const response = await Visualization.list();
+  return response.items ?? response;
 }
