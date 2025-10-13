@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import json
 import os
@@ -89,12 +89,21 @@ class ChatMessage(BaseModel):
     created_at: float
 
 
+class SafetyState(BaseModel):
+    risk_level: Literal["none", "medium", "high"] = "none"
+    reasons: List[str] = Field(default_factory=list)
+    auto_reloaded: bool = False
+    last_check: float = 0.0
+    blocked_message_preview: Optional[str] = None
+
+
 class AssistantState(BaseModel):
     user_id: str
     instructions: str = Field(default=DEFAULT_INSTRUCTIONS)
     messages: List[ChatMessage] = Field(default_factory=list)
     created_at: float
     updated_at: float
+    safety: SafetyState = Field(default_factory=SafetyState)
 
 
 class ChatRequest(BaseModel):
@@ -126,6 +135,7 @@ def _initial_state(user_id: str) -> Dict[str, Any]:
         ],
         "created_at": now,
         "updated_at": now,
+        "safety": SafetyState(last_check=now).model_dump(),
     }
 
 
@@ -134,13 +144,26 @@ def _ensure_state(store: Dict[str, Any], user_id: str) -> Dict[str, Any]:
     if not state:
         state = _initial_state(user_id)
         store[user_id] = state
-    return state
+    return _ensure_safety_state(state)
 
 
 def _format_response(state: Dict[str, Any]) -> AssistantState:
     # ensure chronological order for deterministic responses
     state["messages"] = sorted(state.get("messages", []), key=lambda item: item.get("created_at", 0))
     return AssistantState(**state)
+
+
+def _ensure_safety_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    safety = state.get("safety")
+    if not isinstance(safety, dict):
+        safety = {}
+    safety.setdefault("risk_level", "none")
+    safety.setdefault("reasons", [])
+    safety.setdefault("auto_reloaded", False)
+    safety.setdefault("last_check", time.time())
+    safety.setdefault("blocked_message_preview", None)
+    state["safety"] = safety
+    return state
 
 
 MAX_FOCUS_POINTS = 6
@@ -237,6 +260,120 @@ def _generate_reply(instructions: str, user_message: str) -> str:
     )
 
 
+def _detect_hallucination_risk(message: str) -> Tuple[Literal["none", "medium", "high"], List[str]]:
+    lowered = message.lower()
+    reasons: List[str] = []
+    risk_score = 0
+
+    patterns: List[Tuple[re.Pattern[str], str, int]] = [
+        (
+            re.compile(r"\b(придумай|выдумай|сочини|сгенерируй|фантазируй)\b", re.IGNORECASE),
+            "Запрос просит выдумать факты или данные.",
+            3,
+        ),
+        (
+            re.compile(r"\b(представь,? что|сделай вид,? что)\b", re.IGNORECASE),
+            "Пользователь просит симулировать сценарий, не основанный на данных.",
+            2,
+        ),
+        (
+            re.compile(r"\b(последн(?:ие|их) новости|что происходит сейчас|текущая погода|курс валют сейчас)\b", re.IGNORECASE),
+            "Запрос требует внешних данных реального времени.",
+            2,
+        ),
+        (
+            re.compile(r"\b(любы[ейм]\s+(?:данн|статистик|факт)\w*)\b", re.IGNORECASE),
+            "Запрос допускает произвольные вымышленные данные.",
+            2,
+        ),
+        (
+            re.compile(r"\b(без\s+данных|если\s+данных\s+нет)\b", re.IGNORECASE),
+            "Пользователь допускает отсутствие исходных данных.",
+            1,
+        ),
+    ]
+
+    for pattern, reason, score in patterns:
+        if pattern.search(message):
+            reasons.append(reason)
+            risk_score += score
+
+    # Lack of data-related anchors increases risk slightly
+    data_keywords = ["данн", "метрик", "табл", "dataset", "sql"]
+    if not any(keyword in lowered for keyword in data_keywords):
+        risk_score += 1
+        reasons.append("В запросе нет ссылок на исходные данные или метрики.")
+
+    if risk_score >= 4:
+        return "high", reasons
+    if risk_score >= 2:
+        return "medium", reasons
+    return "none", []
+
+
+def _append_caution(reply: str, reasons: List[str]) -> str:
+    reason_text = "; ".join(reasons)
+    return (
+        f"{reply}\n\n⚠️ Проверьте вывод: запрос может требовать дополнительные данные. "
+        f"Причина(ы): {reason_text}"
+    )
+
+
+def _truncate_message(message: str, limit: int = 160) -> str:
+    cleaned = " ".join(message.split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return f"{cleaned[: limit - 1]}…"
+
+
+def _handle_high_risk(
+    user_id: str,
+    current_state: Dict[str, Any],
+    user_message: str,
+    reasons: List[str],
+) -> Dict[str, Any]:
+    preserved_instructions = current_state.get("instructions", DEFAULT_INSTRUCTIONS)
+    reloaded_state = _initial_state(user_id)
+    if preserved_instructions and preserved_instructions.strip():
+        reloaded_state["instructions"] = preserved_instructions
+
+    safety = reloaded_state.get("safety", {})
+    safety.update(
+        {
+            "risk_level": "high",
+            "reasons": reasons,
+            "auto_reloaded": True,
+            "last_check": time.time(),
+            "blocked_message_preview": _truncate_message(user_message),
+        }
+    )
+    reloaded_state["safety"] = safety
+
+    reason_lines = "\n".join(f"• {reason}" for reason in reasons)
+    caution_text = (
+        "Обнаружен высокий риск галлюцинации, поэтому помощник перезапущен. "
+        "Последнее сообщение не обработано."
+    )
+    if reason_lines:
+        caution_text += f"\nПричины:\n{reason_lines}"
+    if safety.get("blocked_message_preview"):
+        caution_text += (
+            f"\nНеобработанный запрос: «{safety['blocked_message_preview']}». "
+            "Уточните данные или предоставьте контекст и повторите попытку."
+        )
+
+    reloaded_state["messages"].append(
+        {
+            "id": str(uuid.uuid4()),
+            "role": "assistant",
+            "content": caution_text,
+            "created_at": time.time(),
+        }
+    )
+    reloaded_state["updated_at"] = time.time()
+    return reloaded_state
+
+
 @router.get("/state/{user_id}")
 def get_state(user_id: str):
     store = _load_store()
@@ -251,6 +388,25 @@ def post_message(payload: ChatRequest):
     store = _load_store()
     state = _ensure_state(store, payload.user_id)
 
+    risk_level, reasons = _detect_hallucination_risk(payload.message)
+    if risk_level == "high":
+        reloaded_state = _handle_high_risk(payload.user_id, state, payload.message, reasons)
+        store[payload.user_id] = reloaded_state
+        _save_store(store)
+        return _format_response(reloaded_state)
+
+    safety = state.get("safety", {})
+    safety.update(
+        {
+            "risk_level": risk_level,
+            "reasons": reasons if risk_level != "none" else [],
+            "auto_reloaded": False,
+            "last_check": time.time(),
+            "blocked_message_preview": None,
+        }
+    )
+    state["safety"] = safety
+
     now = time.time()
     state.setdefault("messages", []).append(
         {
@@ -262,6 +418,9 @@ def post_message(payload: ChatRequest):
     )
 
     reply = _generate_reply(state.get("instructions", DEFAULT_INSTRUCTIONS), payload.message)
+    if risk_level == "medium" and reasons:
+        reply = _append_caution(reply, reasons)
+
     state["messages"].append(
         {
             "id": str(uuid.uuid4()),
