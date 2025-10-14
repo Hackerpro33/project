@@ -23,8 +23,7 @@ from .utils.files import DATA_DIR, export_json_atomic
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_SECRETS_FILE = BASE_DIR / "secrets" / "runtime.secrets.yaml"
-CONFIG_OVERRIDES_PATH = DATA_DIR / "settings.overrides.json"
-CONFIG_OVERRIDES_PATH = DATA_DIR / "config.overrides.json"
+CONFIG_OVERRIDES_PATH = DATA_DIR / "config_overrides.json"
 
 
 def _apply_sops_secrets() -> None:

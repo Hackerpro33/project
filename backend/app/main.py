@@ -520,8 +520,6 @@ UPLOAD_SIZE = Histogram(
     buckets=(10 * 1024, 100 * 1024, 1024 * 1024, 10 * 1024 * 1024, 50 * 1024 * 1024, float("inf")),
 )
 
-_IDEMPOTENCY_CACHE: Dict[str, Dict[str, Any]] = {}
-
 _FALLBACK_PREVIEW_ROWS = [
     {"col_a": "1", "col_b": "2"},
     {"col_a": "3", "col_b": "4"},
@@ -697,9 +695,6 @@ async def _persist_uploaded_bytes(
 
     payload = _finalize_upload(file_id, original_filename, data, location)
 
-    if idempotency_key:
-        _IDEMPOTENCY_CACHE[idempotency_key] = payload.model_dump()
-
     return payload
 
 
@@ -842,15 +837,6 @@ async def api_upload(
     if idempotency_key and pending_future is not None:
         await IDEMPOTENCY_COORDINATOR.complete(idempotency_key, pending_future, payload.model_dump())
     return payload
-    if idempotency_key and idempotency_key in _IDEMPOTENCY_CACHE:
-        return FileUploadResponse(**_IDEMPOTENCY_CACHE[idempotency_key])
-
-    data = await file.read()
-    return await _persist_uploaded_bytes(
-        data,
-        file.filename,
-        idempotency_key=idempotency_key,
-    )
 
 
 @app.post(
