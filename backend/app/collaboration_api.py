@@ -31,7 +31,8 @@ AUDIT_LOG_PATH = COLLAB_DATA_DIR / "audit.log"
 
 MENTION_PATTERN = re.compile(r"@([\w.-]+)")
 
-ROLE_ORDER = {"viewer": 0, "editor": 1, "admin": 2}
+# "owner" is kept for backwards compatibility with existing payloads.
+ROLE_ORDER = {"viewer": 0, "editor": 1, "admin": 2, "owner": 2}
 
 
 router = APIRouter(prefix="/collaboration", tags=["Collaboration"])

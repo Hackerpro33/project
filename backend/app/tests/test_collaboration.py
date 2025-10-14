@@ -21,6 +21,7 @@ def isolate_collaboration_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(collaboration_api, "COMMENTS_PATH", storage_dir / "comments.json", raising=False)
     monkeypatch.setattr(collaboration_api, "WORKSPACES_PATH", storage_dir / "workspaces.json", raising=False)
     monkeypatch.setattr(collaboration_api, "ACCESS_POLICIES_PATH", storage_dir / "access_policies.json", raising=False)
+    monkeypatch.setattr(collaboration_api, "INVITATIONS_PATH", storage_dir / "invitations.json", raising=False)
     monkeypatch.setattr(collaboration_api, "AUDIT_LOG_PATH", storage_dir / "audit.log", raising=False)
 
     yield
@@ -372,3 +373,122 @@ def test_access_policy_attribute_evaluation(tmp_path):
     actions = [event["action"] for event in audit_events]
     assert "access_policy.updated" in actions
     assert "workspace.created" in actions
+
+
+def test_dataset_scoped_access(tmp_path):
+    client = TestClient(app)
+
+    workspace_response = client.post(
+        "/api/collaboration/workspaces",
+        json={"name": "Scoped", "created_by": "owner"},
+        headers=DEFAULT_HEADERS,
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["workspace"]["id"]
+
+    policy_response = client.put(
+        f"/api/collaboration/access-policies/{workspace_id}",
+        json={
+            "assignments": [
+                {
+                    "user_id": "diana",
+                    "role": "editor",
+                    "dataset_ids": ["sales-q1", "sales-q2"],
+                }
+            ],
+            "actor": "owner",
+        },
+        headers=DEFAULT_HEADERS,
+    )
+    assert policy_response.status_code == 200
+
+    allowed = client.post(
+        f"/api/collaboration/access-policies/{workspace_id}/evaluate",
+        json={
+            "user_id": "diana",
+            "required_role": "viewer",
+            "dataset_id": "sales-q2",
+        },
+        headers=DEFAULT_HEADERS,
+    )
+    assert allowed.status_code == 200
+    payload = allowed.json()
+    assert payload["allowed"] is True
+    assert payload["resolved_role"] == "editor"
+    assert payload["matched_assignments"][0]["dataset_ids"] == ["sales-q1", "sales-q2"]
+
+    denied = client.post(
+        f"/api/collaboration/access-policies/{workspace_id}/evaluate",
+        json={
+            "user_id": "diana",
+            "required_role": "viewer",
+            "dataset_id": "marketing",
+        },
+        headers=DEFAULT_HEADERS,
+    )
+    assert denied.status_code == 200
+    denied_payload = denied.json()
+    assert denied_payload["allowed"] is False
+    assert denied_payload["matched_assignments"] == []
+
+
+def test_invitation_lifecycle(tmp_path):
+    client = TestClient(app)
+
+    workspace_response = client.post(
+        "/api/collaboration/workspaces",
+        json={"name": "Invites", "created_by": "owner"},
+        headers=DEFAULT_HEADERS,
+    )
+    workspace_id = workspace_response.json()["workspace"]["id"]
+
+    invitation_response = client.post(
+        "/api/collaboration/invitations",
+        json={
+            "workspace_id": workspace_id,
+            "role": "admin",
+            "dataset_ids": ["dataset-1"],
+            "created_by": "owner",
+            "expires_in_hours": 4,
+        },
+        headers=DEFAULT_HEADERS,
+    )
+    assert invitation_response.status_code == 200
+    invitation = invitation_response.json()
+    assert invitation["status"] == "active"
+
+    accept_response = client.post(
+        f"/api/collaboration/invitations/token/{invitation['token']}/accept",
+        json={"user_id": "guest"},
+        headers=DEFAULT_HEADERS,
+    )
+    assert accept_response.status_code == 200
+    assignment_payload = accept_response.json()
+    assert assignment_payload["role"] == "admin"
+    assert assignment_payload["dataset_ids"] == ["dataset-1"]
+
+    policy_fetch = client.get(
+        f"/api/collaboration/access-policies/{workspace_id}",
+        headers=DEFAULT_HEADERS,
+    )
+    assert policy_fetch.status_code == 200
+    policy_payload = policy_fetch.json()
+    assert any(item["user_id"] == "guest" for item in policy_payload["assignments"])
+
+    invitations_list = client.get(
+        "/api/collaboration/invitations",
+        params={"workspace_id": workspace_id, "include_inactive": True},
+        headers=DEFAULT_HEADERS,
+    )
+    assert invitations_list.status_code == 200
+    listed = invitations_list.json()["items"]
+    assert listed[0]["status"] == "accepted"
+
+    revoke_response = client.delete(
+        f"/api/collaboration/invitations/{invitation['id']}",
+        params={"actor": "owner"},
+        headers=DEFAULT_HEADERS,
+    )
+    assert revoke_response.status_code == 200
+    assert revoke_response.json()["revoked"] is True
+
