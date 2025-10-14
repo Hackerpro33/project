@@ -58,3 +58,16 @@ def test_generate_domain_insights_skips_non_matching_columns(monkeypatch):
     assert any("Crime indicator" in text for text in insights)
     assert any("Policing resource" in text for text in insights)
     assert any("Risk factor" in text for text in insights)
+
+
+def test_numeric_series_skips_conversion_for_numeric_dtype(monkeypatch):
+    series = pd.Series([1, 2, 3], dtype=np.int64, name="crime_count")
+
+    def fail_to_numeric(*args, **kwargs):
+        raise AssertionError("pd.to_numeric should not be called for numeric series")
+
+    monkeypatch.setattr(pd, "to_numeric", fail_to_numeric)
+
+    result = extraction._numeric_series(series)
+
+    assert result.tolist() == [1, 2, 3]

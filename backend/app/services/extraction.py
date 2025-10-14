@@ -25,7 +25,16 @@ def detect_general_type(series: pd.Series) -> str:
 
 
 def _numeric_series(series: pd.Series) -> pd.Series:
-    numeric = pd.to_numeric(series, errors="coerce")
+    """Return ``series`` with only numeric values, dropping null entries.
+
+    The helper avoids expensive coercion for native numeric dtypes so we only
+    pay the ``to_numeric`` cost when a conversion is actually required.
+    """
+
+    if pd.api.types.is_numeric_dtype(series):
+        numeric = series
+    else:
+        numeric = pd.to_numeric(series, errors="coerce")
     return numeric.dropna()
 
 
@@ -47,15 +56,18 @@ def _generate_domain_insights(df: pd.DataFrame) -> List[str]:
         if numeric.empty:
             continue
 
+        first_value = float(numeric.iloc[0])
+        last_value = float(numeric.iloc[-1])
+        delta = last_value - first_value
+
         if matches_crime:
-            change = float(numeric.iloc[-1] - numeric.iloc[0])
-            if change > 0:
+            if delta > 0:
                 insights.append(
-                    f"Crime indicator '{original_name}' increased by {change:.2f} between the first and last records."
+                    f"Crime indicator '{original_name}' increased by {delta:.2f} between the first and last records."
                 )
-            elif change < 0:
+            elif delta < 0:
                 insights.append(
-                    f"Crime indicator '{original_name}' decreased by {abs(change):.2f} between the first and last records."
+                    f"Crime indicator '{original_name}' decreased by {abs(delta):.2f} between the first and last records."
                 )
             else:
                 insights.append(
@@ -63,14 +75,13 @@ def _generate_domain_insights(df: pd.DataFrame) -> List[str]:
                 )
 
         if matches_policing:
-            change = float(numeric.iloc[-1] - numeric.iloc[0])
-            if change > 0:
+            if delta > 0:
                 insights.append(
-                    f"Policing resource '{original_name}' increased by {change:.2f} between the first and last records."
+                    f"Policing resource '{original_name}' increased by {delta:.2f} between the first and last records."
                 )
-            elif change < 0:
+            elif delta < 0:
                 insights.append(
-                    f"Policing resource '{original_name}' decreased by {abs(change):.2f} between the first and last records."
+                    f"Policing resource '{original_name}' decreased by {abs(delta):.2f} between the first and last records."
                 )
             else:
                 insights.append(
