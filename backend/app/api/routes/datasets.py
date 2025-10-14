@@ -87,6 +87,27 @@ _refresh_scheduler = TaskScheduler(REFRESH_SCHEDULES_JSON)
 _ORDERABLE_FIELDS = {"created_at", "updated_at", "name", "row_count"}
 
 
+def _sort_items(items: List[Dict[str, Any]], order_by: Optional[str]) -> List[Dict[str, Any]]:
+    field = (order_by or "-created_at").strip()
+    reverse = field.startswith("-")
+    normalized_field = field.lstrip("-")
+    if normalized_field not in _ORDERABLE_FIELDS:
+        normalized_field = "created_at"
+        reverse = True
+
+    def _sort_key(item: Dict[str, Any]) -> Any:
+        value = item.get(normalized_field)
+        if isinstance(value, (int, float)):
+            return value
+        if isinstance(value, str):
+            return value.lower()
+        if isinstance(value, datetime):
+            return value
+        return str(value or "")
+
+    return sorted(items, key=_sort_key, reverse=reverse)
+
+
 class ColumnInfo(BaseModel):
     name: str
     type: str

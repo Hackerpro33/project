@@ -170,6 +170,9 @@ def register_uploaded_file(file_id: str, path: Path) -> None:
     """Remember the absolute ``path`` for the uploaded ``file_id``."""
 
     resolved = Path(path).resolve()
+    if not resolved.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
     _FILE_REGISTRY[file_id] = str(resolved)
 
 
@@ -205,9 +208,8 @@ def resolve_file_path(identifier: str) -> Path:
     if identifier in _FILE_REGISTRY:
         path = Path(_FILE_REGISTRY[identifier])
         if path.exists():
-            if not _is_within_allowed_roots(path):
-                raise HTTPException(status_code=403, detail="File path is outside allowed directories")
             return path.resolve()
+        raise HTTPException(status_code=404, detail="File not found")
 
     candidate = (UPLOAD_DIR / safe_filename(identifier)).resolve()
     if candidate.exists() and _is_within_allowed_roots(candidate):

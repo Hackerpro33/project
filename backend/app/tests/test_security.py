@@ -28,8 +28,8 @@ def reset_rate_limiter_and_idempotency():
 def isolated_storage(tmp_path, monkeypatch):
     upload_dir = tmp_path / "uploads"
     data_dir = tmp_path / "data"
-    upload_dir.mkdir()
-    data_dir.mkdir()
+    upload_dir.mkdir(exist_ok=True)
+    data_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(main, "UPLOAD_DIR", upload_dir)
     monkeypatch.setattr(main, "DATA_DIR", data_dir)
     monkeypatch.setattr(file_utils, "UPLOAD_DIR", upload_dir)
@@ -48,8 +48,8 @@ def client():
 def test_resolve_file_path_blocks_outside_roots(tmp_path, monkeypatch):
     upload_dir = tmp_path / "uploads"
     data_dir = tmp_path / "data"
-    upload_dir.mkdir()
-    data_dir.mkdir()
+    upload_dir.mkdir(exist_ok=True)
+    data_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(file_utils, "UPLOAD_DIR", upload_dir)
     monkeypatch.setattr(file_utils, "DATA_DIR", data_dir)
 

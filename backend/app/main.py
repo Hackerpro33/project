@@ -88,6 +88,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import apply_settings_overrides, get_settings
 from app.api import register_routes
+from app.api.routes import views as views_router_module
 from app.core.version import __version__
 from .schemas import (
     BatchUploadItem,
@@ -740,7 +741,10 @@ def _ensure_safe_remote_url(url: str) -> str:
             or ip.is_unspecified
             or ip.is_multicast
         ):
-            raise HTTPException(status_code=403, detail="Remote URL resolves to a disallowed address")
+            raise HTTPException(
+                status_code=403,
+                detail="Remote URL resolves to a disallowed address and is not allowed",
+            )
 
     return parsed.geturl()
 
@@ -2036,6 +2040,16 @@ def _custom_openapi() -> Dict[str, Any]:
             if not parameters:
                 continue
             _apply_standard_parameter_metadata(parameters)
+
+    redundant_version_paths = [
+        f"{API_PREFIX}/dataset/{{dataset_id}}/versions",
+        f"{API_PREFIX}/dataset/{{dataset_id}}/versions/{{version_id}}",
+        f"{API_PREFIX}/dataset/{{dataset_id}}/versions/{{current_id}}/diff/{{previous_id}}",
+        f"{API_PREFIX}/dataset/{{dataset_id}}/versions/{{version_id}}/restore",
+    ]
+    paths = schema.get("paths", {})
+    for path in redundant_version_paths:
+        paths.pop(path, None)
 
     return schema
 
