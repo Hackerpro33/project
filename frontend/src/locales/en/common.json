@@ -142,8 +142,11 @@
       "description": "Pick the interface language and customise the appearance.",
       "language": "Language",
       "theme": "Theme",
-      "themeDescription": "Use the header toggle to switch themes.",
-      "themeHint": "Use the toggle above to switch between light and dark looks at any time."
+      "themeDescription": "Choose the default mode or match your system preference.",
+      "themeHint": "Select the theme you would like to use by default.",
+      "themeSystem": "Match system",
+      "themeLight": "Light",
+      "themeDark": "Dark"
     },
     "notifications": {
       "title": "Notifications",
@@ -167,7 +170,14 @@
     },
     "actions": {
       "save": "Save changes",
-      "saving": "Saving..."
+      "saving": "Saving...",
+      "restartTour": "Restart tour"
+    },
+    "onboarding": {
+      "title": "Onboarding tour",
+      "description": "Reset the guided walkthrough to revisit the interface tips.",
+      "resetTitle": "Tour reset",
+      "resetDescription": "The onboarding steps will appear the next time you open the dashboard."
     }
   },
   "charts": {
