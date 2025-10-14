@@ -1,12 +1,14 @@
 import asyncio
 
 import pytest
+from fastapi import HTTPException
 from fastapi.responses import PlainTextResponse
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from .. import main
 from ..utils import files as file_utils
+from ..utils.files import resolve_file_path
 
 HEADERS = {"host": "localhost"}
 
@@ -41,6 +43,23 @@ def isolated_storage(tmp_path, monkeypatch):
 @pytest.fixture
 def client():
     return TestClient(main.app)
+
+
+def test_resolve_file_path_blocks_outside_roots(tmp_path, monkeypatch):
+    upload_dir = tmp_path / "uploads"
+    data_dir = tmp_path / "data"
+    upload_dir.mkdir()
+    data_dir.mkdir()
+    monkeypatch.setattr(file_utils, "UPLOAD_DIR", upload_dir)
+    monkeypatch.setattr(file_utils, "DATA_DIR", data_dir)
+
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("sensitive", encoding="utf-8")
+
+    with pytest.raises(HTTPException) as exc:
+        resolve_file_path(str(outside_file))
+
+    assert exc.value.status_code == 403
 
 
 def test_security_headers_and_secure_cookies(client):
@@ -274,3 +293,25 @@ async def test_idempotency_cache_enforces_max_entries(monkeypatch, anyio_backend
     assert coordinator.get("key-0") is None
     assert coordinator.get("key-1") == {"value": 1}
     assert coordinator.get("key-2") == {"value": 2}
+
+
+def test_upload_from_url_blocks_private_ip(client):
+    response = client.post(
+        "/api/upload/from-url",
+        json={"url": "http://127.0.0.1/internal.csv"},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 403
+    assert "not allowed" in response.json()["detail"].lower()
+
+
+def test_upload_from_url_rejects_non_http_scheme(client):
+    response = client.post(
+        "/api/upload/from-url",
+        json={"url": "file:///etc/passwd"},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 400
+    assert "http(s)" in response.json()["detail"].lower()

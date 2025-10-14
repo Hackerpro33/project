@@ -633,8 +633,6 @@ def _prepare_listing(
         "total_pages": total_pages,
         "has_next": page < total_pages,
         "has_previous": page > 1,
-        "available_filters": {"tags": available_tags},
-    }
         "available_filters": {
             "tags": available_tags,
             "types": available_types,
