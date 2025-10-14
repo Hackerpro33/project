@@ -72,3 +72,32 @@ export function updateAccessPolicy(workspaceId, payload) {
     body: JSON.stringify(payload),
   });
 }
+
+export function listInvitations(params = {}) {
+  return jsonRequest(`/api/collaboration/invitations${buildQuery(params)}`);
+}
+
+export function createInvitation(payload) {
+  return jsonRequest('/api/collaboration/invitations', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function revokeInvitation(invitationId, actor) {
+  const search = actor ? `?actor=${encodeURIComponent(actor)}` : '';
+  return jsonRequest(`/api/collaboration/invitations/${invitationId}${search}`, {
+    method: 'DELETE',
+  });
+}
+
+export function getInvitation(token) {
+  return jsonRequest(`/api/collaboration/invitations/token/${token}`);
+}
+
+export function acceptInvitation(token, payload) {
+  return jsonRequest(`/api/collaboration/invitations/token/${token}/accept`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}

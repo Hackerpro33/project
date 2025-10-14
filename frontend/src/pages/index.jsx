@@ -1,6 +1,7 @@
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom'
 import Layout from './Layout.jsx'
+import InvitationAccept from './InvitationAccept.jsx'
 import { PAGES, getCurrentPage } from './pageRegistry'
 
 function PagesContent() {
@@ -10,6 +11,7 @@ function PagesContent() {
   return (
     <Layout currentPageName={currentPage}>
       <Routes>
+        <Route path="/invites/:token" element={<InvitationAccept />} />
         <Route path="/" element={<PAGES.Dashboard />} />
         {Object.entries(PAGES).map(([name, Component]) => (
           <Route key={name} path={`/${name}`} element={<Component />} />

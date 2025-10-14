@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -26,11 +26,12 @@ COLLAB_DATA_DIR.mkdir(parents=True, exist_ok=True)
 COMMENTS_PATH = COLLAB_DATA_DIR / "comments.json"
 WORKSPACES_PATH = COLLAB_DATA_DIR / "workspaces.json"
 ACCESS_POLICIES_PATH = COLLAB_DATA_DIR / "access_policies.json"
+INVITATIONS_PATH = COLLAB_DATA_DIR / "invitations.json"
 AUDIT_LOG_PATH = COLLAB_DATA_DIR / "audit.log"
 
 MENTION_PATTERN = re.compile(r"@([\w.-]+)")
 
-ROLE_ORDER = {"viewer": 0, "editor": 1, "owner": 2}
+ROLE_ORDER = {"viewer": 0, "editor": 1, "admin": 2}
 
 
 router = APIRouter(prefix="/collaboration", tags=["Collaboration"])
@@ -140,15 +141,25 @@ class AccessAssignmentInput(BaseModel):
     role: str = Field(..., description="Role granted to the user")
     tags: List[str] = Field(default_factory=list)
     folders: List[str] = Field(default_factory=list)
+    dataset_ids: List[str] = Field(
+        default_factory=list,
+        description="Dataset identifiers this assignment applies to",
+    )
     id: Optional[str] = None
 
     @field_validator("role")
     @classmethod
     def validate_role(cls, value: str) -> str:
-        allowed = {"viewer", "editor", "owner"}
+        allowed = set(ROLE_ORDER)
         if value not in allowed:
             raise ValueError(f"Role must be one of: {', '.join(sorted(allowed))}")
         return value
+
+    @model_validator(mode="after")
+    def normalize_dataset_ids(self) -> "AccessAssignmentInput":
+        if self.dataset_ids:
+            self.dataset_ids = sorted({dataset for dataset in self.dataset_ids if dataset})
+        return self
 
 
 class AccessAssignment(AccessAssignmentInput):
@@ -174,6 +185,10 @@ class AccessEvaluationRequest(BaseModel):
     required_role: str = Field(...)
     resource_tags: List[str] = Field(default_factory=list)
     resource_folders: List[str] = Field(default_factory=list)
+    dataset_id: Optional[str] = Field(
+        default=None,
+        description="Dataset identifier to evaluate fine-grained permissions",
+    )
 
     @field_validator("required_role")
     @classmethod
@@ -248,6 +263,68 @@ class AuditEvent(BaseModel):
 class AuditLogResponse(BaseModel):
     count: int
     items: List[AuditEvent]
+
+
+class InvitationBase(BaseModel):
+    workspace_id: str = Field(..., min_length=1, max_length=128)
+    role: str = Field(..., description="Role granted once the invitation is accepted")
+    dataset_ids: List[str] = Field(
+        default_factory=list,
+        description="Optional dataset scoping for the invitation",
+    )
+
+    @field_validator("role")
+    @classmethod
+    def ensure_role(cls, value: str) -> str:
+        if value not in ROLE_ORDER:
+            raise ValueError(f"Role must be one of: {', '.join(sorted(ROLE_ORDER))}")
+        return value
+
+    @model_validator(mode="after")
+    def deduplicate_datasets(self) -> "InvitationBase":
+        if self.dataset_ids:
+            self.dataset_ids = sorted({dataset for dataset in self.dataset_ids if dataset})
+        return self
+
+
+class Invitation(InvitationBase):
+    id: str
+    token: str
+    created_by: str
+    created_at: datetime
+    expires_at: Optional[datetime] = None
+    accepted_by: Optional[str] = None
+    accepted_at: Optional[datetime] = None
+    revoked: bool = False
+
+    @computed_field(return_type=str)
+    def status(self) -> str:
+        if self.revoked:
+            return "revoked"
+        if self.accepted_at:
+            return "accepted"
+        if self.expires_at and self.expires_at < datetime.now(timezone.utc):
+            return "expired"
+        return "active"
+
+
+class InvitationCreateRequest(InvitationBase):
+    created_by: str = Field(..., min_length=1, max_length=128)
+    expires_in_hours: Optional[int] = Field(
+        default=168,
+        ge=1,
+        le=24 * 90,
+        description="Validity period for the invitation link in hours",
+    )
+
+
+class InvitationListResponse(BaseModel):
+    count: int
+    items: List[Invitation]
+
+
+class InvitationAcceptRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, max_length=128)
 
 
 def _log_audit_event(action: str, actor: str, details: Dict[str, Any]) -> None:
@@ -332,6 +409,24 @@ def _persist_policies(policies: Dict[str, List[AccessAssignment]]) -> None:
     export_json_atomic(ACCESS_POLICIES_PATH, serialised)
 
 
+def _read_invitations() -> List[Invitation]:
+    payload = _load_json(INVITATIONS_PATH, {"items": []})
+    invitations: List[Invitation] = []
+    for raw in payload.get("items", []):
+        try:
+            invitations.append(Invitation(**raw))
+        except Exception:
+            continue
+    return invitations
+
+
+def _persist_invitations(invitations: Iterable[Invitation]) -> None:
+    export_json_atomic(
+        INVITATIONS_PATH,
+        {"items": [invitation.model_dump(mode="json") for invitation in invitations]},
+    )
+
+
 def _load_audit_events(limit: Optional[int] = 100) -> List[AuditEvent]:
     if not AUDIT_LOG_PATH.exists():
         return []
@@ -387,7 +482,7 @@ def _collect_inherited_assignments(
 
 
 def _summarise_roles(assignments: List[AccessAssignment]) -> Dict[str, int]:
-    summary: Dict[str, int] = {"viewer": 0, "editor": 0, "owner": 0}
+    summary: Dict[str, int] = {role: 0 for role in ROLE_ORDER}
     for assignment in assignments:
         summary[assignment.role] = summary.get(assignment.role, 0) + 1
     return summary
@@ -403,7 +498,11 @@ def _assignment_applies(
     assignment: AccessAssignment,
     resource_tags: List[str],
     resource_folders: List[str],
+    resource_dataset_id: Optional[str],
 ) -> bool:
+    if assignment.dataset_ids:
+        if not resource_dataset_id or resource_dataset_id not in assignment.dataset_ids:
+            return False
     if assignment.tags:
         if not set(assignment.tags) & set(resource_tags):
             return False
@@ -743,6 +842,7 @@ def update_access_policy(workspace_id: str, payload: AccessPolicyUpdate) -> Acce
                 role=item.role,
                 tags=item.tags,
                 folders=item.folders,
+                dataset_ids=item.dataset_ids,
                 created_at=created_at,
                 updated_at=now,
             )
@@ -787,7 +887,12 @@ def evaluate_access_policy(
         assignment
         for assignment in effective
         if assignment.user_id == payload.user_id
-        and _assignment_applies(assignment, payload.resource_tags, payload.resource_folders)
+        and _assignment_applies(
+            assignment,
+            payload.resource_tags,
+            payload.resource_folders,
+            payload.dataset_id,
+        )
     ]
 
     resolved_role: Optional[str] = None
@@ -825,6 +930,197 @@ def evaluate_access_policy(
         reason=reason,
     )
 
+
+@router.get("/invitations", response_model=InvitationListResponse)
+def list_invitations(
+    workspace_id: Optional[str] = Query(default=None, min_length=1, max_length=128),
+    include_inactive: bool = Query(
+        default=False,
+        description="Return expired, accepted and revoked invitations as well",
+    ),
+) -> InvitationListResponse:
+    invitations = _read_invitations()
+    filtered: List[Invitation] = []
+    now = datetime.now(timezone.utc)
+    for invitation in invitations:
+        if workspace_id and invitation.workspace_id != workspace_id:
+            continue
+        if not include_inactive:
+            if invitation.revoked:
+                continue
+            if invitation.accepted_at:
+                continue
+            if invitation.expires_at and invitation.expires_at < now:
+                continue
+        filtered.append(invitation)
+    filtered.sort(key=lambda item: item.created_at, reverse=True)
+    return InvitationListResponse(count=len(filtered), items=filtered)
+
+
+@router.post("/invitations", response_model=Invitation)
+def create_invitation(payload: InvitationCreateRequest) -> Invitation:
+    workspaces = _read_workspaces()
+    lookup = {workspace.id: workspace for workspace in workspaces}
+    workspace = lookup.get(payload.workspace_id)
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    now = datetime.now(timezone.utc)
+    expires_at: Optional[datetime] = None
+    if payload.expires_in_hours:
+        expires_at = now + timedelta(hours=payload.expires_in_hours)
+
+    invitation = Invitation(
+        id=str(uuid.uuid4()),
+        token=str(uuid.uuid4()),
+        workspace_id=payload.workspace_id,
+        dataset_ids=payload.dataset_ids,
+        role=payload.role,
+        created_by=payload.created_by,
+        created_at=now,
+        expires_at=expires_at,
+    )
+
+    invitations = _read_invitations()
+    invitations.append(invitation)
+    _persist_invitations(invitations)
+    _log_audit_event(
+        action="invitation.created",
+        actor=payload.created_by,
+        details={
+            "workspace_id": payload.workspace_id,
+            "role": payload.role,
+            "dataset_ids": payload.dataset_ids,
+        },
+    )
+    return invitation
+
+
+@router.get("/invitations/token/{token}", response_model=Invitation)
+def get_invitation(token: str) -> Invitation:
+    invitations = _read_invitations()
+    for invitation in invitations:
+        if invitation.token == token:
+            return invitation
+    raise HTTPException(status_code=404, detail="Invitation not found")
+
+
+@router.post("/invitations/token/{token}/accept", response_model=AccessAssignment)
+def accept_invitation(token: str, payload: InvitationAcceptRequest) -> AccessAssignment:
+    invitations = _read_invitations()
+    invitation: Optional[Invitation] = None
+    updated_invitations: List[Invitation] = []
+    now = datetime.now(timezone.utc)
+
+    for current in invitations:
+        if current.token == token:
+            invitation = current
+            continue
+        updated_invitations.append(current)
+
+    if invitation is None:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    if invitation.revoked:
+        raise HTTPException(status_code=400, detail="Invitation has been revoked")
+    if invitation.accepted_at:
+        raise HTTPException(status_code=409, detail="Invitation already accepted")
+    if invitation.expires_at and invitation.expires_at < now:
+        raise HTTPException(status_code=410, detail="Invitation expired")
+
+    workspaces = _read_workspaces()
+    lookup = {workspace.id: workspace for workspace in workspaces}
+    if invitation.workspace_id not in lookup:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    policies = _read_policies()
+    existing_assignments = policies.get(invitation.workspace_id, [])
+
+    assignment: AccessAssignment
+    matched_index: Optional[int] = None
+    for index, candidate in enumerate(existing_assignments):
+        if candidate.user_id != payload.user_id:
+            continue
+        if sorted(candidate.dataset_ids) == sorted(invitation.dataset_ids):
+            matched_index = index
+            break
+
+    if matched_index is not None:
+        previous = existing_assignments[matched_index]
+        assignment = AccessAssignment(
+            id=previous.id,
+            user_id=payload.user_id,
+            role=invitation.role,
+            tags=previous.tags,
+            folders=previous.folders,
+            dataset_ids=invitation.dataset_ids,
+            created_at=previous.created_at,
+            updated_at=now,
+        )
+        existing_assignments[matched_index] = assignment
+    else:
+        assignment = AccessAssignment(
+            id=str(uuid.uuid4()),
+            user_id=payload.user_id,
+            role=invitation.role,
+            tags=[],
+            folders=[],
+            dataset_ids=invitation.dataset_ids,
+            created_at=now,
+            updated_at=now,
+        )
+        existing_assignments.append(assignment)
+    policies[invitation.workspace_id] = existing_assignments
+    _persist_policies(policies)
+
+    accepted_invitation = invitation.model_copy(
+        update={"accepted_by": payload.user_id, "accepted_at": now}
+    )
+    updated_invitations.append(accepted_invitation)
+    _persist_invitations(updated_invitations)
+
+    _log_audit_event(
+        action="invitation.accepted",
+        actor=payload.user_id,
+        details={
+            "workspace_id": invitation.workspace_id,
+            "role": invitation.role,
+            "dataset_ids": invitation.dataset_ids,
+        },
+    )
+    return assignment
+
+
+@router.delete("/invitations/{invitation_id}", response_model=Invitation)
+def revoke_invitation(
+    invitation_id: str,
+    actor: str = Query(..., min_length=1, max_length=128),
+) -> Invitation:
+    invitations = _read_invitations()
+    updated: List[Invitation] = []
+    revoked_invitation: Optional[Invitation] = None
+
+    for invitation in invitations:
+        if invitation.id != invitation_id:
+            updated.append(invitation)
+            continue
+        if invitation.revoked:
+            revoked_invitation = invitation
+            updated.append(invitation)
+            continue
+        revoked_invitation = invitation.model_copy(update={"revoked": True})
+        updated.append(revoked_invitation)
+
+    if revoked_invitation is None:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    _persist_invitations(updated)
+    _log_audit_event(
+        action="invitation.revoked",
+        actor=actor,
+        details={"invitation_id": invitation_id},
+    )
+    return revoked_invitation
 
 @router.get("/audit-log", response_model=AuditLogResponse)
 def list_audit_events(limit: int = Query(100, ge=1, le=500)) -> AuditLogResponse:
