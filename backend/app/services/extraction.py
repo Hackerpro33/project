@@ -25,52 +25,70 @@ def detect_general_type(series: pd.Series) -> str:
 
 
 def _numeric_series(series: pd.Series) -> pd.Series:
-    numeric = pd.to_numeric(series, errors="coerce")
+    """Return ``series`` with only numeric values, dropping null entries.
+
+    The helper avoids expensive coercion for native numeric dtypes so we only
+    pay the ``to_numeric`` cost when a conversion is actually required.
+    """
+
+    if pd.api.types.is_numeric_dtype(series):
+        numeric = series
+    else:
+        numeric = pd.to_numeric(series, errors="coerce")
     return numeric.dropna()
 
 
 def _generate_domain_insights(df: pd.DataFrame) -> List[str]:
     insights: List[str] = []
-    lower_name_map = {str(col): str(col).lower() for col in df.columns}
 
-    for original_name, lower_name in lower_name_map.items():
-        numeric = _numeric_series(df[original_name])
+    for column in df.columns:
+        original_name = str(column)
+        lower_name = original_name.lower()
+
+        matches_crime = any(keyword in lower_name for keyword in CRIME_TREND_KEYWORDS)
+        matches_policing = any(keyword in lower_name for keyword in POLICING_TREND_KEYWORDS)
+        matches_risk = any(keyword in lower_name for keyword in RISK_FACTOR_KEYWORDS)
+
+        if not (matches_crime or matches_policing or matches_risk):
+            continue
+
+        numeric = _numeric_series(df[column])
         if numeric.empty:
             continue
 
-        if any(keyword in lower_name for keyword in CRIME_TREND_KEYWORDS):
-            change = float(numeric.iloc[-1] - numeric.iloc[0])
-            if change > 0:
+        first_value = float(numeric.iloc[0])
+        last_value = float(numeric.iloc[-1])
+        delta = last_value - first_value
+
+        if matches_crime:
+            if delta > 0:
                 insights.append(
-                    f"Crime indicator '{original_name}' increased by {change:.2f} between the first and last records."
+                    f"Crime indicator '{original_name}' increased by {delta:.2f} between the first and last records."
                 )
-            elif change < 0:
+            elif delta < 0:
                 insights.append(
-                    f"Crime indicator '{original_name}' decreased by {abs(change):.2f} between the first and last records."
+                    f"Crime indicator '{original_name}' decreased by {abs(delta):.2f} between the first and last records."
                 )
             else:
                 insights.append(
                     f"Crime indicator '{original_name}' remained stable across the observed period."
                 )
-            continue
 
-        if any(keyword in lower_name for keyword in POLICING_TREND_KEYWORDS):
-            change = float(numeric.iloc[-1] - numeric.iloc[0])
-            if change > 0:
+        if matches_policing:
+            if delta > 0:
                 insights.append(
-                    f"Policing resource '{original_name}' increased by {change:.2f} between the first and last records."
+                    f"Policing resource '{original_name}' increased by {delta:.2f} between the first and last records."
                 )
-            elif change < 0:
+            elif delta < 0:
                 insights.append(
-                    f"Policing resource '{original_name}' decreased by {abs(change):.2f} between the first and last records."
+                    f"Policing resource '{original_name}' decreased by {abs(delta):.2f} between the first and last records."
                 )
             else:
                 insights.append(
                     f"Policing resource '{original_name}' remained stable across the observed period."
                 )
-            continue
 
-        if any(keyword in lower_name for keyword in RISK_FACTOR_KEYWORDS):
+        if matches_risk:
             average = float(numeric.mean())
             insights.append(
                 f"Risk factor '{original_name}' averages {average:.2f} across the dataset."

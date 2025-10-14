@@ -32,7 +32,7 @@ from pydantic import ValidationError
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -1379,14 +1379,13 @@ def api_extract_async(
     seed: Optional[int] = Query(None, description="Optional seed used for deterministic sampling"),
 ) -> Union[TaskEnqueueResponse, DatasetPreviewResponse]:
     if not settings.task_queue_enabled:
-        if mode not in {"page", "sample"}:
-            raise HTTPException(status_code=400, detail="Unsupported preview mode")
+        normalized_mode = mode.lower()
         try:
             preview_payload = generate_preview(
                 req.file_url,
                 page=page,
                 page_size=page_size,
-                mode=mode,
+                mode=normalized_mode,
                 sample_size=sample_size,
                 seed=seed,
             )
@@ -1398,7 +1397,7 @@ def api_extract_async(
                 req.file_url,
                 page=page,
                 page_size=page_size,
-                mode=mode,
+                mode=normalized_mode,
                 sample_size=sample_size,
                 seed=seed,
             )
