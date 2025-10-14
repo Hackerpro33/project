@@ -253,6 +253,7 @@ class Settings(BaseSettings):
             return "uploads"
         cleaned = str(value).strip().strip("/")
         return cleaned or "uploads"
+
     s3_download_expiration_seconds: int = Field(
         900,
         alias="S3_DOWNLOAD_EXPIRATION_SECONDS",

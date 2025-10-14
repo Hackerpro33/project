@@ -1,23 +1,16 @@
 import asyncio
 import csv
 from datetime import datetime, timezone
+import hashlib
+import ipaddress
 import json
 import logging
+import math
 import mimetypes
-import random
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.routing import APIRoute
-from fastapi import Query
-from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
-from fastapi.staticfiles import StaticFiles
-from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-import os
-import json
 import os
 import random
+import shutil
+import socket
 import sys
 import time
 import uuid
@@ -25,18 +18,35 @@ from collections import defaultdict, deque
 from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-import ipaddress
-import socket
+from urllib.parse import unquote, urlparse
 
-from pydantic import ValidationError
-
-from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+import httpx
+import yaml
+from fastapi import (
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
+from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Histogram,
+    generate_latest,
+)
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.responses import Response, StreamingResponse
 
 try:  # pragma: no cover - optional dependency guard
     import magic  # type: ignore[import-not-found]
@@ -47,44 +57,6 @@ try:  # pragma: no cover - optional dependency guard
     import puremagic
 except Exception:  # pragma: no cover - gracefully handle missing dependency
     puremagic = None
-
-import httpx
-from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram, generate_latest
-from starlette.responses import Response
-import hashlib
-import math
-import shutil
-import time
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-from urllib.parse import unquote, urlparse
-from typing import Optional, Dict, Any, List
-
-from .utils import files as files_utils
-from typing import Optional, Dict, Any
-from typing import Any, Dict, Optional
-
-import yaml
-import httpx
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
-from prometheus_client import (CollectorRegistry, CONTENT_TYPE_LATEST, Counter,
-                               Histogram, generate_latest)
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.responses import StreamingResponse
-
-from .utils import files as files_utils
-from prometheus_client import (
-    CONTENT_TYPE_LATEST,
-    CollectorRegistry,
-    Counter,
-    Histogram,
-    generate_latest,
-)
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import apply_settings_overrides, get_settings
 from .version import __version__
@@ -108,14 +80,11 @@ from .schemas import (
     ResumableUploadInitRequest,
     ResumableUploadInitResponse,
     TaskEnqueueResponse,
-    TaskHistoryListResponse,
-    TaskHistoryEntry,
     TaskHistoryEntry,
     TaskHistoryListResponse,
     TaskStatusResponse,
     UrlImportRequest,
 )
-from .utils import files as files_utils
 from .services.extraction import build_extraction
 from .services.storage import get_storage_service
 from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
@@ -125,6 +94,7 @@ from .utils.task_history import get_task_history_store
 from .utils.files import (
     DATA_DIR,
     UPLOAD_DIR,
+    FileLocation,
     get_file_registry,
     read_table_bytes,
     register_uploaded_file,
@@ -639,7 +609,7 @@ def _finalize_upload(
     file_id: str,
     original_filename: Optional[str],
     data: bytes,
-    location: files_utils.FileLocation,
+    location: FileLocation,
 ) -> FileUploadResponse:
     """Build response payload after the file has been persisted."""
 
@@ -2060,8 +2030,6 @@ def _custom_openapi() -> Dict[str, Any]:
 
 
 app.openapi = _custom_openapi  # type: ignore[assignment]
-FILE_REGISTRY = get_file_registry()
-_safe_name = safe_filename
 
 
 def _clone_route(source_path: str, target_path: str) -> None:
