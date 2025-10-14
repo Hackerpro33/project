@@ -163,7 +163,9 @@ def safe_filename(name: str) -> str:
     """Return a safe representation of ``name`` for filesystem usage."""
     if not name:
         return "file"
-    return re.sub(r"[^a-zA-Z0-9._-]+", "_", name)
+    # Prevent path traversal and separators by removing / and \ explicitly
+    sanitized = re.sub(r"[\/\\]", "_", name)
+    return re.sub(r"[^a-zA-Z0-9._-]+", "_", sanitized)
 
 
 def register_uploaded_file(file_id: str, path: Path) -> None:
