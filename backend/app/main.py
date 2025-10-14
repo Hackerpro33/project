@@ -1204,17 +1204,6 @@ async def resumable_upload_finish(upload_id: str) -> FileUploadResponse:
 
     for part in chunk_dir.glob("*.part"):
         part.unlink(missing_ok=True)
-    await _scan_for_malware(data)
-    # save
-    fid = str(uuid.uuid4())
-    safe = safe_filename(file.filename or "file")
-    upload_root = Path(UPLOAD_DIR)
-    upload_root.mkdir(parents=True, exist_ok=True)
-    path = upload_root / f"{fid}_{safe}"
-    with path.open("wb") as f:
-        f.write(data)
-    register_uploaded_file(fid, path)
-    # quick extraction for preview (optional)
     try:
         chunk_dir.rmdir()
     except OSError:
@@ -1367,31 +1356,6 @@ def _synthetic_preview(
         503: {"model": ErrorResponse, "description": "Task queue unavailable"},
     },
 )
-def api_extract_async(req: ExtractRequest, request: Request) -> TaskEnqueueResponse:
-    if not settings.task_queue_enabled:
-        params = request.query_params if request is not None else {}
-
-        def _int_param(name: str, default: int) -> int:
-            raw = params.get(name)
-            if raw in (None, ""):
-                return default
-            try:
-                return int(raw)
-            except (TypeError, ValueError) as exc:  # pragma: no cover - defensive guard
-                raise HTTPException(status_code=400, detail=f"Invalid integer for '{name}'") from exc
-
-        page = max(1, _int_param("page", 1))
-        page_size = _int_param("page_size", 50)
-        sample_size = _int_param("sample_size", 50)
-        seed_param = params.get("seed")
-        try:
-            seed = int(seed_param) if seed_param not in (None, "") else None
-        except ValueError as exc:  # pragma: no cover - defensive guard
-            raise HTTPException(status_code=400, detail="Invalid integer for 'seed'") from exc
-        mode = params.get("mode", "page").lower()
-        if mode not in {"page", "sample"}:
-            raise HTTPException(status_code=400, detail="Invalid preview mode")
-
 def api_extract_async(
     req: ExtractRequest,
     page: int = Query(1, ge=1, description="Page number for the synchronous preview fallback"),
@@ -1429,6 +1393,7 @@ def api_extract_async(
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
+            preview_payload = _synthetic_preview(
             preview_payload = _fallback_preview_payload(
                 req.file_url,
                 page=page,
@@ -1437,6 +1402,7 @@ def api_extract_async(
                 sample_size=sample_size,
                 seed=seed,
             )
+        return DatasetPreviewResponse.model_validate(preview_payload)
         validated = DatasetPreviewResponse.model_validate(preview_payload)
         return JSONResponse(content=validated.model_dump())
 
@@ -1779,11 +1745,14 @@ def api_dataset_preview(
     except HTTPException as exc:
         if exc.status_code != 404:
             raise
+        payload = _synthetic_preview(
         payload = _fallback_preview_payload(
             file_id,
             page=page,
             page_size=page_size,
             mode=normalized_mode,
+            sample_size=sample_size,
+            seed=seed,
         )
     return DatasetPreviewResponse.model_validate(payload)
 

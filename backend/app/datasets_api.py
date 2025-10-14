@@ -687,7 +687,7 @@ def list_datasets(
 
 @router.get("/list", response_model=None)
 def list_datasets_endpoint(
-    order_by: Optional[str] = "-created_at",
+    order_by: Optional[str] = Query("-created_at", description="Поле сортировки"),
     page: int = Query(1, ge=1, description="Номер страницы"),
     page_size: int = Query(
         DEFAULT_PAGE_SIZE,
@@ -695,28 +695,13 @@ def list_datasets_endpoint(
         le=100,
         description="Количество элементов на странице",
     ),
-    search: Optional[str] = Query(None, description="Поисковый запрос по названиям, описанию и тегам"),
-    tags: Optional[List[str]] = Query(None, description="Фильтр по тегам"),
-    request: Request = None,  # type: ignore[assignment]
-    response: Response = None,  # type: ignore[assignment]
-) -> Any:
-    payload = list_datasets(
-        order_by,
-        page=page,
-        page_size=page_size,
-        search=search,
-        tags=tags,
-    )
-    order_by: Optional[str] = Query("-created_at", description="Поле сортировки"),
-    page: int = Query(1, ge=1, description="Номер страницы"),
-    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=100, description="Количество элементов на странице"),
     search: Optional[str] = Query(None, description="Поисковый запрос"),
     tags: Optional[List[str]] = Query(None, description="Фильтр по тегам"),
     types: Optional[List[str]] = Query(None, alias="dataset_types", description="Фильтр по типам"),
     owners: Optional[List[str]] = Query(None, description="Фильтр по владельцам"),
     request: Request = None,  # type: ignore[assignment]
     response: Response = None,  # type: ignore[assignment]
-):
+) -> Any:
     listing = _prepare_listing(
         page=page,
         page_size=page_size,
@@ -737,10 +722,9 @@ def list_datasets_endpoint(
             "page_size": page_size,
             "search": search,
             "tags": sorted(_normalise_tags(tags or [])),
+            "types": sorted(_normalise_tags(types or [])),
+            "owners": sorted(_normalise_tags(owners or [])),
             "payload": payload,
-            "tags": tags,
-            "types": types,
-            "owners": owners,
             "items": ordered_items,
         }
         etag = apply_cache_headers(
@@ -759,20 +743,11 @@ def list_datasets_endpoint(
         page == 1
         and page_size == DEFAULT_PAGE_SIZE
         and not search
-        and not (tags or [])
+        and not (tags or types or owners)
+        and order_by in (None, "-created_at")
     )
 
     if compatibility_plain:
-        return payload["items"]
-
-
-    if (
-        page == 1
-        and page_size == DEFAULT_PAGE_SIZE
-        and not search
-        and not (tags or types or owners)
-        and (order_by in (None, "-created_at"))
-    ):
         return ordered_items
 
     return payload
