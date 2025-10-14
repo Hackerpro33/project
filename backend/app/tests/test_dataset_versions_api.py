@@ -36,7 +36,7 @@ def override_storage(tmp_path, monkeypatch):
             path.unlink()
     yield
     # Cleanup created files
-    for path in (datasets_path, versions_path):
+    for path in (datasets_path, versions_path, materialized_path):
         if path.exists():
             path.unlink()
 
@@ -136,6 +136,8 @@ def test_materialized_view_incremental_refresh(override_storage):
     assert first_view["delta"]["revenue"]["sum"] == pytest.approx(200.0)
     assert first_view["delta_from_baseline"]["revenue"]["sum"] == pytest.approx(0.0)
     assert len(first_view["history"]) == 1
+    assert first_view["history"][0]["metrics"]["revenue"]["sum"] == pytest.approx(200.0)
+    assert first_view["history"][0]["delta_from_baseline"]["revenue"]["sum"] == pytest.approx(0.0)
 
     second_payload = {
         "author": "qa",
@@ -159,6 +161,8 @@ def test_materialized_view_incremental_refresh(override_storage):
     assert len(second_view["history"]) == 2
     assert second_view["history"][0]["delta"]["revenue"]["sum"] == pytest.approx(200.0)
     assert second_view["history"][1]["delta"]["revenue"]["sum"] == pytest.approx(-25.0)
+    assert second_view["history"][1]["metrics"]["revenue"]["sum"] == pytest.approx(175.0)
+    assert second_view["history"][1]["delta_from_baseline"]["revenue"]["sum"] == pytest.approx(-25.0)
 
 
 def test_versions_unknown_dataset_returns_404(override_storage):

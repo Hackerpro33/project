@@ -24,7 +24,9 @@ class MaterializedViewRefreshEvent(BaseModel):
     refreshed_at: int
     refreshed_date: str
     row_count: int
+    metrics: Dict[str, MetricSnapshot]
     delta: Dict[str, MetricSnapshot]
+    delta_from_baseline: Dict[str, MetricSnapshot]
     change_summary: Optional[Dict[str, Any]] = None
 
 

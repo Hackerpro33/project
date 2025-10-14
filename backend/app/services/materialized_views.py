@@ -8,7 +8,7 @@ import shutil
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 APP_DIR = Path(__file__).resolve().parent.parent
 CANDIDATE_DIRS = [APP_DIR / "data", APP_DIR.parent / "data", APP_DIR]
@@ -78,6 +78,72 @@ def _find_entry(items: List[Dict[str, Any]], dataset_id: str) -> Tuple[int, Opti
     return -1, None
 
 
+def _normalize_metric_map(metric_map: Optional[Dict[str, Dict[str, Any]]]) -> Dict[str, Dict[str, float]]:
+    """Return a sanitized copy of a metric mapping with float values."""
+
+    normalized: Dict[str, Dict[str, float]] = {}
+    if not metric_map:
+        return normalized
+
+    for column, payload in metric_map.items():
+        normalized[column] = {
+            field: float(payload.get(field, 0.0)) for field in METRIC_FIELDS
+        }
+    return normalized
+
+
+def _apply_metric_delta(
+    base: Dict[str, Dict[str, float]],
+    delta: Dict[str, Dict[str, float]],
+) -> Dict[str, Dict[str, float]]:
+    """Apply a metric delta to a base snapshot and return a new mapping."""
+
+    updated: Dict[str, Dict[str, float]] = {}
+    for column in set(base.keys()) | set(delta.keys()):
+        base_metrics = base.get(column, {})
+        delta_metrics = delta.get(column, {})
+        updated[column] = {
+            field: float(base_metrics.get(field, 0.0)) + float(delta_metrics.get(field, 0.0))
+            for field in METRIC_FIELDS
+        }
+    return updated
+
+
+def _normalize_history(
+    history: Iterable[Dict[str, Any]],
+    baseline_metrics: Dict[str, Dict[str, float]],
+    baseline_version_id: Optional[str],
+) -> List[Dict[str, Any]]:
+    """Ensure history entries contain metric snapshots and baseline deltas."""
+
+    normalized: List[Dict[str, Any]] = []
+    running_metrics = baseline_metrics
+
+    for raw_event in sorted(history, key=lambda item: item.get("refreshed_at", 0)):
+        event = dict(raw_event)
+        event_metrics = _normalize_metric_map(event.get("metrics"))
+
+        if not event_metrics:
+            if event.get("version_id") == baseline_version_id:
+                event_metrics = _normalize_metric_map(baseline_metrics)
+            else:
+                event_metrics = _apply_metric_delta(
+                    running_metrics, _normalize_metric_map(event.get("delta"))
+                )
+
+        event_delta = _normalize_metric_map(event.get("delta"))
+        event["delta"] = event_delta
+        event["metrics"] = event_metrics
+        event["delta_from_baseline"] = compute_metrics_delta(
+            event_metrics, baseline_metrics
+        )
+
+        normalized.append(event)
+        running_metrics = event_metrics
+
+    return normalized
+
+
 def compute_metrics_delta(
     current: Dict[str, Dict[str, float]],
     previous: Optional[Dict[str, Dict[str, float]]] = None,
@@ -113,7 +179,7 @@ def update_materialized_view(
     store = _load_store()
     index, existing = _find_entry(store, dataset_id)
 
-    metrics: Dict[str, Dict[str, float]] = version_entry.get("metrics", {}) or {}
+    metrics = _normalize_metric_map(version_entry.get("metrics"))
 
     refresh_at = int(version_entry.get("created_at", time.time()))
     refresh_date = version_entry.get("created_date")
@@ -121,12 +187,16 @@ def update_materialized_view(
         refresh_date = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(refresh_at))
 
     if existing:
-        baseline_metrics = existing.get("baseline_metrics") or existing.get("metrics", {})
+        baseline_metrics = _normalize_metric_map(
+            existing.get("baseline_metrics") or existing.get("metrics")
+        )
         baseline_version_id = existing.get("baseline_version_id")
         baseline_version_number = existing.get("baseline_version_number")
         previous_version_id = existing.get("last_version_id")
         refresh_count = int(existing.get("refresh_count", 0)) + 1
-        history = list(existing.get("history", []))
+        history = _normalize_history(
+            existing.get("history", []), baseline_metrics, baseline_version_id
+        )
     else:
         baseline_metrics = metrics
         baseline_version_id = version_entry.get("id")
@@ -144,7 +214,9 @@ def update_materialized_view(
             "refreshed_at": refresh_at,
             "refreshed_date": refresh_date,
             "row_count": int(version_entry.get("row_count", 0)),
-            "delta": metrics_delta,
+            "metrics": metrics,
+            "delta": _normalize_metric_map(metrics_delta),
+            "delta_from_baseline": delta_from_baseline,
             "change_summary": version_entry.get("change_summary"),
         }
     )
@@ -163,7 +235,7 @@ def update_materialized_view(
         "strategy": strategy,
         "refresh_count": refresh_count,
         "metrics": metrics,
-        "delta": metrics_delta,
+        "delta": _normalize_metric_map(metrics_delta),
         "delta_from_baseline": delta_from_baseline,
         "change_summary": version_entry.get("change_summary"),
         "previous_version_id": previous_version_id,
