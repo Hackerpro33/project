@@ -168,7 +168,24 @@ def safe_filename(name: str) -> str:
 
 def register_uploaded_file(file_id: str, path: Path) -> None:
     """Remember the absolute ``path`` for the uploaded ``file_id``."""
-    _FILE_REGISTRY[file_id] = str(Path(path).resolve())
+
+    resolved = Path(path).resolve()
+    _FILE_REGISTRY[file_id] = str(resolved)
+
+
+def _allowed_file_roots() -> List[Path]:
+    return [UPLOAD_DIR.resolve(), DATA_DIR.resolve()]
+
+
+def _is_within_allowed_roots(path: Path) -> bool:
+    resolved = path.resolve()
+    for root in _allowed_file_roots():
+        try:
+            resolved.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
 
 
 def resolve_file_path(identifier: str) -> Path:
@@ -188,15 +205,24 @@ def resolve_file_path(identifier: str) -> Path:
     if identifier in _FILE_REGISTRY:
         path = Path(_FILE_REGISTRY[identifier])
         if path.exists():
-            return path
+            if not _is_within_allowed_roots(path):
+                raise HTTPException(status_code=403, detail="File path is outside allowed directories")
+            return path.resolve()
 
-    candidate = UPLOAD_DIR / safe_filename(identifier)
-    if candidate.exists():
+    candidate = (UPLOAD_DIR / safe_filename(identifier)).resolve()
+    if candidate.exists() and _is_within_allowed_roots(candidate):
+        return candidate
+
+    candidate = (DATA_DIR / safe_filename(identifier)).resolve()
+    if candidate.exists() and _is_within_allowed_roots(candidate):
         return candidate
 
     generic = Path(identifier)
     if generic.exists():
-        return generic.resolve()
+        resolved = generic.resolve()
+        if _is_within_allowed_roots(resolved):
+            return resolved
+        raise HTTPException(status_code=403, detail="Access to the requested path is not allowed")
 
     raise HTTPException(status_code=404, detail="File not found")
 
