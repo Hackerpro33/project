@@ -145,18 +145,37 @@ make ci          # билд всего стека в режиме CI с пере
 # установка зависимостей, не покидая корень репозитория
 ./scripts/install_frontend_deps.sh
 
-# запуск Vite dev-сервера
+# либо вручную из каталога frontend
 cd frontend
+npm install
+
+# запуск Vite dev-сервера
 npm run dev
+
+# проверка уязвимостей (выполняйте из каталога фронтенда или
+# передайте --prefix, чтобы npm нашёл package-lock.json)
+npm audit --prefix frontend
 ```
+
+> Если при запуске появляется сообщение `vite: not found`, это означает, что
+> зависимости ещё не установлены. Выполните `npm install` (или запустите
+> `./scripts/install_frontend_deps.sh`) и повторите команду `npm run dev`.
 
 ## Запуск бэкенда
 
 ```bash
 cd backend
-pip install -r app/requirements.txt
+
+# установка зависимостей
+../scripts/install_backend_deps.sh
+
+# запуск API
 uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 ```
+
+> Скрипт `install_backend_deps.sh` гарантирует, что используется корректный
+> путь `app/requirements.txt`. При необходимости его можно заменить на ручной
+> вызов `python -m pip install -r app/requirements.txt`.
 
 ### Политика загрузки и документация API
 
