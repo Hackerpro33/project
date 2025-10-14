@@ -25,6 +25,8 @@ from collections import defaultdict, deque
 from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+import ipaddress
+import socket
 
 from pydantic import ValidationError
 
@@ -699,6 +701,45 @@ def _derive_filename_from_remote(url: str, headers: Optional[Dict[str, str]], fa
     return "dataset"
 
 
+def _ensure_safe_remote_url(url: str) -> str:
+    try:
+        parsed = urlparse(url)
+    except Exception as exc:  # pragma: no cover - defensive parsing guard
+        raise HTTPException(status_code=400, detail="Invalid remote URL") from exc
+
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(status_code=400, detail="Only http(s) URLs are supported for remote imports")
+
+    host = parsed.hostname
+    if not host:
+        raise HTTPException(status_code=400, detail="Remote URL must include a hostname")
+
+    try:
+        address_info = socket.getaddrinfo(host, parsed.port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise HTTPException(status_code=400, detail="Unable to resolve remote host") from exc
+
+    for family, _, _, _, sockaddr in address_info:
+        if family not in (socket.AF_INET, socket.AF_INET6):
+            continue
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_unspecified
+            or ip.is_multicast
+        ):
+            raise HTTPException(status_code=403, detail="Remote URL resolves to a disallowed address")
+
+    return parsed.geturl()
+
+
 @app.get("/healthz", summary="Liveness probe", response_model=Dict[str, str])
 def healthz() -> Dict[str, str]:
     return {"status": "ok"}
@@ -1192,11 +1233,13 @@ async def resumable_upload_finish(upload_id: str) -> FileUploadResponse:
 )
 async def upload_from_url(request: UrlImportRequest) -> FileUploadResponse:
     headers = request.headers or {}
+    safe_url = _ensure_safe_remote_url(request.url)
+    sanitized_headers = {k: v for k, v in headers.items() if k.lower() not in {"host"}}
     timeout = httpx.Timeout(30.0, read=120.0)
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream("GET", request.url, headers=headers) as response:
+            async with client.stream("GET", safe_url, headers=sanitized_headers) as response:
                 if response.status_code >= 400:
                     body = await response.aread()
                     preview = body.decode("utf-8", errors="ignore")[:200]
@@ -1387,7 +1430,6 @@ def api_extract_async(
             if exc.status_code != 404:
                 raise
             preview_payload = _fallback_preview_payload(
-            preview_payload = _synthetic_preview(
                 req.file_url,
                 page=page,
                 page_size=page_size,
@@ -1397,7 +1439,6 @@ def api_extract_async(
             )
         validated = DatasetPreviewResponse.model_validate(preview_payload)
         return JSONResponse(content=validated.model_dump())
-        return DatasetPreviewResponse.model_validate(preview_payload)
 
     # Ensure the file exists before enqueuing to fail fast for invalid identifiers.
     resolve_file_path(req.file_url)
@@ -1732,7 +1773,6 @@ def api_dataset_preview(
             page=page,
             page_size=page_size,
             mode=normalized_mode,
-            mode=mode,
             sample_size=sample_size,
             seed=seed,
         )
@@ -1744,13 +1784,6 @@ def api_dataset_preview(
             page=page,
             page_size=page_size,
             mode=normalized_mode,
-        payload = _synthetic_preview(
-            file_id,
-            page=page,
-            page_size=page_size,
-            mode=mode,
-            sample_size=sample_size,
-            seed=seed,
         )
     return DatasetPreviewResponse.model_validate(payload)
 
