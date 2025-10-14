@@ -14,7 +14,7 @@ import uuid
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from .utils import dictionaries as dictionary_store
+from app.utils import dictionaries as dictionary_store
 
 router = APIRouter()
 

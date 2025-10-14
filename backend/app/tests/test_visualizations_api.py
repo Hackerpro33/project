@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from .. import visualizations_api
+from app.api.routes import visualizations as visualizations_api
 
 
 @pytest.fixture(autouse=True)

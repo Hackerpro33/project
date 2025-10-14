@@ -6,7 +6,7 @@ from typing import Dict
 
 import httpx
 
-from ..config import get_settings
+from ..core.config import get_settings
 
 settings = get_settings()
 _cache: Dict[str, bool] = {}

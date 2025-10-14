@@ -23,38 +23,25 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, Request, Response, params
 from pydantic import BaseModel, Field
 
-try:  # pragma: no cover - allow running as a standalone module
-    from .schemas import (
-        DatasetProfileColumn,
-        DatasetProfileRequest,
-        DatasetProfileResponse,
-        DatasetValidationIssue,
-        DatasetValidationRequest,
-        DatasetValidationResponse,
-        ValidationRule,
-    )
-    from .utils.files import load_dataframe_from_identifier
-except ImportError:  # pragma: no cover
-    from schemas import (  # type: ignore
-        DatasetProfileColumn,
-        DatasetProfileRequest,
-        DatasetProfileResponse,
-        DatasetValidationIssue,
-        DatasetValidationRequest,
-        DatasetValidationResponse,
-        ValidationRule,
-    )
-    from utils.files import load_dataframe_from_identifier  # type: ignore
-
-from .config import get_settings
-from .services.notifications import WebhookDeliveryError, notify_dataset_refresh_failure
-from .services.scheduler import (
+from app.core.config import get_settings
+from app.schemas import (
+    DatasetProfileColumn,
+    DatasetProfileRequest,
+    DatasetProfileResponse,
+    DatasetValidationIssue,
+    DatasetValidationRequest,
+    DatasetValidationResponse,
+    ValidationRule,
+)
+from app.services.notifications import WebhookDeliveryError, notify_dataset_refresh_failure
+from app.services.scheduler import (
     InvalidSchedule,
     ScheduleConfig,
     ScheduleNotFound,
     TaskScheduler,
 )
-from .utils.cache import apply_cache_headers, should_return_not_modified
+from app.utils.cache import apply_cache_headers, should_return_not_modified
+from app.utils.files import load_dataframe_from_identifier
 
 
 router = APIRouter()
@@ -76,23 +63,7 @@ def _ensure_store_dir() -> Path:
     return fallback
 
 
-from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel, Field
-
-from .config import get_settings
-from .utils.cache import apply_cache_headers, should_return_not_modified
-
-router = APIRouter()
 settings = get_settings()
-
-APP_DIR = Path(__file__).resolve().parent
-_DATA_DIR = APP_DIR / "data"
-_DEFAULT_STORE = _DATA_DIR / "datasets"
-_ENV_STORE = Path(os.getenv("INSIGHT_DATASETS_DIR", _DEFAULT_STORE))
-
-# The order matters: the first existing path will be used, otherwise the first item
-# will be created lazily when saving data. Tests monkeypatch these constants.
-CANDIDATE_DIRS: List[Path] = [_ENV_STORE, _DEFAULT_STORE, _DATA_DIR]
 
 
 def _resolve_store_dir() -> Path:

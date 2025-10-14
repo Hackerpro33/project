@@ -18,7 +18,7 @@ from pydantic import (
     model_validator,
 )
 
-from .utils.files import DATA_DIR, export_json_atomic
+from app.utils.files import DATA_DIR, export_json_atomic
 
 COLLAB_DATA_DIR = DATA_DIR / "collaboration"
 COLLAB_DATA_DIR.mkdir(parents=True, exist_ok=True)

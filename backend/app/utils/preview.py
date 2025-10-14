@@ -19,7 +19,7 @@ try:  # pragma: no cover - optional dependency handled in runtime tests
 except Exception:  # pragma: no cover - safety net for environments without pdfplumber
     pdfplumber = None
 
-from ..config import get_settings
+from ..core.config import get_settings
 from .files import resolve_file_path
 
 settings = get_settings()
