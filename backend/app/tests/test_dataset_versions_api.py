@@ -204,6 +204,39 @@ def test_dataset_segmentation_and_reprocess(override_storage):
     assert payload["progress"] == 0
 
 
+def test_dataset_segmentation_uses_version_rows(override_storage):
+    client = TestClient(app)
+    dataset_id = _create_dataset()
+
+    version_payload = {
+        "author": "etl",
+        "notes": "Версия для сегментации",
+        "rows": [
+            {"id": 1, "city": "Москва", "revenue": 120},
+            {"id": 2, "city": "Пермь", "revenue": 95},
+            {"id": 3, "city": "Самара", "revenue": 60},
+        ],
+    }
+    version_response = client.post(
+        f"/api/dataset/{dataset_id}/versions", json=version_payload, headers=HEADERS
+    )
+    assert version_response.status_code == 200
+    version_id = version_response.json()["id"]
+
+    # dataset sample_data остаётся исходным (2 строки), используем данные версии
+    rebuild = client.post(
+        f"/api/dataset/{dataset_id}/segments",
+        json={"version_id": version_id, "rules": {"rows_per_segment": 2}},
+        headers=HEADERS,
+    )
+    assert rebuild.status_code == 200
+    body = rebuild.json()
+    assert body["version_id"] == version_id
+    assert body["total_segments"] == 2
+    assert body["total_rows"] == 3
+    assert [segment["row_count"] for segment in body["segments"]] == [2, 1]
+
+
 def test_version_lifecycle_ttl_and_restore_flow(override_storage):
     client = TestClient(app)
     dataset_id = _create_dataset()

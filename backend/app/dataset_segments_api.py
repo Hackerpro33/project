@@ -42,6 +42,16 @@ STORE_DIR = _ensure_store_dir()
 SEGMENTS_JSON = STORE_DIR / "dataset_segments.json"
 
 
+def _latest_version_record(dataset_id: str) -> Optional[Dict[str, Any]]:
+    versions = [
+        item for item in dataset_versions_api._load_versions() if item.get("dataset_id") == dataset_id
+    ]
+    if not versions:
+        return None
+    versions.sort(key=lambda item: item.get("version_number", 0), reverse=True)
+    return versions[0]
+
+
 def _atomic_write_json(path: Path, data: Any) -> None:
     fd, tmp_name = tempfile.mkstemp(prefix="dataset_segments_", suffix=".json", dir=str(path.parent))
     tmp_path = Path(tmp_name)
@@ -153,15 +163,16 @@ class SegmentReprocessResponse(BaseModel):
 
 def _resolve_version_id(dataset_id: str, explicit_version_id: Optional[str]) -> Optional[str]:
     if explicit_version_id:
-        versions = [item for item in dataset_versions_api._load_versions() if item.get("dataset_id") == dataset_id]
+        versions = [
+            item for item in dataset_versions_api._load_versions() if item.get("dataset_id") == dataset_id
+        ]
         if any(item.get("id") == explicit_version_id for item in versions):
             return explicit_version_id
         raise HTTPException(status_code=404, detail="Version not found")
-    versions = [item for item in dataset_versions_api._load_versions() if item.get("dataset_id") == dataset_id]
-    if not versions:
+    latest = _latest_version_record(dataset_id)
+    if not latest:
         return None
-    versions.sort(key=lambda item: item.get("version_number", 0), reverse=True)
-    return versions[0].get("id")
+    return latest.get("id")
 
 
 def _segment_rows_by_keys(rows: Iterable[Dict[str, Any]], keys: List[str]) -> List[List[Dict[str, Any]]]:
@@ -245,13 +256,18 @@ def list_segments(
 @router.post("/{dataset_id}/segments", response_model=SegmentListResponse)
 def rebuild_segments(dataset_id: str, payload: SegmentRebuildRequest) -> SegmentListResponse:
     dataset = datasets_api.get_dataset(dataset_id)
-    rows = dataset.get("sample_data") or []
-    if not rows:
-        versions = [item for item in dataset_versions_api._load_versions() if item.get("dataset_id") == dataset_id]
-        if versions:
-            versions.sort(key=lambda item: item.get("version_number", 0), reverse=True)
-            rows = versions[0].get("rows", [])
     version_id = _resolve_version_id(dataset_id, payload.version_id)
+
+    rows = dataset.get("sample_data") or []
+    if version_id:
+        version = dataset_versions_api._find_version(dataset_id, version_id)
+        if version is not None:
+            rows = version.get("rows", rows) or rows
+    elif not rows:
+        latest = _latest_version_record(dataset_id)
+        if latest is not None:
+            rows = latest.get("rows", rows) or rows
+            version_id = latest.get("id")
 
     if payload.rules.key_columns:
         groups = _segment_rows_by_keys(rows, payload.rules.key_columns)
