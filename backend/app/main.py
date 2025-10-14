@@ -103,6 +103,8 @@ from .schemas import (
     FileUploadResponse,
     QuickExtraction,
     ResumableChunkAck,
+    ResumableChunkPresignRequest,
+    ResumableChunkPresignResponse,
     ResumableUploadInitRequest,
     ResumableUploadInitResponse,
     TaskEnqueueResponse,
@@ -115,6 +117,7 @@ from .schemas import (
 )
 from .utils import files as files_utils
 from .services.extraction import build_extraction
+from .services.storage import get_storage_service
 from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
 from .utils.preview import generate_preview
 from .utils.batch_progress import get_batch_progress_tracker
@@ -130,6 +133,7 @@ from .utils.files import (
 )
 
 settings = get_settings()
+storage_service = get_storage_service()
 logger = logging.getLogger(__name__)
 
 
@@ -415,6 +419,7 @@ app = FastAPI(
     redoc_url=f"{API_PREFIX}/redoc",
     openapi_url=f"{API_PREFIX}/openapi.json",
 )
+app.UPLOAD_DIR = Path(UPLOAD_DIR)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -632,6 +637,42 @@ def _save_resumable_state(upload_id: str, state: Dict[str, Any]) -> None:
     tmp_path.replace(state_path)
 
 
+def _finalize_upload(
+    file_id: str,
+    original_filename: Optional[str],
+    data: bytes,
+    location: files_utils.FileLocation,
+) -> FileUploadResponse:
+    """Build response payload after the file has been persisted."""
+
+    register_uploaded_file(file_id, location)
+
+    preview_name = original_filename
+    if not preview_name:
+        local_path = location.local_path()
+        if local_path is not None:
+            preview_name = local_path.name
+
+    try:
+        df = read_table_bytes(data, preview_name or "file")
+        extraction = build_extraction(df)
+    except Exception:
+        extraction = None
+
+    quick = QuickExtraction.model_validate(extraction) if extraction else None
+    payload = FileUploadResponse(
+        status="success",
+        file_url=file_id,
+        filename=original_filename,
+        quick_extraction=quick,
+    )
+
+    UPLOAD_COUNTER.inc()
+    UPLOAD_SIZE.observe(len(data))
+
+    return payload
+
+
 async def _persist_uploaded_bytes(
     data: bytes,
     original_filename: Optional[str],
@@ -647,33 +688,14 @@ async def _persist_uploaded_bytes(
         )
 
     _ensure_allowed_extension(original_filename)
+    _assert_allowed_mime(data, original_filename or "file")
     await _scan_for_malware(data)
 
     file_id = str(uuid.uuid4())
-    safe_name = safe_filename(original_filename or "file")
-    upload_root = Path(UPLOAD_DIR)
-    upload_root.mkdir(parents=True, exist_ok=True)
-    path = upload_root / f"{file_id}_{safe_name}"
-    with path.open("wb") as handle:
-        handle.write(data)
-    register_uploaded_file(file_id, path)
+    safe_name = original_filename or "file"
+    location = storage_service.store_bytes(file_id, safe_name, data)
 
-    try:
-        df = read_table_bytes(data, original_filename or path.name)
-        extraction = build_extraction(df)
-    except Exception:
-        extraction = None
-
-    quick = QuickExtraction.model_validate(extraction) if extraction else None
-    payload = FileUploadResponse(
-        status="success",
-        file_url=file_id,
-        filename=original_filename,
-        quick_extraction=quick,
-    )
-
-    UPLOAD_COUNTER.inc()
-    UPLOAD_SIZE.observe(len(data))
+    payload = _finalize_upload(file_id, original_filename, data, location)
 
     if idempotency_key:
         _IDEMPOTENCY_CACHE[idempotency_key] = payload.model_dump()
@@ -806,38 +828,12 @@ async def api_upload(
             return FileUploadResponse(**cached_payload)
 
     try:
-        _ensure_allowed_extension(file.filename)
         data = await file.read()
-        if not data:
-            raise HTTPException(status_code=400, detail="Empty file")
-        if len(data) > MAX_UPLOAD_SIZE:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large. Max allowed size is {settings.max_upload_size_mb} MB",
-            )
-        _assert_allowed_mime(data, file.filename)
-        await _scan_for_malware(data)
-        # save
-        fid = str(uuid.uuid4())
-        safe = safe_filename(file.filename or "file")
-        upload_root = Path(UPLOAD_DIR)
-        upload_root.mkdir(parents=True, exist_ok=True)
-        path = upload_root / f"{fid}_{safe}"
-        with path.open("wb") as f:
-            f.write(data)
-        register_uploaded_file(fid, path)
-        # quick extraction for preview (optional)
-        try:
-            df = read_table_bytes(data, file.filename)
-            extraction = build_extraction(df)
-        except Exception:
-            extraction = None
-        quick = QuickExtraction.model_validate(extraction) if extraction else None
-        payload = FileUploadResponse(
-            status="success", file_url=fid, filename=file.filename, quick_extraction=quick
+        payload = await _persist_uploaded_bytes(
+            data,
+            file.filename,
+            idempotency_key=idempotency_key,
         )
-        UPLOAD_COUNTER.inc()
-        UPLOAD_SIZE.observe(len(data))
     except Exception as exc:
         if idempotency_key and pending_future is not None:
             await IDEMPOTENCY_COORDINATOR.fail(idempotency_key, pending_future, exc)
@@ -1078,6 +1074,8 @@ async def resumable_upload_start(payload: ResumableUploadInitRequest) -> Resumab
             state = {}
         else:
             state.setdefault("uploaded_chunks", [])
+            if state.get("storage_strategy") == "s3-presigned":
+                state.setdefault("uploaded_parts", {})
     else:
         state = {}
 
@@ -1085,6 +1083,24 @@ async def resumable_upload_start(payload: ResumableUploadInitRequest) -> Resumab
     chunk_dir.mkdir(parents=True, exist_ok=True)
 
     total_chunks = max(1, math.ceil(payload.total_size / payload.chunk_size))
+    strategy = "s3-presigned" if storage_service.backend == "s3" else "direct"
+    if strategy == "s3-presigned":
+        file_identifier = state.get("file_id") or str(uuid.uuid4())
+        if not state.get("s3_key") or not state.get("s3_upload_id"):
+            key, multipart_id = storage_service.create_multipart_upload(
+                file_identifier,
+                payload.filename,
+            )
+            state["s3_key"] = key
+            state["s3_upload_id"] = multipart_id
+        state["file_id"] = file_identifier
+        state.setdefault("uploaded_parts", {})
+    else:
+        state.pop("s3_key", None)
+        state.pop("s3_upload_id", None)
+        state.pop("uploaded_parts", None)
+        state.pop("file_id", None)
+
     state.update(
         {
             "upload_id": upload_id,
@@ -1096,6 +1112,7 @@ async def resumable_upload_start(payload: ResumableUploadInitRequest) -> Resumab
             "total_chunks": total_chunks,
             "created_at": state.get("created_at") or time.time(),
             "updated_at": time.time(),
+            "storage_strategy": strategy,
         }
     )
 
@@ -1107,6 +1124,50 @@ async def resumable_upload_start(payload: ResumableUploadInitRequest) -> Resumab
         chunk_size=state["chunk_size"],
         total_chunks=state["total_chunks"],
         total_size=state["total_size"],
+        strategy=strategy,
+        file_id=state.get("file_id"),
+    )
+
+
+@app.post(
+    "/api/upload/resumable/{upload_id}/chunk/presign",
+    response_model=ResumableChunkPresignResponse,
+    summary="Generate a presigned URL for uploading a single chunk",
+)
+async def resumable_chunk_presign(
+    upload_id: str, payload: ResumableChunkPresignRequest
+) -> ResumableChunkPresignResponse:
+    state = _load_resumable_state(upload_id)
+    if state.get("storage_strategy") != "s3-presigned":
+        raise HTTPException(status_code=400, detail="Presigned uploads are not enabled for this session")
+
+    total_chunks = int(state.get("total_chunks", 0))
+    if payload.chunk_index < 0 or payload.chunk_index >= total_chunks:
+        raise HTTPException(status_code=400, detail="Chunk index out of range")
+
+    expected_size = int(state.get("chunk_size", payload.chunk_size))
+    if payload.chunk_index < total_chunks - 1 and payload.chunk_size != expected_size:
+        raise HTTPException(status_code=400, detail="Chunk size mismatch")
+
+    key = state.get("s3_key")
+    upload_identifier = state.get("s3_upload_id")
+    if not key or not upload_identifier:
+        raise HTTPException(status_code=500, detail="Upload session is missing storage metadata")
+
+    presigned = storage_service.generate_presigned_part(
+        key,
+        upload_identifier,
+        payload.chunk_index + 1,
+    )
+
+    state["updated_at"] = time.time()
+    _save_resumable_state(upload_id, state)
+
+    return ResumableChunkPresignResponse(
+        chunk_index=payload.chunk_index,
+        upload_url=presigned.url,
+        headers=presigned.headers,
+        expires_in=presigned.expires_in,
     )
 
 
@@ -1121,12 +1182,54 @@ async def resumable_upload_chunk(
     chunk_checksum: Optional[str] = Form(
         None, description="Optional SHA-256 checksum calculated by the client"
     ),
-    chunk: UploadFile = File(..., description="Binary payload for the chunk"),
+    chunk_size: Optional[int] = Form(
+        None, description="Size of the chunk in bytes (required for presigned uploads)"
+    ),
+    chunk_etag: Optional[str] = Form(
+        None, description="ETag returned by the object store for presigned uploads"
+    ),
+    chunk: Optional[UploadFile] = File(
+        None, description="Binary payload for the chunk when uploading via the API"
+    ),
 ) -> ResumableChunkAck:
     state = _load_resumable_state(upload_id)
     total_chunks = int(state.get("total_chunks", 0))
     if chunk_index < 0 or chunk_index >= total_chunks:
         raise HTTPException(status_code=400, detail="Chunk index out of range")
+
+    strategy = state.get("storage_strategy", "direct")
+
+    if strategy == "s3-presigned":
+        if chunk is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Chunk payload must be uploaded directly to object storage for this session",
+            )
+        if not chunk_etag:
+            raise HTTPException(status_code=400, detail="chunk_etag is required for presigned uploads")
+
+        sanitized_etag = chunk_etag.strip('"')
+        expected_size = int(state.get("chunk_size", chunk_size or 0))
+        effective_size = int(chunk_size or expected_size)
+        if chunk_index < total_chunks - 1 and effective_size != expected_size:
+            raise HTTPException(status_code=400, detail="Chunk size mismatch")
+
+        uploaded_chunks = set(state.get("uploaded_chunks", []))
+        uploaded_chunks.add(int(chunk_index))
+        state["uploaded_chunks"] = sorted(uploaded_chunks)
+        parts = state.get("uploaded_parts") or {}
+        parts[str(chunk_index)] = {
+            "etag": sanitized_etag,
+            "size": effective_size,
+        }
+        state["uploaded_parts"] = parts
+        state["updated_at"] = time.time()
+        _save_resumable_state(upload_id, state)
+
+        return ResumableChunkAck(chunk_index=int(chunk_index), stored_checksum=sanitized_etag)
+
+    if chunk is None:
+        raise HTTPException(status_code=400, detail="Chunk payload is required")
 
     chunk_dir = _resumable_chunk_dir(upload_id)
     chunk_dir.mkdir(parents=True, exist_ok=True)
@@ -1176,6 +1279,52 @@ async def resumable_upload_finish(upload_id: str) -> FileUploadResponse:
             status_code=400,
             detail=f"Not all chunks uploaded: missing {missing[:5]}{'...' if len(missing) > 5 else ''}",
         )
+
+    strategy = state.get("storage_strategy", "direct")
+    if strategy == "s3-presigned":
+        key = state.get("s3_key")
+        upload_identifier = state.get("s3_upload_id")
+        file_identifier = state.get("file_id") or str(uuid.uuid4())
+        if not key or not upload_identifier:
+            raise HTTPException(status_code=500, detail="Upload session is missing storage metadata")
+
+        parts_metadata = state.get("uploaded_parts") or {}
+        ordered_parts = []
+        for idx in range(total_chunks):
+            part_info = parts_metadata.get(str(idx))
+            if not part_info or not part_info.get("etag"):
+                raise HTTPException(status_code=400, detail=f"Missing metadata for chunk {idx}")
+            ordered_parts.append({"PartNumber": idx + 1, "ETag": part_info["etag"]})
+
+        storage_service.complete_multipart_upload(key, upload_identifier, ordered_parts)
+        location, data = storage_service.fetch_completed_upload(
+            file_identifier,
+            state.get("filename") or "file",
+            key,
+        )
+
+        if len(data) != int(state.get("total_size", len(data))):
+            raise HTTPException(status_code=400, detail="Combined file size does not match expected total size")
+
+        expected_checksum = state.get("checksum")
+        if expected_checksum and _calculate_sha256(data) != expected_checksum:
+            raise HTTPException(status_code=400, detail="File checksum mismatch after assembly")
+
+        _ensure_allowed_extension(state.get("filename"))
+        _assert_allowed_mime(data, state.get("filename") or "file")
+        await _scan_for_malware(data)
+
+        response = _finalize_upload(file_identifier, state.get("filename"), data, location)
+
+        state_path = _resumable_state_path(upload_id)
+        state_path.unlink(missing_ok=True)
+        chunk_dir = _resumable_chunk_dir(upload_id)
+        if chunk_dir.exists():
+            try:
+                chunk_dir.rmdir()
+            except OSError:
+                pass
+        return response
 
     chunk_dir = _resumable_chunk_dir(upload_id)
     combined_path = chunk_dir / "__combined__"
@@ -1392,7 +1541,6 @@ def api_extract_async(
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
-            preview_payload = _synthetic_preview(
             preview_payload = _fallback_preview_payload(
                 req.file_url,
                 page=page,
@@ -1402,8 +1550,6 @@ def api_extract_async(
                 seed=seed,
             )
         return DatasetPreviewResponse.model_validate(preview_payload)
-        validated = DatasetPreviewResponse.model_validate(preview_payload)
-        return JSONResponse(content=validated.model_dump())
 
     # Ensure the file exists before enqueuing to fail fast for invalid identifiers.
     resolve_file_path(req.file_url)
@@ -1744,7 +1890,6 @@ def api_dataset_preview(
     except HTTPException as exc:
         if exc.status_code != 404:
             raise
-        payload = _synthetic_preview(
         payload = _fallback_preview_payload(
             file_id,
             page=page,

@@ -1,4 +1,4 @@
-import { startResumableUpload, uploadResumableChunk, finishResumableUpload } from '@/api/integrations'
+import { startResumableUpload, uploadResumableChunk, finishResumableUpload, presignResumableChunk } from '@/api/integrations'
 
 const DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024
 const MIN_CHUNK_SIZE = 256 * 1024
@@ -105,6 +105,7 @@ export async function resumableUpload(file, { onProgress } = {}) {
   const serverChunkSize = session.chunk_size
   const totalChunks = session.total_chunks
   const totalSize = session.total_size
+  const strategy = session.strategy || 'direct'
 
   const uploadedChunks = new Set(session.uploaded_chunks || [])
 
@@ -127,14 +128,48 @@ export async function resumableUpload(file, { onProgress } = {}) {
     const chunkBlob = file.slice(start, end)
     const chunkArrayBuffer = await chunkBlob.arrayBuffer()
     const chunkChecksum = await sha256(chunkArrayBuffer)
+    const chunkBytes = end - start
 
-    await uploadResumableChunk({
-      uploadId,
-      chunkIndex,
-      chunkChecksum,
-      chunkSize: end - start,
-      chunk: new Blob([chunkArrayBuffer]),
-    })
+    if (strategy === 's3-presigned') {
+      const presigned = await presignResumableChunk({
+        uploadId,
+        chunkIndex,
+        chunkSize: chunkBytes,
+      })
+
+      const uploadResponse = await fetch(presigned.upload_url, {
+        method: 'PUT',
+        headers: presigned.headers || {},
+        body: chunkBlob,
+      })
+
+      if (!uploadResponse.ok) {
+        const message = await uploadResponse.text()
+        throw new Error(`Failed to upload chunk ${chunkIndex}: ${message}`)
+      }
+
+      const etagHeader = uploadResponse.headers.get('ETag') || uploadResponse.headers.get('etag')
+      if (!etagHeader) {
+        throw new Error('Object storage response did not include an ETag header')
+      }
+      const normalizedEtag = etagHeader.replace(/"/g, '')
+
+      await uploadResumableChunk({
+        uploadId,
+        chunkIndex,
+        chunkChecksum,
+        chunkSize: chunkBytes,
+        chunkEtag: normalizedEtag,
+      })
+    } else {
+      await uploadResumableChunk({
+        uploadId,
+        chunkIndex,
+        chunkChecksum,
+        chunkSize: chunkBytes,
+        chunk: chunkBlob,
+      })
+    }
 
     uploadedChunks.add(chunkIndex)
     uploadedBytes = calculateUploadedBytes(Array.from(uploadedChunks), serverChunkSize, totalSize)

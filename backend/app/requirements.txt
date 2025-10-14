@@ -6,6 +6,7 @@ openpyxl
 pdfplumber
 pytesseract
 Pillow
+boto3
 python-multipart
 python-magic
 puremagic

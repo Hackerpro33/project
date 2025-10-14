@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 import json
 import yaml
@@ -181,6 +181,84 @@ class Settings(BaseSettings):
         alias="ALERT_WEBHOOK_TIMEOUT",
         description="Timeout in seconds for webhook delivery attempts.",
         ge=0.1,
+    )
+
+    storage_backend: Literal["local", "s3"] = Field(
+        "local",
+        alias="STORAGE_BACKEND",
+        description="Storage backend used for user uploads. Supports 'local' and 's3'.",
+    )
+    s3_bucket: Optional[str] = Field(
+        None,
+        alias="S3_BUCKET",
+        description="Name of the S3 bucket used for persisted uploads when STORAGE_BACKEND=s3.",
+    )
+    s3_region_name: Optional[str] = Field(
+        None,
+        alias="S3_REGION_NAME",
+        description="AWS region of the S3 bucket.",
+    )
+    s3_endpoint_url: Optional[AnyHttpUrl] = Field(
+        None,
+        alias="S3_ENDPOINT_URL",
+        description="Optional custom endpoint URL for S3 compatible storage (e.g. MinIO).",
+    )
+    s3_access_key_id: Optional[str] = Field(
+        None,
+        alias="S3_ACCESS_KEY_ID",
+        description="Access key used when authenticating against S3 compatible storage.",
+    )
+    s3_secret_access_key: Optional[str] = Field(
+        None,
+        alias="S3_SECRET_ACCESS_KEY",
+        description="Secret key used when authenticating against S3 compatible storage.",
+    )
+    s3_session_token: Optional[str] = Field(
+        None,
+        alias="S3_SESSION_TOKEN",
+        description="Optional session token for temporary S3 credentials.",
+    )
+    s3_force_path_style: bool = Field(
+        False,
+        alias="S3_FORCE_PATH_STYLE",
+        description="Force path-style addressing for S3 requests (useful for MinIO).",
+    )
+    s3_key_prefix: str = Field(
+        "uploads",
+        alias="S3_KEY_PREFIX",
+        description="Prefix applied to every object key stored in S3.",
+    )
+    s3_upload_expiration_seconds: int = Field(
+        900,
+        alias="S3_UPLOAD_EXPIRATION_SECONDS",
+        description="Expiration window for presigned multipart upload URLs in seconds.",
+        ge=60,
+    )
+
+    @field_validator("storage_backend", mode="before")
+    @classmethod
+    def _normalise_backend(cls, value: Optional[str]) -> str:
+        if value is None:
+            return "local"
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized not in {"local", "s3"}:
+                raise ValueError("STORAGE_BACKEND must be either 'local' or 's3'")
+            return normalized
+        raise ValueError("STORAGE_BACKEND must be a string")
+
+    @field_validator("s3_key_prefix", mode="before")
+    @classmethod
+    def _normalise_s3_prefix(cls, value: Optional[str]) -> str:
+        if not value:
+            return "uploads"
+        cleaned = str(value).strip().strip("/")
+        return cleaned or "uploads"
+    s3_download_expiration_seconds: int = Field(
+        900,
+        alias="S3_DOWNLOAD_EXPIRATION_SECONDS",
+        description="Expiration window for presigned download URLs in seconds.",
+        ge=60,
     )
 
     preview_max_rows: int = Field(

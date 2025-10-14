@@ -7,7 +7,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Literal, Optional, Union
 
 import pandas as pd
 import pdfplumber
@@ -21,7 +21,22 @@ DATA_DIR = APP_ROOT / "data"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-_FILE_REGISTRY: Dict[str, str] = {}
+@dataclass
+class FileLocation:
+    """Describe where an uploaded file is persisted."""
+
+    storage: Literal["local", "s3"]
+    path: Optional[str] = None
+    bucket: Optional[str] = None
+    key: Optional[str] = None
+
+    def local_path(self) -> Optional[Path]:
+        if self.path:
+            return Path(self.path)
+        return None
+
+
+_FILE_REGISTRY: Dict[str, FileLocation] = {}
 
 
 def _normalize_table_rows(rows: Iterable[Iterable[str]]) -> List[List[str]]:
@@ -166,11 +181,35 @@ def safe_filename(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9._-]+", "_", name)
 
 
-def register_uploaded_file(file_id: str, path: Path) -> None:
-    """Remember the absolute ``path`` for the uploaded ``file_id``."""
+def register_uploaded_file(
+    file_id: str,
+    path: Union[Path, FileLocation, str],
+    *,
+    storage: Optional[str] = None,
+    bucket: Optional[str] = None,
+    key: Optional[str] = None,
+) -> None:
+    """Remember where the uploaded ``file_id`` is stored."""
+
+    if isinstance(path, FileLocation):
+        _FILE_REGISTRY[file_id] = path
+        return
+
+    if isinstance(path, str):
+        path = Path(path)
 
     resolved = Path(path).resolve()
-    _FILE_REGISTRY[file_id] = str(resolved)
+
+    if storage and storage.lower() == "s3":
+        _FILE_REGISTRY[file_id] = FileLocation(
+            storage="s3",
+            path=str(resolved),
+            bucket=bucket,
+            key=key,
+        )
+        return
+
+    _FILE_REGISTRY[file_id] = FileLocation(storage="local", path=str(resolved))
 
 
 def _allowed_file_roots() -> List[Path]:
@@ -203,10 +242,17 @@ def resolve_file_path(identifier: str) -> Path:
         raise HTTPException(status_code=400, detail="File identifier is required")
 
     if identifier in _FILE_REGISTRY:
-        path = Path(_FILE_REGISTRY[identifier])
-        if path.exists():
-            if not _is_within_allowed_roots(path):
-                raise HTTPException(status_code=403, detail="File path is outside allowed directories")
+        location = _FILE_REGISTRY[identifier]
+        if location.storage == "local":
+            path = location.local_path()
+            if path and path.exists():
+                return path.resolve()
+        elif location.storage == "s3":
+            from app.services.storage import get_storage_service  # lazy import to avoid cycles
+
+            storage_service = get_storage_service()
+            path = storage_service.ensure_local_copy(identifier, location)
+            location.path = str(path.resolve())
             return path.resolve()
 
     candidate = (UPLOAD_DIR / safe_filename(identifier)).resolve()

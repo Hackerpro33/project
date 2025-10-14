@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AnyHttpUrl, BaseModel, Field
 
 
 class ColumnPreview(BaseModel):
@@ -348,6 +348,33 @@ class ResumableUploadInitResponse(BaseModel):
     chunk_size: int = Field(..., description="Chunk size that the server expects")
     total_chunks: int = Field(..., description="Total number of chunks required to upload the file")
     total_size: int = Field(..., description="Total size of the file in bytes")
+    strategy: Literal["direct", "s3-presigned"] = Field(
+        "direct",
+        description="Upload strategy selected by the server. Use 's3-presigned' for direct S3 uploads.",
+    )
+    file_id: Optional[str] = Field(
+        default=None,
+        description="Identifier that will be associated with the completed upload when using presigned storage.",
+    )
+
+
+class ResumableChunkPresignRequest(BaseModel):
+    """Request body for generating a presigned multipart chunk URL."""
+
+    chunk_index: int = Field(..., ge=0, description="Zero-based chunk index")
+    chunk_size: int = Field(..., gt=0, description="Size of the chunk in bytes")
+
+
+class ResumableChunkPresignResponse(BaseModel):
+    """Response containing a presigned URL for uploading a chunk."""
+
+    chunk_index: int = Field(..., description="Index of the chunk that should be uploaded")
+    upload_url: AnyHttpUrl = Field(..., description="Presigned URL for uploading the chunk to object storage")
+    headers: Dict[str, str] = Field(
+        default_factory=dict,
+        description="HTTP headers that must be supplied when uploading the chunk",
+    )
+    expires_in: int = Field(..., description="Validity window for the presigned URL in seconds")
 
 
 class ResumableChunkAck(BaseModel):

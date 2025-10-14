@@ -41,7 +41,17 @@ export async function startResumableUpload(payload) {
   })
 }
 
-export async function uploadResumableChunk({ uploadId, chunkIndex, chunkChecksum, chunkSize, chunk }) {
+export async function presignResumableChunk({ uploadId, chunkIndex, chunkSize }) {
+  return jsonRequest(`/api/upload/resumable/${uploadId}/chunk/presign`, {
+    method: 'POST',
+    body: JSON.stringify({
+      chunk_index: chunkIndex,
+      chunk_size: chunkSize,
+    }),
+  })
+}
+
+export async function uploadResumableChunk({ uploadId, chunkIndex, chunkChecksum, chunkSize, chunk, chunkEtag }) {
   const form = new FormData()
   form.append('chunk_index', String(chunkIndex))
   if (chunkChecksum) {
@@ -50,7 +60,12 @@ export async function uploadResumableChunk({ uploadId, chunkIndex, chunkChecksum
   if (chunkSize) {
     form.append('chunk_size', String(chunkSize))
   }
-  form.append('chunk', chunk)
+  if (chunkEtag) {
+    form.append('chunk_etag', chunkEtag)
+  }
+  if (chunk) {
+    form.append('chunk', chunk)
+  }
 
   const response = await fetch(buildApiUrl(`/api/upload/resumable/${uploadId}/chunk`), {
     method: 'PUT',
