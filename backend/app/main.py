@@ -1406,6 +1406,8 @@ def api_extract_async(
                 seed=seed,
             )
         return DatasetPreviewResponse.model_validate(preview_payload)
+        validated = DatasetPreviewResponse.model_validate(preview_payload)
+        return JSONResponse(content=validated.model_dump())
 
     # Ensure the file exists before enqueuing to fail fast for invalid identifiers.
     resolve_file_path(req.file_url)
@@ -1848,39 +1850,193 @@ app.add_api_route(
 _original_openapi = app.openapi
 
 
+_STANDARD_QUERY_METADATA: Dict[str, Dict[str, Any]] = {
+    "page": {
+        "description": "Номер страницы пагинированного результата",
+        "example": 2,
+        "examples": {
+            "next": {"summary": "Следующая страница", "value": 2},
+            "first": {"summary": "Первая страница", "value": 1},
+        },
+    },
+    "page_size": {
+        "description": "Количество объектов на странице",
+        "example": 50,
+        "examples": {
+            "default": {"summary": "Стандартное значение", "value": 20},
+            "extended": {"summary": "Больше объектов", "value": 100},
+        },
+    },
+    "limit": {
+        "description": "Максимальное количество элементов в ответе",
+        "example": 25,
+    },
+    "offset": {
+        "description": "Смещение в списке результатов",
+        "example": 40,
+    },
+    "search": {
+        "description": "Поисковый запрос по основным полям сущности",
+        "example": "sales quarterly",
+    },
+    "tags": {
+        "description": "Фильтр по тегам",
+        "examples": {
+            "single": {"summary": "Один тег", "value": ["finance"]},
+            "multi": {"summary": "Несколько тегов", "value": ["finance", "forecasting"]},
+        },
+    },
+    "types": {
+        "description": "Фильтр по типу сущности",
+        "examples": {
+            "chart": {"summary": "Тип визуализации", "value": ["chart"]},
+        },
+    },
+    "dataset_types": {
+        "description": "Фильтр по типу набора данных",
+        "examples": {
+            "table": {"summary": "Табличный набор", "value": ["table"]},
+        },
+    },
+    "owners": {
+        "description": "Фильтр по владельцам",
+        "examples": {
+            "team": {"summary": "Команда-владелец", "value": ["team-insights"]},
+        },
+    },
+    "status": {
+        "description": "Статусы, разделённые запятой",
+        "example": "queued,running",
+    },
+    "type": {
+        "description": "Тип сущности или задачи",
+        "example": "ingest",
+    },
+    "q": {
+        "description": "Поисковая строка",
+        "example": "delayed payments",
+    },
+}
+
+
+def _apply_standard_parameter_metadata(parameters: List[Dict[str, Any]]) -> None:
+    for param in parameters:
+        name = param.get("name")
+        if not name:
+            continue
+        metadata = _STANDARD_QUERY_METADATA.get(name)
+        if not metadata:
+            continue
+        schema_meta = param.setdefault("schema", {})
+        description = metadata.get("description")
+        if description:
+            schema_meta.setdefault("description", description)
+            param.setdefault("description", description)
+        if "example" in metadata:
+            schema_meta.setdefault("example", metadata["example"])
+        if "examples" in metadata and "examples" not in param:
+            param["examples"] = metadata["examples"]
+
+
 def _custom_openapi() -> Dict[str, Any]:
     schema = _original_openapi()
-    try:
-        preview_schema = schema["components"]["schemas"]["DatasetPreviewResponse"]
-    except KeyError:
-        return schema
 
-    allowed_fields = {
-        "columns",
-        "file_id",
-        "has_more",
-        "mode",
-        "page",
-        "page_size",
-        "rows",
-        "sample_size",
-    }
-    preview_schema["properties"] = {
-        key: value for key, value in preview_schema.get("properties", {}).items() if key in allowed_fields
-    }
+    preview_schema = (
+        schema.get("components", {})
+        .get("schemas", {})
+        .get("DatasetPreviewResponse")
+    )
+    if preview_schema:
+        allowed_fields = {
+            "columns",
+            "file_id",
+            "has_more",
+            "mode",
+            "page",
+            "page_size",
+            "rows",
+            "sample_size",
+        }
+        preview_schema["properties"] = {
+            key: value
+            for key, value in preview_schema.get("properties", {}).items()
+            if key in allowed_fields
+        }
 
     dataset_paths = [f"{API_PREFIX}/dataset/list", "/api/dataset/list"]
-    for path, operation_id in zip(dataset_paths, [
-        "list_datasets_api_v1_dataset_list_get",
-        "list_datasets_api_dataset_list_get",
-    ]):
+    dataset_example = {
+        "summary": "Пагинированный список наборов данных",
+        "value": {
+            "items": [
+                {
+                    "id": "ds_sales_2023",
+                    "name": "Sales by Region 2023",
+                    "description": "Сводка продаж по регионам за 2023 год",
+                    "tags": ["sales", "finance"],
+                    "dataset_type": "table",
+                    "owners": ["team-insights"],
+                    "row_count": 12000,
+                    "created_at": "2023-12-01T08:30:00Z",
+                    "updated_at": "2023-12-15T10:05:00Z",
+                }
+            ],
+            "page": 1,
+            "page_size": 20,
+            "total": 1,
+            "total_pages": 1,
+            "has_next": False,
+            "has_previous": False,
+            "available_filters": {
+                "tags": ["finance", "sales"],
+                "types": ["table", "dashboard"],
+                "owners": ["team-insights"],
+            },
+            "applied_filters": {
+                "search": "sales",
+                "tags": ["finance"],
+                "types": [],
+                "owners": [],
+                "order_by": "-created_at",
+            },
+        },
+    }
+
+    for path, operation_id in zip(
+        dataset_paths,
+        [
+            "list_datasets_api_v1_dataset_list_get",
+            "list_datasets_api_dataset_list_get",
+        ],
+    ):
         dataset_list = schema.get("paths", {}).get(path)
         if dataset_list and "get" in dataset_list:
             get_spec = dataset_list["get"]
-            get_spec["summary"] = "List Datasets"
+            get_spec.setdefault("summary", "List datasets")
+            get_spec.setdefault(
+                "description",
+                "Возвращает список наборов данных с поддержкой пагинации, сортировки и фильтров.",
+            )
             get_spec["operationId"] = operation_id
-            params = get_spec.get("parameters", [])
-            get_spec["parameters"] = [param for param in params if param.get("name") == "order_by"]
+            parameters = get_spec.get("parameters", [])
+            _apply_standard_parameter_metadata(parameters)
+            if parameters:
+                get_spec["parameters"] = parameters
+            responses = get_spec.setdefault("responses", {})
+            success = responses.get("200")
+            if success:
+                content = success.setdefault("content", {})
+                json_content = content.setdefault("application/json", {})
+                existing_examples = json_content.get("examples", {})
+                existing_examples.setdefault("paginated", dataset_example)
+                json_content["examples"] = existing_examples
+
+    for path_item in schema.get("paths", {}).values():
+        for operation in path_item.values():
+            parameters = operation.get("parameters")
+            if not parameters:
+                continue
+            _apply_standard_parameter_metadata(parameters)
+
     return schema
 
 
