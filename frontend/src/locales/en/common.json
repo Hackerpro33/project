@@ -15,11 +15,16 @@
     "forecasting": "Forecasting",
     "networks": "Network graphs",
     "constructor": "Constructor",
-    "settings": "Settings"
+    "settings": "Settings",
+    "versions": "Dataset versions",
+    "collaboration": "Collaboration",
+    "history": "Task history",
+    "toggleSidebar": "Toggle navigation"
   },
   "language": {
     "en": "English",
-    "ru": "Russian"
+    "ru": "Russian",
+    "label": "Interface language"
   },
   "pagination": {
     "previous": "Previous",
@@ -158,5 +163,29 @@
     "clearFilters": "Reset filters",
     "filterTags": "Filter by tags",
     "filterTypes": "Filter by types"
+  },
+  "theme": {
+    "switchToLight": "Switch to light theme",
+    "switchToDark": "Switch to dark theme",
+    "toggleLabel": "Theme",
+    "toggleAria": "Toggle color theme"
+  },
+  "hotkeys": {
+    "title": "Keyboard shortcuts",
+    "subtitle": "Save time with frequently used actions.",
+    "openPalette": "Open command menu",
+    "commandButton": "Command menu",
+    "paletteLabel": "Quick command search",
+    "palettePlaceholder": "Type a command or page...",
+    "noResults": "No matches found",
+    "navigationGroup": "Navigate to page",
+    "helpGroup": "Shortcuts",
+    "theme": "Toggle theme",
+    "themeShortcut": "Ctrl / ⌘ ⇧ T",
+    "language": "Switch language",
+    "languageShortcut": "Ctrl / ⌘ ⇧ L"
+  },
+  "a11y": {
+    "skipToContent": "Skip to main content"
   }
 }
