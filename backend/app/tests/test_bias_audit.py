@@ -13,13 +13,31 @@ from app.audit_api import (
     _trigger_bias_alert,
 )
 from app.main import app
+from app.utils import files as file_utils
+from app.utils.files import register_uploaded_file
 
 DEFAULT_HEADERS = {"host": "localhost"}
 API_PREFIX = "/api/v1"
 
 
 @pytest.fixture(autouse=True)
-def cleanup_audit_files():
+def cleanup_audit_files(tmp_path, monkeypatch):
+    upload_dir = tmp_path / "uploads"
+    data_dir = tmp_path / "data"
+    upload_dir.mkdir()
+    data_dir.mkdir()
+
+    monkeypatch.setattr(file_utils, "UPLOAD_DIR", upload_dir)
+    monkeypatch.setattr(file_utils, "DATA_DIR", data_dir)
+    monkeypatch.setattr(app, "UPLOAD_DIR", upload_dir)
+    monkeypatch.setattr(app, "DATA_DIR", data_dir)
+
+    monkeypatch.setattr("app.audit_api.AUDIT_HISTORY_PATH", data_dir / "audit_history.json")
+    monkeypatch.setattr("app.audit_api.AUDIT_SCHEDULES_PATH", data_dir / "audit_schedules.json")
+
+    registry = file_utils.get_file_registry()
+    registry.clear()
+
     for path in (AUDIT_HISTORY_PATH, AUDIT_SCHEDULES_PATH):
         if path.exists():
             path.unlink()
@@ -27,22 +45,26 @@ def cleanup_audit_files():
     for path in (AUDIT_HISTORY_PATH, AUDIT_SCHEDULES_PATH):
         if path.exists():
             path.unlink()
+    registry.clear()
 
 
-def _write_sample_dataset(tmp_path: Path) -> Path:
+def _write_sample_dataset(tmp_path: Path) -> str:
     csv_content = """sensitive,prediction,actual\nA,1,1\nA,0,0\nB,0,1\nB,0,0\nB,1,1\n"""
-    csv_path = tmp_path / "bias_sample.csv"
+    storage_dir = file_utils.DATA_DIR
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = storage_dir / "bias_sample.csv"
     csv_path.write_text(csv_content, encoding="utf-8")
-    return csv_path
+    register_uploaded_file("bias-sample", csv_path)
+    return "bias-sample"
 
 
 def test_bias_audit_run_and_schedule(tmp_path):
-    csv_path = _write_sample_dataset(tmp_path)
+    file_id = _write_sample_dataset(tmp_path)
     client = TestClient(app)
 
     schedule_payload = {
         "name": "Monthly fairness review",
-        "file_url": str(csv_path),
+        "file_url": file_id,
         "sensitive_attribute": "sensitive",
         "prediction_column": "prediction",
         "actual_column": "actual",
@@ -58,7 +80,7 @@ def test_bias_audit_run_and_schedule(tmp_path):
     assert schedule_data["next_run_due"] is not None
 
     audit_payload = {
-        "file_url": str(csv_path),
+        "file_url": file_id,
         "sensitive_attribute": "sensitive",
         "prediction_column": "prediction",
         "actual_column": "actual",
@@ -115,11 +137,11 @@ def test_bias_audit_run_and_schedule(tmp_path):
 
 
 def test_bias_audit_threshold_overrides(tmp_path):
-    csv_path = _write_sample_dataset(tmp_path)
+    file_id = _write_sample_dataset(tmp_path)
     client = TestClient(app)
 
     audit_payload = {
-        "file_url": str(csv_path),
+        "file_url": file_id,
         "sensitive_attribute": "sensitive",
         "prediction_column": "prediction",
         "actual_column": "actual",

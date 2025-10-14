@@ -701,7 +701,7 @@ def list_datasets_endpoint(
     owners: Optional[List[str]] = Query(None, description="Фильтр по владельцам"),
     request: Request = None,  # type: ignore[assignment]
     response: Response = None,  # type: ignore[assignment]
-):
+) -> Any:
     listing = _prepare_listing(
         page=page,
         page_size=page_size,
@@ -722,10 +722,9 @@ def list_datasets_endpoint(
             "page_size": page_size,
             "search": search,
             "tags": sorted(_normalise_tags(tags or [])),
+            "types": sorted(_normalise_tags(types or [])),
+            "owners": sorted(_normalise_tags(owners or [])),
             "payload": payload,
-            "tags": tags,
-            "types": types,
-            "owners": owners,
             "items": ordered_items,
         }
         etag = apply_cache_headers(
@@ -744,20 +743,11 @@ def list_datasets_endpoint(
         page == 1
         and page_size == DEFAULT_PAGE_SIZE
         and not search
-        and not (tags or [])
+        and not (tags or types or owners)
+        and order_by in (None, "-created_at")
     )
 
     if compatibility_plain:
-        return payload["items"]
-
-
-    if (
-        page == 1
-        and page_size == DEFAULT_PAGE_SIZE
-        and not search
-        and not (tags or types or owners)
-        and (order_by in (None, "-created_at"))
-    ):
         return ordered_items
 
     return payload
