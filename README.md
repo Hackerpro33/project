@@ -32,14 +32,14 @@ C4Container
     ContainerDb(db, "Postgres", "SQLModel", "Метаданные и профили")
     Container(files, "Object Storage", "S3 совместимое", "Загруженные файлы")
     Container(redis, "Redis", "Queue/Cache", "Очередь задач и кеш статусов")
-    user -> ui : HTTP(S)
-    ui -> api : REST /api/v1
-    api -> files : PUT/GET
-    api -> db : SQL
-    api -> redis : enqueue / poll
-    worker -> files : Читает данные
-    worker -> db : Обновляет результаты
-    worker -> redis : Статусы задач
+    Rel(user, ui, "HTTP(S)")
+    Rel(ui, api, "REST /api/v1")
+    Rel(api, files, "PUT/GET")
+    Rel(api, db, "SQL")
+    Rel(api, redis, "enqueue / poll")
+    Rel(worker, files, "Читает данные")
+    Rel(worker, db, "Обновляет результаты")
+    Rel(worker, redis, "Статусы задач")
 ```
 
 **Потоки данных**
