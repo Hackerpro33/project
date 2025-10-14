@@ -1324,31 +1324,6 @@ def _synthetic_preview(
         503: {"model": ErrorResponse, "description": "Task queue unavailable"},
     },
 )
-def api_extract_async(req: ExtractRequest, request: Request) -> TaskEnqueueResponse:
-    if not settings.task_queue_enabled:
-        params = request.query_params if request is not None else {}
-
-        def _int_param(name: str, default: int) -> int:
-            raw = params.get(name)
-            if raw in (None, ""):
-                return default
-            try:
-                return int(raw)
-            except (TypeError, ValueError) as exc:  # pragma: no cover - defensive guard
-                raise HTTPException(status_code=400, detail=f"Invalid integer for '{name}'") from exc
-
-        page = max(1, _int_param("page", 1))
-        page_size = _int_param("page_size", 50)
-        sample_size = _int_param("sample_size", 50)
-        seed_param = params.get("seed")
-        try:
-            seed = int(seed_param) if seed_param not in (None, "") else None
-        except ValueError as exc:  # pragma: no cover - defensive guard
-            raise HTTPException(status_code=400, detail="Invalid integer for 'seed'") from exc
-        mode = params.get("mode", "page").lower()
-        if mode not in {"page", "sample"}:
-            raise HTTPException(status_code=400, detail="Invalid preview mode")
-
 def api_extract_async(
     req: ExtractRequest,
     page: int = Query(1, ge=1, description="Page number for the synchronous preview fallback"),
@@ -1386,7 +1361,6 @@ def api_extract_async(
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
-            preview_payload = _fallback_preview_payload(
             preview_payload = _synthetic_preview(
                 req.file_url,
                 page=page,
@@ -1395,8 +1369,6 @@ def api_extract_async(
                 sample_size=sample_size,
                 seed=seed,
             )
-        validated = DatasetPreviewResponse.model_validate(preview_payload)
-        return JSONResponse(content=validated.model_dump())
         return DatasetPreviewResponse.model_validate(preview_payload)
 
     # Ensure the file exists before enqueuing to fail fast for invalid identifiers.
@@ -1732,23 +1704,17 @@ def api_dataset_preview(
             page=page,
             page_size=page_size,
             mode=normalized_mode,
-            mode=mode,
             sample_size=sample_size,
             seed=seed,
         )
     except HTTPException as exc:
         if exc.status_code != 404:
             raise
-        payload = _fallback_preview_payload(
-            file_id,
-            page=page,
-            page_size=page_size,
-            mode=normalized_mode,
         payload = _synthetic_preview(
             file_id,
             page=page,
             page_size=page_size,
-            mode=mode,
+            mode=normalized_mode,
             sample_size=sample_size,
             seed=seed,
         )

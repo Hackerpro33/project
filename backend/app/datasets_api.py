@@ -633,8 +633,6 @@ def _prepare_listing(
         "total_pages": total_pages,
         "has_next": page < total_pages,
         "has_previous": page > 1,
-        "available_filters": {"tags": available_tags},
-    }
         "available_filters": {
             "tags": available_tags,
             "types": available_types,
@@ -689,7 +687,7 @@ def list_datasets(
 
 @router.get("/list", response_model=None)
 def list_datasets_endpoint(
-    order_by: Optional[str] = "-created_at",
+    order_by: Optional[str] = Query("-created_at", description="Поле сортировки"),
     page: int = Query(1, ge=1, description="Номер страницы"),
     page_size: int = Query(
         DEFAULT_PAGE_SIZE,
@@ -697,21 +695,6 @@ def list_datasets_endpoint(
         le=100,
         description="Количество элементов на странице",
     ),
-    search: Optional[str] = Query(None, description="Поисковый запрос по названиям, описанию и тегам"),
-    tags: Optional[List[str]] = Query(None, description="Фильтр по тегам"),
-    request: Request = None,  # type: ignore[assignment]
-    response: Response = None,  # type: ignore[assignment]
-) -> Any:
-    payload = list_datasets(
-        order_by,
-        page=page,
-        page_size=page_size,
-        search=search,
-        tags=tags,
-    )
-    order_by: Optional[str] = Query("-created_at", description="Поле сортировки"),
-    page: int = Query(1, ge=1, description="Номер страницы"),
-    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=100, description="Количество элементов на странице"),
     search: Optional[str] = Query(None, description="Поисковый запрос"),
     tags: Optional[List[str]] = Query(None, description="Фильтр по тегам"),
     types: Optional[List[str]] = Query(None, alias="dataset_types", description="Фильтр по типам"),

@@ -166,6 +166,61 @@ def test_dictionary_hints_are_appended(client):
     assert payload["safety"]["auto_reloaded"] is False
 
 
+def test_subsequent_messages_append_history(client):
+    first_response = client.post(
+        f"{API_PREFIX}/chat/message",
+        json={"user_id": "frank", "message": "Посмотри данные в таблице"},
+        headers=HEADERS,
+    )
+    assert first_response.status_code == 200
+    first_payload = first_response.json()
+    assert len(first_payload["messages"]) == 3
+
+    second_response = client.post(
+        f"{API_PREFIX}/chat/message",
+        json={"user_id": "frank", "message": "Добавь гипотезы для проверки"},
+        headers=HEADERS,
+    )
+    assert second_response.status_code == 200
+
+    second_payload = second_response.json()
+    assert second_payload["user_id"] == "frank"
+    assert len(second_payload["messages"]) == 5
+    assert second_payload["messages"][1]["role"] == "user"
+    assert second_payload["messages"][2]["role"] == "assistant"
+    assert second_payload["messages"][3]["role"] == "user"
+    assert second_payload["messages"][4]["role"] == "assistant"
+
+    with chat_api.CHAT_JSON.open("r", encoding="utf-8") as fh:
+        stored = json.load(fh)
+
+    frank_messages = stored["frank"]["messages"]
+    assert len(frank_messages) == 5
+    assert frank_messages[-1]["role"] == "assistant"
+    assert "гипотез" in frank_messages[-1]["content"].lower()
+
+
+def test_medium_risk_message_adds_caution(client):
+    response = client.post(
+        f"{API_PREFIX}/chat/message",
+        json={
+            "user_id": "grace",
+            "message": "Представь, что мы работаем без данных из таблиц",
+        },
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+
+    payload = response.json()
+    assert payload["safety"]["risk_level"] == "medium"
+    assert payload["safety"]["auto_reloaded"] is False
+    assert payload["safety"]["reasons"]
+
+    assistant_reply = payload["messages"][-1]["content"]
+    assert "⚠️" in assistant_reply
+    assert "Проверьте вывод" in assistant_reply
+
+
 def test_high_risk_message_triggers_reload(client):
     response = client.post(
         f"{API_PREFIX}/chat/message",
