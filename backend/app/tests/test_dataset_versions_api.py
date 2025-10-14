@@ -1,10 +1,11 @@
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app import datasets_api, dataset_versions_api
+from app import datasets_api, dataset_segments_api, dataset_versions_api
 from app.main import app
 
 HEADERS = {"host": "localhost"}
@@ -17,21 +18,27 @@ def override_storage(tmp_path, monkeypatch):
 
     datasets_path = store_dir / "datasets.json"
     versions_path = store_dir / "dataset_versions.json"
+    segments_path = store_dir / "dataset_segments.json"
+    lifecycle_path = store_dir / "dataset_version_lifecycle.json"
 
     monkeypatch.setattr(datasets_api, "STORE_DIR", store_dir)
     monkeypatch.setattr(datasets_api, "DATASETS_JSON", datasets_path)
     monkeypatch.setattr(datasets_api, "CANDIDATE_DIRS", [store_dir])
     monkeypatch.setattr(dataset_versions_api, "STORE_DIR", store_dir)
     monkeypatch.setattr(dataset_versions_api, "VERSIONS_JSON", versions_path)
+    monkeypatch.setattr(dataset_versions_api, "LIFECYCLE_JSON", lifecycle_path)
     monkeypatch.setattr(dataset_versions_api, "CANDIDATE_DIRS", [store_dir])
+    monkeypatch.setattr(dataset_segments_api, "STORE_DIR", store_dir)
+    monkeypatch.setattr(dataset_segments_api, "SEGMENTS_JSON", segments_path)
+    monkeypatch.setattr(dataset_segments_api, "CANDIDATE_DIRS", [store_dir])
 
     # Ensure clean files
-    for path in (datasets_path, versions_path):
+    for path in (datasets_path, versions_path, segments_path, lifecycle_path):
         if path.exists():
             path.unlink()
     yield
     # Cleanup created files
-    for path in (datasets_path, versions_path):
+    for path in (datasets_path, versions_path, segments_path, lifecycle_path):
         if path.exists():
             path.unlink()
 
@@ -165,3 +172,89 @@ def test_restore_unknown_version_returns_404(override_storage):
         f"/api/dataset/{dataset_id}/versions/unknown/restore", headers=HEADERS
     )
     assert response.status_code == 404
+
+
+def test_dataset_segmentation_and_reprocess(override_storage):
+    client = TestClient(app)
+    dataset_id = _create_dataset()
+
+    response = client.post(
+        f"/api/dataset/{dataset_id}/segments",
+        json={"rules": {"rows_per_segment": 1}},
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_segments"] == 2
+    assert all(segment["row_count"] == 1 for segment in data["segments"])
+
+    list_response = client.get(f"/api/dataset/{dataset_id}/segments", headers=HEADERS)
+    assert list_response.status_code == 200
+    listed = list_response.json()
+    assert listed["total_segments"] == 2
+
+    segment_id = data["segments"][0]["id"]
+    reprocess = client.post(
+        f"/api/dataset/{dataset_id}/segments/{segment_id}/reprocess",
+        headers=HEADERS,
+    )
+    assert reprocess.status_code == 200
+    payload = reprocess.json()["segment"]
+    assert payload["status"] == "pending"
+    assert payload["progress"] == 0
+
+
+def test_version_lifecycle_ttl_and_restore_flow(override_storage):
+    client = TestClient(app)
+    dataset_id = _create_dataset()
+
+    response = client.post(
+        f"/api/dataset/{dataset_id}/versions",
+        json={"author": "qa", "notes": "ttl", "rows": []},
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+    version = response.json()
+    version_id = version["id"]
+
+    configure = client.post(
+        f"/api/dataset/{dataset_id}/versions/{version_id}/lifecycle/configure",
+        json={"ttl_days": 0, "cold_after_days": 0},
+        headers=HEADERS,
+    )
+    assert configure.status_code == 200
+    lifecycle_state = configure.json()
+    assert lifecycle_state["status"] == "active"
+    assert lifecycle_state["cold_since"] is not None
+
+    future_time = (datetime.now(tz=timezone.utc) + timedelta(hours=1)).replace(microsecond=0)
+    run = client.post(
+        f"/api/dataset/{dataset_id}/versions/lifecycle/run-ttl",
+        json={"current_time": future_time.isoformat().replace("+00:00", "Z")},
+        headers=HEADERS,
+    )
+    assert run.status_code == 200
+    statuses = run.json()
+    assert statuses
+    assert any(item["status"] == "archived" for item in statuses)
+
+    lifecycle_response = client.get(
+        f"/api/dataset/{dataset_id}/versions/{version_id}/lifecycle",
+        headers=HEADERS,
+    )
+    assert lifecycle_response.status_code == 200
+    assert lifecycle_response.json()["status"] == "archived"
+
+    restore = client.post(
+        f"/api/dataset/{dataset_id}/versions/{version_id}/restore-from-archive",
+        headers=HEADERS,
+    )
+    assert restore.status_code == 200
+    assert restore.json()["status"] == "active"
+
+    mark_access = client.post(
+        f"/api/dataset/{dataset_id}/versions/{version_id}/lifecycle/mark-access",
+        headers=HEADERS,
+    )
+    assert mark_access.status_code == 200
+    assert mark_access.json()["cold_since"] is None

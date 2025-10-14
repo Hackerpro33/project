@@ -6,6 +6,8 @@ import shutil
 import tempfile
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
+from enum import Enum
 from pathlib import Path
 from statistics import mean
 from typing import Any, Dict, List, Optional, Tuple
@@ -36,6 +38,7 @@ def _ensure_store_dir() -> Path:
 
 STORE_DIR = _ensure_store_dir()
 VERSIONS_JSON = STORE_DIR / "dataset_versions.json"
+LIFECYCLE_JSON = STORE_DIR / "dataset_version_lifecycle.json"
 
 
 def _atomic_write_json(path: Path, data: Any) -> None:
@@ -73,6 +76,169 @@ def _save_versions(items: List[Dict[str, Any]]) -> None:
     _atomic_write_json(VERSIONS_JSON, items)
 
 
+def _atomic_write_lifecycle(data: List[Dict[str, Any]]) -> None:
+    _atomic_write_json(LIFECYCLE_JSON, data)
+
+
+def _load_lifecycle() -> List[Dict[str, Any]]:
+    if not LIFECYCLE_JSON.exists():
+        return []
+    try:
+        with LIFECYCLE_JSON.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+            if isinstance(data, list):
+                return data
+    except Exception:
+        pass
+    return []
+
+
+def _save_lifecycle(items: List[Dict[str, Any]]) -> None:
+    _atomic_write_lifecycle(items)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(tz=timezone.utc).replace(microsecond=0)
+
+
+def _to_iso(value: Optional[datetime]) -> Optional[str]:
+    if value is None:
+        return None
+    return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _from_iso(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+class LifecycleStatus(str, Enum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    DELETED = "deleted"
+
+
+class DatasetVersionLifecycleResponse(BaseModel):
+    dataset_id: str
+    version_id: str
+    status: LifecycleStatus
+    ttl_at: Optional[str] = None
+    ttl_days: Optional[int] = None
+    archived_at: Optional[str] = None
+    restored_at: Optional[str] = None
+    last_accessed_at: Optional[str] = None
+    cold_since: Optional[str] = None
+    cold_after_days: Optional[int] = None
+
+
+def _default_lifecycle(dataset_id: str, version_id: str) -> Dict[str, Any]:
+    now = _utcnow()
+    return {
+        "dataset_id": dataset_id,
+        "version_id": version_id,
+        "status": LifecycleStatus.ACTIVE.value,
+        "ttl_at": None,
+        "ttl_days": None,
+        "archived_at": None,
+        "restored_at": None,
+        "last_accessed_at": _to_iso(now),
+        "cold_since": None,
+        "cold_after_days": None,
+    }
+
+
+def _ensure_lifecycle(dataset_id: str, version_id: str) -> Dict[str, Any]:
+    records = _load_lifecycle()
+    for record in records:
+        if record.get("dataset_id") == dataset_id and record.get("version_id") == version_id:
+            return record
+    record = _default_lifecycle(dataset_id, version_id)
+    records.append(record)
+    _save_lifecycle(records)
+    return record
+
+
+def _persist_lifecycle(updated_record: Dict[str, Any]) -> Dict[str, Any]:
+    records = _load_lifecycle()
+    for index, record in enumerate(records):
+        if record.get("dataset_id") == updated_record.get("dataset_id") and record.get("version_id") == updated_record.get("version_id"):
+            records[index] = updated_record
+            break
+    else:
+        records.append(updated_record)
+    _save_lifecycle(records)
+    return updated_record
+
+
+def _serialize_lifecycle(record: Dict[str, Any]) -> DatasetVersionLifecycleResponse:
+    normalized = record.copy()
+    normalized.setdefault("status", LifecycleStatus.ACTIVE.value)
+    return DatasetVersionLifecycleResponse(**normalized)
+
+
+def _require_version(dataset_id: str, version_id: str) -> Dict[str, Any]:
+    version = _find_version(dataset_id, version_id)
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+    return version
+
+
+def _apply_cold_state(record: Dict[str, Any], now: datetime) -> bool:
+    changed = False
+    cold_after = record.get("cold_after_days")
+    if cold_after is None:
+        return changed
+    try:
+        cold_after_days = int(cold_after)
+    except (TypeError, ValueError):
+        return changed
+    last_accessed = _from_iso(record.get("last_accessed_at")) or now
+    cold_threshold = last_accessed + timedelta(days=cold_after_days)
+    if now >= cold_threshold:
+        if not record.get("cold_since"):
+            record["cold_since"] = _to_iso(now)
+            changed = True
+    else:
+        if record.get("cold_since") is not None:
+            record["cold_since"] = None
+            changed = True
+    return changed
+
+
+def _apply_ttl_transition(record: Dict[str, Any], now: datetime) -> bool:
+    changed = False
+    status = record.get("status", LifecycleStatus.ACTIVE.value)
+    ttl_at = _from_iso(record.get("ttl_at"))
+    if ttl_at and now >= ttl_at and status != LifecycleStatus.ARCHIVED.value:
+        record["status"] = LifecycleStatus.ARCHIVED.value
+        record["archived_at"] = _to_iso(now)
+        changed = True
+    return changed
+
+
+def _evaluate_dataset_lifecycle(dataset_id: str, now: datetime) -> List[DatasetVersionLifecycleResponse]:
+    records = _load_lifecycle()
+    mutated = False
+    for record in records:
+        if record.get("dataset_id") != dataset_id:
+            continue
+        if _apply_cold_state(record, now):
+            mutated = True
+        if _apply_ttl_transition(record, now):
+            mutated = True
+    if mutated:
+        _save_lifecycle(records)
+    return [_serialize_lifecycle(record) for record in records if record.get("dataset_id") == dataset_id]
+
+
 def _dataset_exists(dataset_id: str) -> bool:
     for dataset in load_all_datasets():
         if dataset.get("id") == dataset_id:
@@ -84,6 +250,13 @@ def _get_dataset(dataset_id: str) -> Optional[Dict[str, Any]]:
     for dataset in load_all_datasets():
         if dataset.get("id") == dataset_id:
             return ensure_dataset_dates(dataset)
+    return None
+
+
+def _find_version(dataset_id: str, version_id: str) -> Optional[Dict[str, Any]]:
+    for item in _load_versions():
+        if item.get("dataset_id") == dataset_id and item.get("id") == version_id:
+            return item
     return None
 
 
@@ -192,6 +365,7 @@ class DatasetVersionResponse(BaseModel):
     notes: Optional[str]
     author: Optional[str]
     change_summary: Optional[Dict[str, Any]]
+    lifecycle: Optional[DatasetVersionLifecycleResponse] = None
 
 
 class VersionDiffResponse(BaseModel):
@@ -204,8 +378,29 @@ class VersionDiffResponse(BaseModel):
     highlights: List[str]
 
 
+class LifecycleConfigureRequest(BaseModel):
+    ttl_days: Optional[int] = Field(
+        default=None, ge=0, description="Количество дней до архивирования версии"
+    )
+    cold_after_days: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Количество дней без обращений, после которых версия помечается как 'холодная'",
+    )
+
+
+class LifecycleEvaluateRequest(BaseModel):
+    current_time: Optional[str] = Field(
+        default=None,
+        description="ISO-время, используемое для оценки TTL. Если не указано — используется текущее время",
+    )
+
+
 def _serialize_version(raw: Dict[str, Any]) -> DatasetVersionResponse:
-    return DatasetVersionResponse(**raw)
+    enriched = raw.copy()
+    lifecycle = _ensure_lifecycle(raw.get("dataset_id"), raw.get("id"))
+    enriched["lifecycle"] = _serialize_lifecycle(lifecycle)
+    return DatasetVersionResponse(**enriched)
 
 
 @router.get("/{dataset_id}/versions", response_model=List[DatasetVersionResponse])
@@ -364,12 +559,93 @@ def restore_version(dataset_id: str, version_id: str) -> DatasetVersionResponse:
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    versions = [item for item in _load_versions() if item.get("dataset_id") == dataset_id]
-    version = next((item for item in versions if item.get("id") == version_id), None)
-    if not version:
-        raise HTTPException(status_code=404, detail="Version not found")
+    version = _require_version(dataset_id, version_id)
 
     rows = _normalize_rows(version.get("rows", []))
     _update_dataset_rows(dataset_id, rows)
 
     return _serialize_version(version)
+
+
+@router.get("/{dataset_id}/versions/{version_id}/lifecycle", response_model=DatasetVersionLifecycleResponse)
+def get_version_lifecycle(dataset_id: str, version_id: str) -> DatasetVersionLifecycleResponse:
+    _require_version(dataset_id, version_id)
+    record = _ensure_lifecycle(dataset_id, version_id)
+    return _serialize_lifecycle(record)
+
+
+@router.post(
+    "/{dataset_id}/versions/{version_id}/lifecycle/configure",
+    response_model=DatasetVersionLifecycleResponse,
+)
+def configure_version_lifecycle(
+    dataset_id: str, version_id: str, payload: LifecycleConfigureRequest
+) -> DatasetVersionLifecycleResponse:
+    _require_version(dataset_id, version_id)
+    record = _ensure_lifecycle(dataset_id, version_id).copy()
+    now = _utcnow()
+
+    if payload.ttl_days is not None:
+        ttl_days = int(payload.ttl_days)
+        record["ttl_days"] = ttl_days
+        record["ttl_at"] = _to_iso(now + timedelta(days=ttl_days)) if ttl_days > 0 else _to_iso(now)
+
+    if payload.cold_after_days is not None:
+        cold_after_days = int(payload.cold_after_days)
+        record["cold_after_days"] = cold_after_days
+        if cold_after_days == 0:
+            record["cold_since"] = _to_iso(now)
+        else:
+            record["cold_since"] = None
+
+    _persist_lifecycle(record)
+    return _serialize_lifecycle(record)
+
+
+@router.post(
+    "/{dataset_id}/versions/{version_id}/lifecycle/mark-access",
+    response_model=DatasetVersionLifecycleResponse,
+)
+def mark_version_access(dataset_id: str, version_id: str) -> DatasetVersionLifecycleResponse:
+    _require_version(dataset_id, version_id)
+    record = _ensure_lifecycle(dataset_id, version_id).copy()
+    now = _utcnow()
+    record["last_accessed_at"] = _to_iso(now)
+    record["cold_since"] = None
+    _persist_lifecycle(record)
+    return _serialize_lifecycle(record)
+
+
+@router.post(
+    "/{dataset_id}/versions/{version_id}/restore-from-archive",
+    response_model=DatasetVersionLifecycleResponse,
+)
+def restore_from_archive(dataset_id: str, version_id: str) -> DatasetVersionLifecycleResponse:
+    _require_version(dataset_id, version_id)
+    record = _ensure_lifecycle(dataset_id, version_id).copy()
+    status = record.get("status", LifecycleStatus.ACTIVE.value)
+    if status != LifecycleStatus.ARCHIVED.value:
+        raise HTTPException(status_code=400, detail="Version is not archived")
+
+    now = _utcnow()
+    record["status"] = LifecycleStatus.ACTIVE.value
+    record["restored_at"] = _to_iso(now)
+    record["last_accessed_at"] = record["restored_at"]
+    record["cold_since"] = None
+    _persist_lifecycle(record)
+    return _serialize_lifecycle(record)
+
+
+@router.post(
+    "/{dataset_id}/versions/lifecycle/run-ttl",
+    response_model=List[DatasetVersionLifecycleResponse],
+)
+def run_lifecycle_ttl(dataset_id: str, payload: LifecycleEvaluateRequest) -> List[DatasetVersionLifecycleResponse]:
+    if not _dataset_exists(dataset_id):
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    now = _utcnow()
+    if payload.current_time:
+        parsed = _from_iso(payload.current_time)
+        if parsed:
+            now = parsed
+    return _evaluate_dataset_lifecycle(dataset_id, now)

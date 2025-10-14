@@ -1392,7 +1392,6 @@ def api_extract_async(
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
-            preview_payload = _synthetic_preview(
             preview_payload = _fallback_preview_payload(
                 req.file_url,
                 page=page,
@@ -1402,8 +1401,6 @@ def api_extract_async(
                 seed=seed,
             )
         return DatasetPreviewResponse.model_validate(preview_payload)
-        validated = DatasetPreviewResponse.model_validate(preview_payload)
-        return JSONResponse(content=validated.model_dump())
 
     # Ensure the file exists before enqueuing to fail fast for invalid identifiers.
     resolve_file_path(req.file_url)
@@ -1744,7 +1741,6 @@ def api_dataset_preview(
     except HTTPException as exc:
         if exc.status_code != 404:
             raise
-        payload = _synthetic_preview(
         payload = _fallback_preview_payload(
             file_id,
             page=page,
@@ -1823,6 +1819,7 @@ if __package__ in {None, ""}:
     import collaboration_api as collaboration_router_module
     import chat_api as chat_router_module
     import datasets_api as datasets_router_module
+    import dataset_segments_api as dataset_segments_router_module
     import dataset_versions_api as dataset_versions_router_module
     import dictionary_api as dictionary_router_module
     import visualizations_api as visualizations_router_module
@@ -1834,6 +1831,7 @@ else:
     from . import collaboration_api as collaboration_router_module
     from . import chat_api as chat_router_module
     from . import datasets_api as datasets_router_module
+    from . import dataset_segments_api as dataset_segments_router_module
     from . import dataset_versions_api as dataset_versions_router_module
     from . import dictionary_api as dictionary_router_module
     from . import visualizations_api as visualizations_router_module
@@ -1842,6 +1840,7 @@ else:
     from . import schedules_api as schedules_router_module
 
 datasets_router = datasets_router_module.router
+dataset_segments_router = dataset_segments_router_module.router
 dataset_versions_router = dataset_versions_router_module.router
 dictionary_router = dictionary_router_module.router
 visualizations_router = visualizations_router_module.router
@@ -1853,12 +1852,15 @@ collaboration_router = collaboration_router_module.router
 schedules_router = schedules_router_module.router
 
 app.include_router(datasets_router, prefix=f"{API_PREFIX}/dataset")
+app.include_router(dataset_segments_router, prefix=f"{API_PREFIX}/dataset")
+app.include_router(dataset_versions_router, prefix=f"{API_PREFIX}/dataset")
 app.include_router(dictionary_router, prefix=f"{API_PREFIX}/dictionary")
 app.include_router(visualizations_router, prefix=f"{API_PREFIX}/visualization")
 app.include_router(chat_router, prefix=f"{API_PREFIX}/chat")
 app.include_router(audit_router, prefix=f"{API_PREFIX}/audit")
 app.include_router(schedules_router, prefix=f"{API_PREFIX}")
 app.include_router(datasets_router, prefix="/api/dataset")
+app.include_router(dataset_segments_router, prefix="/api/dataset")
 app.include_router(dataset_versions_router, prefix="/api/dataset")
 app.include_router(dictionary_router, prefix="/api/dictionary")
 app.include_router(visualizations_router, prefix="/api/visualization")
