@@ -48,14 +48,22 @@ export default function AutoRefreshController() {
 
   const handleToggle = (checked) => {
     setAutoRefreshEnabled(checked)
+
     if (checked) {
       queryClient.invalidateQueries({ type: 'active' })
+      return
     }
+
+    queryClient.cancelQueries({ type: 'active' })
   }
 
   const handleIntervalChange = (value) => {
     const parsed = Number(value)
     if (!Number.isFinite(parsed) || parsed <= 0) {
+      return
+    }
+
+    if (parsed === autoRefreshInterval) {
       return
     }
 

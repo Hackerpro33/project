@@ -66,12 +66,6 @@ const navigationConfig = [
     gradient: "from-violet-500 to-purple-600",
   },
   {
-    key: "navigation.advanced",
-    page: "AdvancedAnalytics",
-    icon: ShieldCheck,
-    gradient: "from-blue-600 to-purple-600",
-  },
-  {
     key: "navigation.sources",
     page: "DataSources",
     id: "advanced-analytics",
@@ -155,14 +149,12 @@ const navigationConfig = [
     gradient: "from-slate-500 to-slate-600",
   },
   {
-    key: "navigation.settings",
-    page: "Settings",
     id: "settings",
+    page: "Collaboration",
     title: "Совместная работа",
     url: createPageUrl("Collaboration"),
     icon: Users,
-    gradient: "from-indigo-500 to-blue-600"
-    gradient: "from-sky-500 to-blue-600"
+    gradient: "from-sky-500 to-blue-600",
   },
   {
     title: "Настройки",
@@ -182,7 +174,7 @@ export default function Layout({ children, currentPageName }) {
       navigationConfig.map((item) => ({
         ...item,
         title: item.key ? t(item.key) : item.title,
-        url: createPageUrl(item.page),
+        url: item.url ?? (item.page ? createPageUrl(item.page) : undefined),
       })),
     [t],
   );
