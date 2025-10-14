@@ -86,9 +86,9 @@ const mapVariants = [
 ];
 
 const mapRegions = [
-  { value: 'world', label: 'Весь мир' },
-  { value: 'europe', label: 'Европа' },
-  { value: 'asia', label: 'Азия' },
+  { value: 'russia', label: 'Россия' },
+  { value: 'federal_districts', label: 'Федеральные округа' },
+  { value: 'regions', label: 'Субъекты РФ' },
   { value: 'custom', label: 'Пользовательский регион' },
 ];
 

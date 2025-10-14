@@ -239,8 +239,8 @@ describe("compareTables", () => {
         { name: "amount", type: "number" },
       ],
       sample_data: [
-        { id: 1, city: "Paris", amount: 120 },
-        { id: 2, city: "Berlin", amount: 90 },
+        { id: 1, city: "Москва", amount: 120 },
+        { id: 2, city: "Казань", amount: 90 },
       ],
     };
 
@@ -252,8 +252,8 @@ describe("compareTables", () => {
         { name: "status", type: "boolean" },
       ],
       sample_data: [
-        { id: 1, city: "Paris", amount: "120", status: true },
-        { id: 3, city: "Rome", amount: "70", status: false },
+        { id: 1, city: "Москва", amount: "120", status: true },
+        { id: 3, city: "Ростов-на-Дону", amount: "70", status: false },
       ],
     };
 
@@ -368,24 +368,26 @@ describe("summarizeProjectStructure", () => {
 
 describe("convertDataset", () => {
   const dataset = {
-    name: "Retail Data",
+    name: "Продажи",
     columns: [
       { name: "city", type: "string" },
       { name: "sales", type: "number" },
       { name: "notes with space", type: "string" },
     ],
     sample_data: [
-      { city: "Paris", sales: 120, "notes with space": "ACME, Inc." },
-      { city: "Berlin", sales: 80, "notes with space": "Line1\nLine2" },
-      { city: "Rome", sales: 100, "notes with space": "<script>alert(1)</script>" },
+      { city: "Москва", sales: 120, "notes with space": "ООО \"Вектор\"" },
+      { city: "Новосибирск", sales: 80, "notes with space": "Первая строка\nВторая строка" },
+      { city: "Казань", sales: 100, "notes with space": "<script>alert(1)</script>" },
     ],
   };
 
   it("converts to SQL with sanitized identifiers", () => {
     const result = convertDataset({ dataset, format: "sql" });
-    expect(result.converted_data).toContain("CREATE TABLE Retail_Data");
+    expect(result.converted_data).toContain("CREATE TABLE Продажи");
     expect(result.converted_data).toContain("notes_with_space TEXT");
-    expect(result.converted_data).toContain("INSERT INTO Retail_Data VALUES ('Paris', 120, 'ACME, Inc.');");
+    expect(result.converted_data).toContain(
+      "INSERT INTO Продажи VALUES ('Москва', 120, 'ООО \"Вектор\"');"
+    );
   });
 
   it("adds compatibility notes for virtual Excel export", () => {
@@ -397,13 +399,13 @@ describe("convertDataset", () => {
 
   it("quotes CSV values that include delimiters or newlines", () => {
     const result = convertDataset({ dataset, format: "csv" });
-    expect(result.converted_data).toContain('"ACME, Inc."');
-    expect(result.converted_data).toContain('"Line1\nLine2"');
+    expect(result.converted_data).toContain('"ООО ""Вектор"""');
+    expect(result.converted_data).toContain('"Первая строка\nВторая строка"');
   });
 
   it("supports disabling CSV headers via options", () => {
     const result = convertDataset({ dataset, format: "csv", options: { includeHeaders: false } });
-    expect(result.converted_data.startsWith('Paris,120,"ACME, Inc."')).toBe(true);
+    expect(result.converted_data.startsWith('Москва,120,"ООО ""Вектор"""')).toBe(true);
   });
 
   it("serializes JSON in a parseable structure", () => {
@@ -413,7 +415,7 @@ describe("convertDataset", () => {
 
   it("sanitizes XML tags and escapes special characters", () => {
     const result = convertDataset({ dataset, format: "xml" });
-    expect(result.converted_data).toContain("<notes_with_space>ACME, Inc.</notes_with_space>");
+    expect(result.converted_data).toContain("<notes_with_space>ООО \"Вектор\"</notes_with_space>");
     expect(result.converted_data).toContain(
       "<notes_with_space>&lt;script&gt;alert(1)&lt;/script&gt;</notes_with_space>"
     );
@@ -428,12 +430,12 @@ describe("convertDataset", () => {
   it("formats plain text tables with padded columns", () => {
     const result = convertDataset({ dataset, format: "txt" });
     expect(result.converted_data.split("\n")[0]).toContain("city");
-    expect(result.converted_data).toContain("Line1 Line2");
+    expect(result.converted_data).toContain("Первая строка Вторая строка");
   });
 
   it("falls back to CSV-like output for parquet with compatibility note", () => {
     const result = convertDataset({ dataset, format: "parquet" });
-    expect(result.converted_data).toContain('"ACME, Inc."');
+    expect(result.converted_data).toContain('"ООО ""Вектор"""');
     expect(result.compatibility_notes).toContain(
       "Формат сгенерирован в виде текстового представления для локальной загрузки."
     );
@@ -478,9 +480,9 @@ describe("buildProjectReport and summarizeEmailBody", () => {
 describe("suggestDataApplications", () => {
   it("proposes local analytical scenarios based on dataset structure", () => {
     const dataset = {
-      name: "Chicago crime incidents 2020-2023",
+      name: "Преступность Москвы 2020-2023",
       description:
-        "Annual aggregates of reported crimes from the City of Chicago data portal, including theft, battery and homicide counts.",
+        "Годовые сводные показатели зарегистрированных преступлений по данным ГУ МВД по Москве, включая кражи, разбой и убийства.",
       row_count: 4,
       columns: [
         { name: "reported_date", type: "date" },
@@ -496,51 +498,51 @@ describe("suggestDataApplications", () => {
       sample_data: [
         {
           reported_date: "2020-12-31",
-          district: "Chicago",
-          crime_incidents: 212646,
-          theft_incidents: 41350,
-          battery_incidents: 41517,
-          homicide_incidents: 796,
-          latitude: 41.8781,
-          longitude: -87.6298,
+          district: "Москва",
+          crime_incidents: 152430,
+          theft_incidents: 32510,
+          battery_incidents: 28140,
+          homicide_incidents: 512,
+          latitude: 55.7558,
+          longitude: 37.6176,
           narrative:
-            "Citywide totals recorded in the Chicago Data Portal for 2020 document 212646 incidents with 796 homicides and more than forty thousand thefts.",
+            "По данным городской сводки за 2020 год зарегистрировано 152430 преступлений, в том числе 512 убийств и свыше тридцати тысяч краж.",
         },
         {
           reported_date: "2021-12-31",
-          district: "Chicago",
-          crime_incidents: 209589,
-          theft_incidents: 40821,
-          battery_incidents: 40483,
-          homicide_incidents: 813,
-          latitude: 41.8781,
-          longitude: -87.6298,
+          district: "Москва",
+          crime_incidents: 148920,
+          theft_incidents: 31870,
+          battery_incidents: 27680,
+          homicide_incidents: 498,
+          latitude: 55.7558,
+          longitude: 37.6176,
           narrative:
-            "Chicago closed 2021 with 209589 recorded offenses on the public portal, including 813 homicide cases and just over forty thousand batteries.",
+            "В 2021 году по данным столичного управления МВД зарегистрировано 148920 преступлений, кражи составили 31870 эпизодов, убийств — 498.",
         },
         {
           reported_date: "2022-12-31",
-          district: "Chicago",
-          crime_incidents: 239918,
-          theft_incidents: 54899,
-          battery_incidents: 40962,
-          homicide_incidents: 737,
-          latitude: 41.8781,
-          longitude: -87.6298,
+          district: "Москва",
+          crime_incidents: 165780,
+          theft_incidents: 35420,
+          battery_incidents: 28950,
+          homicide_incidents: 476,
+          latitude: 55.7558,
+          longitude: 37.6176,
           narrative:
-            "The 2022 dataset shows a jump to 239918 total incidents with theft rising above fifty four thousand and 737 homicide investigations citywide.",
+            "Сводка за 2022 год фиксирует рост до 165780 преступлений, кражи превысили 35 тысяч эпизодов, расследуется 476 фактов убийства.",
         },
         {
           reported_date: "2023-12-31",
-          district: "Chicago",
-          crime_incidents: 263134,
-          theft_incidents: 57493,
-          battery_incidents: 44250,
-          homicide_incidents: 638,
-          latitude: 41.8781,
-          longitude: -87.6298,
+          district: "Москва",
+          crime_incidents: 172360,
+          theft_incidents: 36890,
+          battery_incidents: 29540,
+          homicide_incidents: 455,
+          latitude: 55.7558,
+          longitude: 37.6176,
           narrative:
-            "By the end of 2023 the Chicago portal tallied 263134 offenses, with theft surpassing 57k, 44k battery reports and 638 homicide cases on record.",
+            "По итогам 2023 года отмечено 172360 преступлений, кражи достигли 36890 случаев, зарегистрировано 29540 фактов причинения вреда здоровью и 455 убийств.",
         },
       ],
     };

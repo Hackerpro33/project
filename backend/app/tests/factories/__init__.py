@@ -22,12 +22,12 @@ class QuickExtractionFactory(ModelFactory[QuickExtraction]):
     __check_model__ = False
 
     columns = Use(lambda: ColumnPreviewFactory.batch(3))
-    insights = Use(lambda: ["Insight generated in tests", "An additional datapoint"])
+    insights = Use(lambda: ["Инсайт, сгенерированный в тестах", "Дополнительное наблюдение"])
     sample_data = Use(
         lambda: [
-            {"city": "Paris", "population": 2148327, "offense": "burglary"},
-            {"city": "Berlin", "population": 3769495, "offense": "fraud"},
-            {"city": "Madrid", "population": 3223334, "offense": "robbery"},
+            {"city": "Москва", "population": 12615882, "offense": "кража"},
+            {"city": "Санкт-Петербург", "population": 5383890, "offense": "мошенничество"},
+            {"city": "Новосибирск", "population": 1620162, "offense": "грабёж"},
         ]
     )
 
@@ -49,9 +49,9 @@ class DatasetCreateFactory(ModelFactory[datasets_api.DatasetCreate]):
     row_count = Use(lambda: 2)
     sample_data = Use(
         lambda: [
-            {"city": "Paris", "population": 2148327},
-            {"city": "Berlin", "population": 3769495},
-            {"city": "Madrid", "population": 3223334},
+            {"city": "Москва", "population": 12615882},
+            {"city": "Санкт-Петербург", "population": 5383890},
+            {"city": "Новосибирск", "population": 1620162},
         ]
     )
 
