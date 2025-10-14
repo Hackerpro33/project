@@ -262,6 +262,12 @@ npm run build
 Prometheus и оркестраторами. Логи формируются в формате JSON и включают trace-id для связывания
 с трассировками OpenTelemetry. Для отслеживания исключений используется Sentry.
 
+Правила срабатывания алёртов по ошибкам и деградациям описаны в runbook
+[docs/runbooks/alerts.md](docs/runbooks/alerts.md).
+
+Готовые манифесты для Prometheus Rule и Alertmanager располагаются в каталоге
+`deploy/monitoring` и могут применяться напрямую (`kubectl apply -f ...`).
+
 Helm-чарт (`deploy/helm/insight-sphere`) и kustomize-оверлеи (`deploy/kustomize/overlays`) содержат
 готовые Deployment/Service/ServiceMonitor-манифесты. В чарте настроены лимиты ресурсов, пробки
 живости и готовности, а также ServiceMonitor для Prometheus. В kustomize предусмотрены окружения
