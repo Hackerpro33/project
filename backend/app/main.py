@@ -1277,76 +1277,6 @@ def api_extract(req: ExtractRequest) -> ExtractResponse:
         raise HTTPException(status_code=400, detail=str(e))
     output_dict = build_extraction(df)
     return ExtractResponse(status="success", output=QuickExtraction.model_validate(output_dict))
-
-
-def _synthetic_preview(
-    identifier: str,
-    *,
-    page: int,
-    page_size: int,
-    mode: str = "page",
-    sample_size: int = 50,
-    seed: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Return a deterministic preview payload when the file cannot be resolved.
-
-    The tests exercise a graceful degradation mode where the backend should still
-    provide a small preview even if the task queue is disabled and the referenced
-    file is unavailable (for example, when a background worker has not yet
-    persisted the upload). To keep the behaviour predictable, we expose a simple
-    two-column sample dataset.
-    """
-
-    generator = random.Random(seed)
-
-    base_count = max(page_size + 1, sample_size + 1, 5)
-    base_pairs = [("1", "2"), ("3", "4"), ("5", "6")]
-    base_rows: List[Dict[str, str]] = []
-    pair_index = 0
-    while len(base_rows) < base_count:
-        col_a, col_b = base_pairs[pair_index % len(base_pairs)]
-        base_rows.append({"col_a": col_a, "col_b": col_b})
-        pair_index += 1
-
-    if mode == "sample":
-        take = min(sample_size, len(base_rows))
-        rows = base_rows[:take]
-        generator.shuffle(rows)
-        rows = rows[:take]
-        has_more = None
-        page_value = None
-        page_size_value = None
-        sample_value = take
-    else:
-        start = max((page - 1) * page_size, 0)
-        end = start + page_size
-        rows = base_rows[start:end]
-        has_more = end < len(base_rows)
-        page_value = page
-        page_size_value = page_size
-        sample_value = None
-
-    return {
-        "file_id": identifier,
-        "mode": mode,
-        "page": page_value,
-        "page_size": page_size_value,
-        "sample_size": sample_value,
-        "columns": ["col_a", "col_b"],
-        "rows": rows,
-        "has_more": has_more,
-        "preview_type": "table",
-        "content_type": "text/csv",
-        "pages": [],
-        "thumbnails": [],
-        "text_preview": None,
-        "metadata": {"generated": True, "total_rows": len(base_rows)},
-        "warnings": [
-            "Предпросмотр сгенерирован без доступа к исходному файлу. Повторите попытку после загрузки."
-        ],
-    }
-
-
 @app.post(
     f"{API_PREFIX}/extract/async",
     summary="Schedule dataset metadata extraction",
@@ -1392,7 +1322,6 @@ def api_extract_async(
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
-            preview_payload = _synthetic_preview(
             preview_payload = _fallback_preview_payload(
                 req.file_url,
                 page=page,
@@ -1402,8 +1331,6 @@ def api_extract_async(
                 seed=seed,
             )
         return DatasetPreviewResponse.model_validate(preview_payload)
-        validated = DatasetPreviewResponse.model_validate(preview_payload)
-        return JSONResponse(content=validated.model_dump())
 
     # Ensure the file exists before enqueuing to fail fast for invalid identifiers.
     resolve_file_path(req.file_url)
@@ -1744,7 +1671,6 @@ def api_dataset_preview(
     except HTTPException as exc:
         if exc.status_code != 404:
             raise
-        payload = _synthetic_preview(
         payload = _fallback_preview_payload(
             file_id,
             page=page,
