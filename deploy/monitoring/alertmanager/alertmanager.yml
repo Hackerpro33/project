@@ -1,0 +1,48 @@
+# Alertmanager routing configuration for Insight Sphere
+# Aligns with docs/runbooks/alerts.md
+route:
+  receiver: default
+  group_by: ['alertname', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 2h
+  routes:
+    - matchers:
+        - severity = critical
+        - service = backend
+      receiver: pagerduty-backend
+    - matchers:
+        - service = backend
+        - severity =~ "(high|medium)"
+      receiver: slack-backend
+    - matchers:
+        - service = frontend
+      receiver: slack-frontend
+receivers:
+  - name: default
+    slack_configs:
+      - channel: '#observability'
+        send_resolved: true
+  - name: pagerduty-backend
+    pagerduty_configs:
+      - routing_key: ${PAGERDUTY_ROUTING_KEY}
+        severity: error
+  - name: slack-backend
+    slack_configs:
+      - channel: '#alerts-backend'
+        username: 'insight-sphere'
+        icon_emoji: ':rotating_light:'
+        send_resolved: true
+  - name: slack-frontend
+    slack_configs:
+      - channel: '#alerts-frontend'
+        send_resolved: true
+inhibit_rules:
+  - source_matchers:
+      - severity = critical
+    target_matchers:
+      - severity = medium
+      - service = backend
+    equal:
+      - alertname
+      - service
