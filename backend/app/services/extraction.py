@@ -31,14 +31,23 @@ def _numeric_series(series: pd.Series) -> pd.Series:
 
 def _generate_domain_insights(df: pd.DataFrame) -> List[str]:
     insights: List[str] = []
-    lower_name_map = {str(col): str(col).lower() for col in df.columns}
 
-    for original_name, lower_name in lower_name_map.items():
-        numeric = _numeric_series(df[original_name])
+    for column in df.columns:
+        original_name = str(column)
+        lower_name = original_name.lower()
+
+        matches_crime = any(keyword in lower_name for keyword in CRIME_TREND_KEYWORDS)
+        matches_policing = any(keyword in lower_name for keyword in POLICING_TREND_KEYWORDS)
+        matches_risk = any(keyword in lower_name for keyword in RISK_FACTOR_KEYWORDS)
+
+        if not (matches_crime or matches_policing or matches_risk):
+            continue
+
+        numeric = _numeric_series(df[column])
         if numeric.empty:
             continue
 
-        if any(keyword in lower_name for keyword in CRIME_TREND_KEYWORDS):
+        if matches_crime:
             change = float(numeric.iloc[-1] - numeric.iloc[0])
             if change > 0:
                 insights.append(
@@ -52,9 +61,8 @@ def _generate_domain_insights(df: pd.DataFrame) -> List[str]:
                 insights.append(
                     f"Crime indicator '{original_name}' remained stable across the observed period."
                 )
-            continue
 
-        if any(keyword in lower_name for keyword in POLICING_TREND_KEYWORDS):
+        if matches_policing:
             change = float(numeric.iloc[-1] - numeric.iloc[0])
             if change > 0:
                 insights.append(
@@ -68,9 +76,8 @@ def _generate_domain_insights(df: pd.DataFrame) -> List[str]:
                 insights.append(
                     f"Policing resource '{original_name}' remained stable across the observed period."
                 )
-            continue
 
-        if any(keyword in lower_name for keyword in RISK_FACTOR_KEYWORDS):
+        if matches_risk:
             average = float(numeric.mean())
             insights.append(
                 f"Risk factor '{original_name}' averages {average:.2f} across the dataset."
