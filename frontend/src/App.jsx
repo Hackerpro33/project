@@ -18,7 +18,9 @@ function App() {
         </AsyncBoundary>
       </TaskEventProvider>
       <Toaster />
-      <ReactQueryDevtools initialIsOpen={false} position="bottom-right" />
+      {import.meta.env.DEV ? (
+        <ReactQueryDevtools initialIsOpen={false} position="bottom-right" />
+      ) : null}
     </QueryClientProvider>
   )
 }

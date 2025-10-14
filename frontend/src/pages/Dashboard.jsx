@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { getDatasets, getVisualizations } from "@/api/entities";
 import { Activity, Zap } from "lucide-react";
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
@@ -11,35 +12,33 @@ import TrendingCharts from "../components/dashboard/TrendingCharts";
 import PageContainer from "@/components/layout/PageContainer";
 
 export default function Dashboard() {
-  const [datasets, setDatasets] = useState([]);
-  const [visualizations, setVisualizations] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const {
+    data: datasets = [],
+    isLoading: isDatasetsLoading,
+    isFetching: isDatasetsFetching,
+  } = useQuery({
+    queryKey: ["datasets", "dashboard"],
+    queryFn: () => getDatasets({ orderBy: "-created_at", pageSize: 100 }),
+  });
+
+  const {
+    data: visualizations = [],
+    isLoading: isVisualizationsLoading,
+    isFetching: isVisualizationsFetching,
+  } = useQuery({
+    queryKey: ["visualizations", "dashboard"],
+    queryFn: () => getVisualizations({ orderBy: "-created_at", pageSize: 100 }),
+  });
+
+  const isLoading = isDatasetsLoading || isVisualizationsLoading;
+  const isFetching = isDatasetsFetching || isVisualizationsFetching;
+  const isBusy = isLoading || isFetching;
 
   const formatNumber = (value, options = {}) => {
     if (value === null || value === undefined || Number.isNaN(value)) {
       return "—";
     }
     return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1, ...options }).format(value);
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    setIsLoading(true);
-    try {
-      const [datasetsData, visualizationsData] = await Promise.all([
-        getDatasets(),
-        getVisualizations(),
-      ]);
-      setDatasets(Array.isArray(datasetsData) ? datasetsData : []);
-      setVisualizations(Array.isArray(visualizationsData) ? visualizationsData : []);
-    } catch (error) {
-      console.error('Ошибка загрузки данных:', error);
-    } finally {
-      setIsLoading(false);
-    }
   };
 
 
@@ -317,7 +316,7 @@ export default function Dashboard() {
       <StatsGrid
         datasets={datasets}
         visualizations={visualizations}
-        isLoading={isLoading}
+        isLoading={isBusy}
         changes={metrics.changes}
       />
 
@@ -330,7 +329,7 @@ export default function Dashboard() {
           <RecentActivity
             datasets={datasets}
             visualizations={visualizations}
-            isLoading={isLoading}
+            isLoading={isBusy}
           />
         </div>
 
@@ -339,7 +338,7 @@ export default function Dashboard() {
           <TrendingCharts
             data={metrics.trendData}
             summary={metrics.summary}
-            isLoading={isLoading}
+            isLoading={isBusy}
           />
         </div>
       </div>

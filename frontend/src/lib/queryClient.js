@@ -1,6 +1,7 @@
 import { QueryCache, MutationCache, QueryClient } from '@tanstack/react-query'
 import { toast } from '@/components/ui/use-toast.jsx'
 import i18n from '@/i18n'
+import { useAppPreferencesStore } from '@/store/appPreferences.js'
 
 const DEFAULT_RETRYABLE_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504])
 
@@ -55,6 +56,20 @@ function shouldRetry(error, failureCount) {
 
 function shouldSkipToast(meta) {
   return Boolean(meta?.skipGlobalToast)
+}
+
+function resolveAutoRefreshInterval(query) {
+  if (query?.meta?.skipAutoRefresh) {
+    return false
+  }
+
+  const { autoRefreshEnabled, autoRefreshInterval } = useAppPreferencesStore.getState()
+
+  if (!autoRefreshEnabled) {
+    return false
+  }
+
+  return autoRefreshInterval
 }
 
 export function createQueryClient() {
@@ -124,6 +139,8 @@ export function createQueryClient() {
         gcTime: 5 * 60 * 1000,
         refetchOnWindowFocus: false,
         refetchOnReconnect: true,
+        refetchInterval: (query) => resolveAutoRefreshInterval(query),
+        refetchIntervalInBackground: true,
         throwOnError: true,
       },
       mutations: {

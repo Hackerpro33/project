@@ -21,6 +21,14 @@
     "en": "Английский",
     "ru": "Русский"
   },
+  "preferences": {
+    "autoRefresh": {
+      "title": "Автообновление",
+      "intervalLabel": "Интервал",
+      "intervalSeconds": "{{count}} с",
+      "intervalMinutes": "{{count}} мин"
+    }
+  },
   "pagination": {
     "previous": "Назад",
     "next": "Вперёд",

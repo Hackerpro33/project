@@ -5,21 +5,22 @@ import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { createPageUrl } from "@/utils";
 import {
-  BarChart3,
-  Database, 
-  Map, 
-  TrendingUp, 
-  Home,
-  Sparkles,
   Activity,
-  Network,
-  Component, // Added Component icon
-  Settings as SettingsIcon, // Imported SettingsIcon
-  RefreshCw, // Added RefreshCw icon for Data Transformation
+  BarChart3,
+  Component,
+  Database,
+  FileDiff,
+  History,
+  Home,
+  Map,
   MessageSquare,
+  Network,
+  RefreshCw,
+  Settings as SettingsIcon,
   ShieldCheck,
-  History
-  Users
+  Sparkles,
+  TrendingUp,
+  Users,
 } from "lucide-react";
 import {
   Sidebar,
@@ -34,6 +35,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { useFeatureFlag } from "@/contexts/FeatureFlagContext.jsx";
 import {
   Select,
   SelectContent,
@@ -41,7 +43,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useFeatureFlag } from "@/contexts/FeatureFlagContext.jsx";
+import AutoRefreshController from "@/components/layout/AutoRefreshController.jsx";
+import { useAppPreferencesStore } from "@/store/appPreferences.js";
 
 const navigationConfig = [
   {
@@ -171,13 +174,18 @@ const navigationConfig = [
 
 export default function Layout({ children, currentPageName }) {
   const location = useLocation();
-  const { t, i18n } = useTranslation();
-  const languageValue = i18n.language?.startsWith('en') ? 'en' : 'ru';
-  const navigationItems = navigationConfig.map((item) => ({
-    ...item,
-    title: t(item.key),
-    url: createPageUrl(item.page),
-  }));
+  const { t } = useTranslation();
+  const languageValue = useAppPreferencesStore((state) => state.language);
+  const setLanguage = useAppPreferencesStore((state) => state.setLanguage);
+  const navigationItems = useMemo(
+    () =>
+      navigationConfig.map((item) => ({
+        ...item,
+        title: item.key ? t(item.key) : item.title,
+        url: createPageUrl(item.page),
+      })),
+    [t],
+  );
   const advancedAnalyticsEnabled = useFeatureFlag("advanced_analytics", false);
   const filteredNavigationItems = useMemo(
     () =>
@@ -190,7 +198,7 @@ export default function Layout({ children, currentPageName }) {
         }
         return true;
       }),
-    [advancedAnalyticsEnabled]
+    [advancedAnalyticsEnabled, navigationItems]
   );
 
   return (
@@ -256,15 +264,18 @@ export default function Layout({ children, currentPageName }) {
                     <p className="text-xs text-slate-400 elegant-text">{t('app.tagline')}</p>
                   </div>
                 </div>
-                <Select value={languageValue} onValueChange={(value) => i18n.changeLanguage(value)}>
-                  <SelectTrigger className="w-28 bg-slate-800/70 border-slate-700 text-slate-200">
-                    <SelectValue placeholder={t('language.ru')} />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-900 text-slate-200">
-                    <SelectItem value="ru">{t('language.ru')}</SelectItem>
-                    <SelectItem value="en">{t('language.en')}</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-3">
+                  <Select value={languageValue} onValueChange={setLanguage}>
+                    <SelectTrigger className="w-28 bg-slate-800/70 border-slate-700 text-slate-200">
+                      <SelectValue placeholder={t('language.ru')} />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-900 text-slate-200">
+                      <SelectItem value="ru">{t('language.ru')}</SelectItem>
+                      <SelectItem value="en">{t('language.en')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <AutoRefreshController />
+                </div>
               </div>
               <div className="relative">
                 <SidebarTrigger className="md:hidden" />
