@@ -4,7 +4,7 @@ from typing import Any, Dict
 import pytest
 from fastapi.testclient import TestClient
 
-from app.audit_api import (
+from app.api.routes.audit import (
     AUDIT_HISTORY_PATH,
     AUDIT_SCHEDULES_PATH,
     BiasAuditMetric,
@@ -32,8 +32,12 @@ def cleanup_audit_files(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "UPLOAD_DIR", upload_dir)
     monkeypatch.setattr(app, "DATA_DIR", data_dir)
 
-    monkeypatch.setattr("app.audit_api.AUDIT_HISTORY_PATH", data_dir / "audit_history.json")
-    monkeypatch.setattr("app.audit_api.AUDIT_SCHEDULES_PATH", data_dir / "audit_schedules.json")
+    monkeypatch.setattr(
+        "app.api.routes.audit.AUDIT_HISTORY_PATH", data_dir / "audit_history.json"
+    )
+    monkeypatch.setattr(
+        "app.api.routes.audit.AUDIT_SCHEDULES_PATH", data_dir / "audit_schedules.json"
+    )
 
     registry = file_utils.get_file_registry()
     registry.clear()
@@ -188,7 +192,7 @@ def test_trigger_bias_alert(monkeypatch):
         captured["payload"] = payload
         return {"status": "sent"}
 
-    monkeypatch.setattr("app.audit_api.dispatch_webhook", fake_dispatch)
+    monkeypatch.setattr("app.api.routes.audit.dispatch_webhook", fake_dispatch)
 
     result = BiasAuditResult(
         id="audit-1",

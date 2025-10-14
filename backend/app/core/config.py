@@ -18,7 +18,7 @@ import yaml
 from pydantic import AnyHttpUrl, AnyUrl, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .utils.files import DATA_DIR, export_json_atomic
+from ..utils.files import DATA_DIR, export_json_atomic
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]

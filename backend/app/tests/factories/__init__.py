@@ -4,7 +4,7 @@ from __future__ import annotations
 from polyfactory import Use
 from polyfactory.factories.pydantic_factory import ModelFactory
 
-from ... import datasets_api
+from app.api.routes import datasets as datasets_api
 from ...schemas.upload import ColumnPreview, QuickExtraction
 
 

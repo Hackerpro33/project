@@ -19,8 +19,8 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 from fastapi import APIRouter, HTTPException, Query, Request, Response, params
 from pydantic import BaseModel, Field
 
-from .config import get_settings
-from .utils.cache import apply_cache_headers, should_return_not_modified
+from app.core.config import get_settings
+from app.utils.cache import apply_cache_headers, should_return_not_modified
 
 
 router = APIRouter()

@@ -86,8 +86,9 @@ from prometheus_client import (
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .config import apply_settings_overrides, get_settings
-from .version import __version__
+from app.core.config import apply_settings_overrides, get_settings
+from app.api import register_routes
+from app.core.version import __version__
 from .schemas import (
     BatchUploadItem,
     BatchUploadResponse,
@@ -115,7 +116,7 @@ from .schemas import (
 )
 from .utils import files as files_utils
 from .services.extraction import build_extraction
-from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
+from app.tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
 from .utils.preview import generate_preview
 from .utils.batch_progress import get_batch_progress_tracker
 from .utils.task_history import get_task_history_store
@@ -415,6 +416,10 @@ app = FastAPI(
     redoc_url=f"{API_PREFIX}/redoc",
     openapi_url=f"{API_PREFIX}/openapi.json",
 )
+
+# Expose commonly monkeypatched paths directly on the app instance for tests and extensions.
+app.UPLOAD_DIR = UPLOAD_DIR
+app.DATA_DIR = DATA_DIR
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -1400,6 +1405,7 @@ def api_extract_async(
                 sample_size=sample_size,
                 seed=seed,
             )
+        return DatasetPreviewResponse.model_validate(preview_payload)
         validated = DatasetPreviewResponse.model_validate(preview_payload)
         return JSONResponse(content=validated.model_dump())
 
@@ -1813,57 +1819,12 @@ if __name__ == "__main__":
 # Allow running both as part of the ``app`` package (e.g. ``uvicorn app.main:app``)
 # and as a standalone script (e.g. ``python main.py`` or ``uvicorn main:app``).
 if __package__ in {None, ""}:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    if current_dir not in sys.path:
-        sys.path.append(current_dir)
-    import audit_api as audit_router_module
-    import collaboration_api as collaboration_router_module
-    import chat_api as chat_router_module
-    import datasets_api as datasets_router_module
-    import dataset_versions_api as dataset_versions_router_module
-    import dictionary_api as dictionary_router_module
-    import visualizations_api as visualizations_router_module
-    import views_api as views_router_module
-    import feature_flags_api as feature_flags_router_module
-    import schedules_api as schedules_router_module
-else:
-    from . import audit_api as audit_router_module
-    from . import collaboration_api as collaboration_router_module
-    from . import chat_api as chat_router_module
-    from . import datasets_api as datasets_router_module
-    from . import dataset_versions_api as dataset_versions_router_module
-    from . import dictionary_api as dictionary_router_module
-    from . import visualizations_api as visualizations_router_module
-    from . import views_api as views_router_module
-    from . import feature_flags_api as feature_flags_router_module
-    from . import schedules_api as schedules_router_module
+    current_dir = Path(__file__).resolve().parent
+    parent_dir = current_dir.parent
+    if str(parent_dir) not in sys.path:
+        sys.path.append(str(parent_dir))
 
-datasets_router = datasets_router_module.router
-dataset_versions_router = dataset_versions_router_module.router
-dictionary_router = dictionary_router_module.router
-visualizations_router = visualizations_router_module.router
-chat_router = chat_router_module.router
-audit_router = audit_router_module.router
-views_router = views_router_module.router
-feature_flags_router = feature_flags_router_module.router
-collaboration_router = collaboration_router_module.router
-schedules_router = schedules_router_module.router
-
-app.include_router(datasets_router, prefix=f"{API_PREFIX}/dataset")
-app.include_router(dictionary_router, prefix=f"{API_PREFIX}/dictionary")
-app.include_router(visualizations_router, prefix=f"{API_PREFIX}/visualization")
-app.include_router(chat_router, prefix=f"{API_PREFIX}/chat")
-app.include_router(audit_router, prefix=f"{API_PREFIX}/audit")
-app.include_router(schedules_router, prefix=f"{API_PREFIX}")
-app.include_router(datasets_router, prefix="/api/dataset")
-app.include_router(dataset_versions_router, prefix="/api/dataset")
-app.include_router(dictionary_router, prefix="/api/dictionary")
-app.include_router(visualizations_router, prefix="/api/visualization")
-app.include_router(chat_router, prefix="/api/chat")
-app.include_router(audit_router, prefix="/api/audit")
-app.include_router(views_router, prefix="/api")
-app.include_router(feature_flags_router, prefix="/api/feature-flags")
-app.include_router(collaboration_router, prefix="/api")
+register_routes(app, API_PREFIX)
 
 # Compatibility routes without the versioned prefix for legacy integrations.
 app.add_api_route("/api/upload", api_upload, methods=["POST"], include_in_schema=False)

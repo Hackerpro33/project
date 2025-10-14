@@ -14,8 +14,8 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from .. import datasets_api
-from .. import visualizations_api
+from app.api.routes import datasets as datasets_api
+from app.api.routes import visualizations as visualizations_api
 from .. import main
 from ..services import extraction
 from ..utils.batch_progress import (

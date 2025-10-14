@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
-from app import main, schedules_api
+from app import main
+from app.api.routes import schedules as schedules_api
 from app.services.scheduler import TaskScheduler
 
 API_PREFIX = "/api/v1"

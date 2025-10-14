@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from .. import datasets_api
+from app.api.routes import datasets as datasets_api
 
 
 @pytest.fixture(autouse=True)

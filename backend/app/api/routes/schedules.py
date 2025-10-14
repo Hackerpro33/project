@@ -7,20 +7,12 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-try:  # pragma: no cover - allow running module as script
-    from .services.scheduler import (
-        InvalidSchedule,
-        ScheduleConfig,
-        ScheduleNotFound,
-        TaskScheduler,
-    )
-except ImportError:  # pragma: no cover
-    from services.scheduler import (  # type: ignore
-        InvalidSchedule,
-        ScheduleConfig,
-        ScheduleNotFound,
-        TaskScheduler,
-    )
+from app.services.scheduler import (
+    InvalidSchedule,
+    ScheduleConfig,
+    ScheduleNotFound,
+    TaskScheduler,
+)
 
 
 router = APIRouter(prefix="", tags=["schedules"])
