@@ -72,21 +72,23 @@ describe("generateCSV", () => {
 
   it("generates CSV with escaped values", () => {
     const csv = generateCSV(columns, [
-      { city: "Paris", population: 2148327, note: "Capital" },
-      { city: "Berlin", population: 3769495, note: "Largest city" },
+      { city: "Москва", population: 12615882, note: "Столица" },
+      { city: "Санкт-Петербург", population: 5383890, note: "Культурный центр" },
     ]);
 
-    expect(csv).toBe("city,population,note\nParis,2148327,Capital\nBerlin,3769495,Largest city");
+    expect(csv).toBe(
+      "city,population,note\nМосква,12615882,Столица\nСанкт-Петербург,5383890,Культурный центр"
+    );
   });
 
   it("respects commas and quotes in data", () => {
     const csv = generateCSV(columns, [
-      { city: "New York", population: 8804190, note: 'City "that" never sleeps' },
-      { city: "Los Angeles", population: 3898747, note: "Sunny, sprawling" },
+      { city: "Нижний Новгород", population: 1250615, note: 'Город "герой"' },
+      { city: "Новосибирск", population: 1620162, note: "Быстро растущий, динамичный" },
     ]);
 
     expect(csv).toBe(
-      'city,population,note\nNew York,8804190,"City ""that"" never sleeps"\nLos Angeles,3898747,"Sunny, sprawling"'
+      'city,population,note\nНижний Новгород,1250615,"Город ""герой"""\nНовосибирск,1620162,"Быстро растущий, динамичный"'
     );
   });
 
@@ -109,15 +111,15 @@ describe("generateJSON", () => {
 
   it("serializes only known columns", () => {
     const json = generateJSON(columns, [
-      { city: "Paris", population: 2148327, note: "Capital" },
-      { city: "Berlin", population: 3769495 },
+      { city: "Москва", population: 12615882, note: "Столица" },
+      { city: "Санкт-Петербург", population: 5383890 },
     ]);
 
     expect(json).toBe(
       JSON.stringify(
         [
-          { city: "Paris", population: 2148327 },
-          { city: "Berlin", population: 3769495 },
+          { city: "Москва", population: 12615882 },
+          { city: "Санкт-Петербург", population: 5383890 },
         ],
         null,
         2,
@@ -138,15 +140,15 @@ describe("generatePlainText", () => {
 
   it("aligns rows using column widths", () => {
     const text = generatePlainText(columns, [
-      { city: "Paris", population: 2148327 },
-      { city: "Berlin", population: 3769495 },
+      { city: "Москва", population: 12615882 },
+      { city: "Казань", population: 1257341 },
     ]);
 
     expect(text.split("\n")).toEqual([
       "city   | population",
       "------ | ----------",
-      "Paris  | 2148327",
-      "Berlin | 3769495",
+      "Москва | 12615882",
+      "Казань | 1257341",
     ]);
   });
 });
