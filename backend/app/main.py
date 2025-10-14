@@ -88,6 +88,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import apply_settings_overrides, get_settings
 from app.api import register_routes
+from app.api.routes import views as views_router_module
 from app.core.version import __version__
 from .schemas import (
     BatchUploadItem,
@@ -659,9 +660,14 @@ async def _persist_uploaded_bytes(
     upload_root = Path(UPLOAD_DIR)
     upload_root.mkdir(parents=True, exist_ok=True)
     path = upload_root / f"{file_id}_{safe_name}"
-    with path.open("wb") as handle:
+    resolved_path = path.resolve()
+    # Check that resolved_path is inside upload_root
+    from backend.app.utils.files import _is_within_allowed_roots
+    if not _is_within_allowed_roots(resolved_path):
+        raise HTTPException(status_code=400, detail="Invalid upload file path")
+    with resolved_path.open("wb") as handle:
         handle.write(data)
-    register_uploaded_file(file_id, path)
+    register_uploaded_file(file_id, resolved_path)
 
     try:
         df = read_table_bytes(data, original_filename or path.name)
@@ -740,7 +746,10 @@ def _ensure_safe_remote_url(url: str) -> str:
             or ip.is_unspecified
             or ip.is_multicast
         ):
-            raise HTTPException(status_code=403, detail="Remote URL resolves to a disallowed address")
+            raise HTTPException(
+                status_code=403,
+                detail="Remote URL resolves to a disallowed address and is not allowed",
+            )
 
     return parsed.geturl()
 
@@ -2036,6 +2045,16 @@ def _custom_openapi() -> Dict[str, Any]:
             if not parameters:
                 continue
             _apply_standard_parameter_metadata(parameters)
+
+    redundant_version_paths = [
+        f"{API_PREFIX}/dataset/{{dataset_id}}/versions",
+        f"{API_PREFIX}/dataset/{{dataset_id}}/versions/{{version_id}}",
+        f"{API_PREFIX}/dataset/{{dataset_id}}/versions/{{current_id}}/diff/{{previous_id}}",
+        f"{API_PREFIX}/dataset/{{dataset_id}}/versions/{{version_id}}/restore",
+    ]
+    paths = schema.get("paths", {})
+    for path in redundant_version_paths:
+        paths.pop(path, None)
 
     return schema
 

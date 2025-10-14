@@ -2,9 +2,9 @@ import React, { useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import TaskHistory from '../TaskHistory.jsx'
 
-const historyKey = ['tasks', 'history', { limit: 50, offset: 0 }]
+const historyKey = ['tasks', 'history', {}]
 const detailKey = ['tasks', 'detail', { taskId: 'task-1' }]
-const previewKey = ['tasks', 'preview', { fileUrl: 'file-1', mode: 'page', page: 1, page_size: 25 }]
+const previewKey = ['tasks', 'preview', { fileUrl: 'file-1', mode: 'page', page: 1, page_size: 5 }]
 
 const historyPayload = {
   items: [

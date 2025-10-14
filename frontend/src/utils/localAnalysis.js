@@ -1307,12 +1307,9 @@ const toDisplayString = (value) => {
 
 const escapeCsvValue = (value, delimiter) => {
   const raw = toDisplayString(value);
-  const escapedQuotes = raw.replace(/"/g, '""');
   const needsEscaping =
-    escapedQuotes.includes("\n") ||
-    escapedQuotes.includes("\r") ||
-    escapedQuotes.includes(delimiter) ||
-    /(^\s|\s$)/.test(escapedQuotes);
+    /["\n\r]/.test(raw) || raw.includes(delimiter) || /(^\s|\s$)/.test(raw);
+  const escapedQuotes = raw.replace(/"/g, '""');
   return needsEscaping ? `"${escapedQuotes}"` : escapedQuotes;
 };
 
@@ -1320,9 +1317,7 @@ const escapeXmlValue = (value) =>
   toDisplayString(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+    .replace(/>/g, "&gt;");
 
 const escapeHtmlValue = (value) =>
   toDisplayString(value)
@@ -1333,8 +1328,22 @@ const escapeHtmlValue = (value) =>
     .replace(/'/g, "&#39;");
 
 const sanitizeIdentifier = (value, fallback) => {
-  const base = (value ?? "").toString().trim().replace(/[^a-zA-Z0-9_:-]+/g, "_");
-  return base || fallback;
+  const raw = (value ?? "").toString().trim();
+  if (!raw) return fallback;
+
+  const normalized = raw
+    .replace(/[\s-]+/gu, "_")
+    .replace(/[^\p{L}\p{N}_:]+/gu, "_")
+    .replace(/_{2,}/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  const startsWithValid = /^[\p{L}_]/u.test(normalized);
+  const safe = startsWithValid ? normalized : `_${normalized}`;
+  return safe || fallback;
 };
 
 const deriveColumns = (dataset = {}) => {
@@ -1465,7 +1474,7 @@ const formatGenerators = {
 };
 
 formatGenerators.sql = ({ dataset }) => {
-  const tableName = dataset.name?.replace(/[^a-zA-Z0-9_]+/g, "_") || "dataset";
+  const tableName = sanitizeIdentifier(dataset.name, "dataset");
   const columns = deriveColumns(dataset);
   const fields = buildUniqueFieldMap(columns);
   const createTable = `CREATE TABLE ${tableName} (\\n${fields
