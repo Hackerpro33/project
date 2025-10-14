@@ -15,9 +15,14 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TaskEventProvider>
-          <AsyncBoundary>
-            <Pages />
-          </AsyncBoundary>
+          <div className="app-shell">
+            <div className="app-shell__glow" aria-hidden />
+            <AsyncBoundary>
+              <div className="app-shell__content">
+                <Pages />
+              </div>
+            </AsyncBoundary>
+          </div>
         </TaskEventProvider>
         <Toaster />
         <ReactQueryDevtools initialIsOpen={false} position="bottom-right" />
