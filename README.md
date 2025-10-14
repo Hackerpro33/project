@@ -155,7 +155,13 @@ npm run dev
 ```bash
 cd backend
 pip install -r app/requirements.txt
-uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
+
+# запуск из каталога backend — uvicorn сам найдёт пакет ``app``
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# запуск из корня репозитория, если удобнее не менять директорию
+# uvicorn нужно указать, где лежит пакет ``app``
+# uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 ```
 
 ### Политика загрузки и документация API
