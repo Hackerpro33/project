@@ -173,7 +173,7 @@ cd backend
 ../scripts/install_backend_deps.sh
 
 # запуск API
-uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 > Скрипт `install_backend_deps.sh` гарантирует, что используется корректный
