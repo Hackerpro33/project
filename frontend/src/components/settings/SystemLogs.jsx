@@ -120,14 +120,16 @@ export default function SystemLogs() {
           return logDate.toDateString() === now.toDateString();
         });
         break;
-      case 'week':
+      case 'week': {
         const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
         filtered = filtered.filter(log => new Date(log.timestamp) >= weekAgo);
         break;
-      case 'month':
+      }
+      case 'month': {
         const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
         filtered = filtered.filter(log => new Date(log.timestamp) >= monthAgo);
         break;
+      }
     }
 
     setFilteredLogs(filtered);
