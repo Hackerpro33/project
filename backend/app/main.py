@@ -5,8 +5,10 @@ import json
 import logging
 import mimetypes
 import random
-from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.routing import APIRoute
+from fastapi import Query
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,12 +16,12 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 import os
 import json
+import os
 import random
 import sys
 import time
 import uuid
 from collections import defaultdict, deque
-from importlib import import_module
 from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -27,6 +29,14 @@ import ipaddress
 import socket
 
 from pydantic import ValidationError
+
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 try:  # pragma: no cover - optional dependency guard
     import magic  # type: ignore[import-not-found]
@@ -1801,40 +1811,63 @@ if __name__ == "__main__":
 
 # Allow running both as part of the ``app`` package (e.g. ``uvicorn app.main:app``)
 # and as a standalone script (e.g. ``python main.py`` or ``uvicorn main:app``).
-def _import_router_module(module_name: str):
-    if __package__ in {None, ""}:
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        if current_dir not in sys.path:
-            sys.path.append(current_dir)
-        return import_module(module_name)
-    return import_module(f".{module_name}", package=__package__)
+if __package__ in {None, ""}:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.append(current_dir)
+    import audit_api as audit_router_module
+    import collaboration_api as collaboration_router_module
+    import chat_api as chat_router_module
+    import datasets_api as datasets_router_module
+    import dataset_segments_api as dataset_segments_router_module
+    import dataset_versions_api as dataset_versions_router_module
+    import dictionary_api as dictionary_router_module
+    import visualizations_api as visualizations_router_module
+    import views_api as views_router_module
+    import feature_flags_api as feature_flags_router_module
+    import schedules_api as schedules_router_module
+else:
+    from . import audit_api as audit_router_module
+    from . import collaboration_api as collaboration_router_module
+    from . import chat_api as chat_router_module
+    from . import datasets_api as datasets_router_module
+    from . import dataset_segments_api as dataset_segments_router_module
+    from . import dataset_versions_api as dataset_versions_router_module
+    from . import dictionary_api as dictionary_router_module
+    from . import visualizations_api as visualizations_router_module
+    from . import views_api as views_router_module
+    from . import feature_flags_api as feature_flags_router_module
+    from . import schedules_api as schedules_router_module
 
+datasets_router = datasets_router_module.router
+dataset_segments_router = dataset_segments_router_module.router
+dataset_versions_router = dataset_versions_router_module.router
+dictionary_router = dictionary_router_module.router
+visualizations_router = visualizations_router_module.router
+chat_router = chat_router_module.router
+audit_router = audit_router_module.router
+views_router = views_router_module.router
+feature_flags_router = feature_flags_router_module.router
+collaboration_router = collaboration_router_module.router
+schedules_router = schedules_router_module.router
 
-def _include_router(module_name: str, prefixes: Tuple[str, ...]) -> None:
-    module = _import_router_module(module_name)
-    router = getattr(module, "router", None)
-    if router is None:
-        raise RuntimeError(f"Module '{module_name}' does not expose a FastAPI router")
-    for prefix in prefixes:
-        app.include_router(router, prefix=prefix)
-
-
-_ROUTER_REGISTRATIONS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
-    ("datasets_api", (f"{API_PREFIX}/dataset", "/api/dataset")),
-    ("dataset_segments_api", (f"{API_PREFIX}/dataset", "/api/dataset")),
-    ("dataset_versions_api", (f"{API_PREFIX}/dataset", "/api/dataset")),
-    ("dictionary_api", (f"{API_PREFIX}/dictionary", "/api/dictionary")),
-    ("visualizations_api", (f"{API_PREFIX}/visualization", "/api/visualization")),
-    ("chat_api", (f"{API_PREFIX}/chat", "/api/chat")),
-    ("audit_api", (f"{API_PREFIX}/audit", "/api/audit")),
-    ("schedules_api", (f"{API_PREFIX}",)),
-    ("views_api", ("/api",)),
-    ("feature_flags_api", ("/api/feature-flags",)),
-    ("collaboration_api", ("/api",)),
-)
-
-for module_name, prefixes in _ROUTER_REGISTRATIONS:
-    _include_router(module_name, prefixes)
+app.include_router(datasets_router, prefix=f"{API_PREFIX}/dataset")
+app.include_router(dataset_segments_router, prefix=f"{API_PREFIX}/dataset")
+app.include_router(dictionary_router, prefix=f"{API_PREFIX}/dictionary")
+app.include_router(visualizations_router, prefix=f"{API_PREFIX}/visualization")
+app.include_router(chat_router, prefix=f"{API_PREFIX}/chat")
+app.include_router(audit_router, prefix=f"{API_PREFIX}/audit")
+app.include_router(schedules_router, prefix=f"{API_PREFIX}")
+app.include_router(datasets_router, prefix="/api/dataset")
+app.include_router(dataset_segments_router, prefix="/api/dataset")
+app.include_router(dataset_versions_router, prefix="/api/dataset")
+app.include_router(dictionary_router, prefix="/api/dictionary")
+app.include_router(visualizations_router, prefix="/api/visualization")
+app.include_router(chat_router, prefix="/api/chat")
+app.include_router(audit_router, prefix="/api/audit")
+app.include_router(views_router, prefix="/api")
+app.include_router(feature_flags_router, prefix="/api/feature-flags")
+app.include_router(collaboration_router, prefix="/api")
 
 # Compatibility routes without the versioned prefix for legacy integrations.
 app.add_api_route("/api/upload", api_upload, methods=["POST"], include_in_schema=False)
