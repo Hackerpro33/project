@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import datasets_api, dataset_versions_api
+from app.services import materialized_views as materialized_views_service
 from app.main import app
 
 HEADERS = {"host": "localhost"}
@@ -17,6 +18,7 @@ def override_storage(tmp_path, monkeypatch):
 
     datasets_path = store_dir / "datasets.json"
     versions_path = store_dir / "dataset_versions.json"
+    materialized_path = store_dir / "materialized_views.json"
 
     monkeypatch.setattr(datasets_api, "STORE_DIR", store_dir)
     monkeypatch.setattr(datasets_api, "DATASETS_JSON", datasets_path)
@@ -24,14 +26,17 @@ def override_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(dataset_versions_api, "STORE_DIR", store_dir)
     monkeypatch.setattr(dataset_versions_api, "VERSIONS_JSON", versions_path)
     monkeypatch.setattr(dataset_versions_api, "CANDIDATE_DIRS", [store_dir])
+    monkeypatch.setattr(materialized_views_service, "STORE_DIR", store_dir)
+    monkeypatch.setattr(materialized_views_service, "MATERIALIZED_VIEWS_JSON", materialized_path)
+    monkeypatch.setattr(materialized_views_service, "CANDIDATE_DIRS", [store_dir])
 
     # Ensure clean files
-    for path in (datasets_path, versions_path):
+    for path in (datasets_path, versions_path, materialized_path):
         if path.exists():
             path.unlink()
     yield
     # Cleanup created files
-    for path in (datasets_path, versions_path):
+    for path in (datasets_path, versions_path, materialized_path):
         if path.exists():
             path.unlink()
 
@@ -106,6 +111,102 @@ def test_versions_lifecycle_flow(override_storage):
     assert "revenue" in metrics_delta
     assert metrics_delta["revenue"]["sum"] != 0
 
+
+def test_materialized_view_incremental_refresh(override_storage):
+    client = TestClient(app)
+    dataset_id = _create_dataset()
+
+    first_payload = {
+        "author": "qa",
+        "notes": "Первый снимок",
+        "rows": [
+            {"id": 1, "city": "Москва", "revenue": 120},
+            {"id": 2, "city": "Казань", "revenue": 80},
+        ],
+    }
+    response = client.post(f"/api/dataset/{dataset_id}/versions", json=first_payload, headers=HEADERS)
+    assert response.status_code == 200
+
+    view_response = client.get(f"/api/dataset/{dataset_id}/materialized", headers=HEADERS)
+    assert view_response.status_code == 200
+    first_view = view_response.json()
+    assert first_view["refresh_count"] == 1
+    assert first_view["metrics"]["revenue"]["sum"] == pytest.approx(200.0)
+    assert first_view["baseline_metrics"]["revenue"]["sum"] == pytest.approx(200.0)
+    assert first_view["delta"]["revenue"]["sum"] == pytest.approx(200.0)
+    assert first_view["delta_from_baseline"]["revenue"]["sum"] == pytest.approx(0.0)
+    assert len(first_view["history"]) == 1
+    assert first_view["history"][0]["metrics"]["revenue"]["sum"] == pytest.approx(200.0)
+    assert first_view["history"][0]["delta_from_baseline"]["revenue"]["sum"] == pytest.approx(0.0)
+
+    second_payload = {
+        "author": "qa",
+        "notes": "Обновление",
+        "rows": [
+            {"id": 1, "city": "Москва", "revenue": 135},
+            {"id": 3, "city": "Самара", "revenue": 40},
+        ],
+    }
+    response = client.post(f"/api/dataset/{dataset_id}/versions", json=second_payload, headers=HEADERS)
+    assert response.status_code == 200
+
+    view_response = client.get(f"/api/dataset/{dataset_id}/materialized", headers=HEADERS)
+    assert view_response.status_code == 200
+    second_view = view_response.json()
+    assert second_view["refresh_count"] == 2
+    assert second_view["metrics"]["revenue"]["sum"] == pytest.approx(175.0)
+    assert second_view["baseline_metrics"]["revenue"]["sum"] == pytest.approx(200.0)
+    assert second_view["delta"]["revenue"]["sum"] == pytest.approx(-25.0)
+    assert second_view["delta_from_baseline"]["revenue"]["sum"] == pytest.approx(-25.0)
+    assert len(second_view["history"]) == 2
+    assert second_view["history"][0]["delta"]["revenue"]["sum"] == pytest.approx(200.0)
+    assert second_view["history"][1]["delta"]["revenue"]["sum"] == pytest.approx(-25.0)
+    assert second_view["history"][1]["metrics"]["revenue"]["sum"] == pytest.approx(175.0)
+    assert second_view["history"][1]["delta_from_baseline"]["revenue"]["sum"] == pytest.approx(-25.0)
+
+
+def test_materialized_view_upgrades_legacy_payload(override_storage):
+    client = TestClient(app)
+    dataset_id = _create_dataset()
+
+    legacy_entry = {
+        "dataset_id": dataset_id,
+        "last_refresh_at": 1_700_000_000,
+        "last_refresh_date": "2023-11-01T00:00:00Z",
+        "row_count": 2,
+        "strategy": "incremental",
+        "refresh_count": 0,
+        "metrics": {"revenue": {"count": 2, "sum": 200.0}},
+        "delta": {"revenue": {"sum": 200.0}},
+        "history": [
+            {
+                "version_id": "v1",
+                "version_number": 1,
+                "refreshed_at": 1_700_000_000,
+                "refreshed_date": "2023-11-01T00:00:00Z",
+                "row_count": 2,
+                "delta": {"revenue": {"sum": 200.0}},
+            }
+        ],
+    }
+
+    materialized_views_path = materialized_views_service.MATERIALIZED_VIEWS_JSON
+    materialized_views_path.write_text(json.dumps([legacy_entry]), encoding="utf-8")
+
+    response = client.get(f"/api/dataset/{dataset_id}/materialized", headers=HEADERS)
+    assert response.status_code == 200
+    upgraded = response.json()
+
+    assert upgraded["refresh_count"] == 1
+    assert upgraded["baseline_metrics"]["revenue"]["sum"] == pytest.approx(200.0)
+    assert upgraded["delta_from_baseline"]["revenue"]["sum"] == pytest.approx(0.0)
+    assert upgraded["history"][0]["metrics"]["revenue"]["sum"] == pytest.approx(200.0)
+    assert upgraded["history"][0]["delta_from_baseline"]["revenue"]["sum"] == pytest.approx(0.0)
+
+    list_response = client.get("/api/dataset/materialized", headers=HEADERS)
+    assert list_response.status_code == 200
+    listed = list_response.json()
+    assert listed[0]["history"][0]["metrics"]["revenue"]["sum"] == pytest.approx(200.0)
 
 def test_versions_unknown_dataset_returns_404(override_storage):
     client = TestClient(app)

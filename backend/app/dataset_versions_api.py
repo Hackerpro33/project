@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from .datasets_api import _ensure_dates as ensure_dataset_dates
 from .datasets_api import _load_all as load_all_datasets
 from .datasets_api import _save_all as save_all_datasets
+from .services import materialized_views
 
 router = APIRouter()
 
@@ -160,21 +161,6 @@ def _compare_rows(current: List[Dict[str, Any]], previous: List[Dict[str, Any]])
     return added, removed, changed
 
 
-def _metrics_delta(current: Dict[str, Dict[str, float]], previous: Dict[str, Dict[str, float]]) -> Dict[str, Dict[str, float]]:
-    delta: Dict[str, Dict[str, float]] = {}
-    for column in set(current.keys()) | set(previous.keys()):
-        curr = current.get(column, {})
-        prev = previous.get(column, {})
-        delta[column] = {
-            "count": curr.get("count", 0.0) - prev.get("count", 0.0),
-            "sum": curr.get("sum", 0.0) - prev.get("sum", 0.0),
-            "avg": curr.get("avg", 0.0) - prev.get("avg", 0.0),
-            "min": curr.get("min", 0.0) - prev.get("min", 0.0),
-            "max": curr.get("max", 0.0) - prev.get("max", 0.0),
-        }
-    return delta
-
-
 class SnapshotRequest(BaseModel):
     rows: Optional[List[Dict[str, Any]]] = Field(default=None, description="Подготовленные строки данных для снимка")
     notes: Optional[str] = Field(default=None, description="Примечания версии")
@@ -238,8 +224,8 @@ def create_version(dataset_id: str, payload: SnapshotRequest) -> DatasetVersionR
     metrics = _calculate_metrics(normalized_rows)
 
     change_summary = None
-    if dataset_versions:
-        previous = dataset_versions[-1]
+    previous = dataset_versions[-1] if dataset_versions else None
+    if previous:
         previous_rows = previous.get("rows", [])
         added, removed, changed = _compare_rows(normalized_rows, previous_rows)
         change_summary = {
@@ -271,6 +257,15 @@ def create_version(dataset_id: str, payload: SnapshotRequest) -> DatasetVersionR
 
     all_versions.append(version_entry)
     _save_versions(all_versions)
+
+    previous_metrics = previous.get("metrics") if previous else None
+    metrics_delta = materialized_views.compute_metrics_delta(metrics, previous_metrics)
+
+    materialized_views.update_materialized_view(
+        dataset_id,
+        version_entry,
+        metrics_delta=metrics_delta,
+    )
 
     return _serialize_version(version_entry)
 
@@ -336,7 +331,9 @@ def diff_versions(dataset_id: str, current_id: str, previous_id: str) -> Version
                 preview_row[key] = {"before": before.get(key), "after": value}
         changed_preview.append(preview_row)
 
-    metrics_delta = _metrics_delta(current.get("metrics", {}), previous.get("metrics", {}))
+    metrics_delta = materialized_views.compute_metrics_delta(
+        current.get("metrics", {}), previous.get("metrics", {})
+    )
 
     change_summary = current.get("change_summary") or {
         "rows_added": len(added),
