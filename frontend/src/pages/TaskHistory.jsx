@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import PageContainer from '@/components/layout/PageContainer'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -90,7 +89,6 @@ import {
   useTaskPreviewQuery,
 } from '@/hooks/tasks'
 import { emitTaskEvent, TASK_EVENT_TYPES } from '@/lib/taskEvents'
-import { useToast } from '@/components/ui/use-toast.jsx'
 
 const PREVIEW_PAGE_SIZE = 25
 const DEFAULT_HISTORY_LIMIT = 50
@@ -102,8 +100,7 @@ const SORT_FIELDS = [
   { value: 'status', label: 'Статус' },
 ]
 
-function formatTimestamp(value) {
-function formatTimestamp(value, locale) {
+  function formatTimestamp(value, locale) {
   if (!value) return '—'
   try {
     const date = new Date(value)

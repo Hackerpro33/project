@@ -1,26 +1,18 @@
-import { Dataset } from "@/api/entities";
-import React, { useState, useEffect } from "react";
-import { useTranslation } from "react-i18next";
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { extractDataFromUploadedFile, uploadFile } from "@/api/integrations";
+import { useTranslation } from "react-i18next";
+import { Dataset } from "@/api/entities";
+import {
+  extractDataFromUploadedFile,
+  importDatasetFromUrl,
+  uploadFile,
+} from "@/api/integrations";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  Database,
-  Search,
-  Plus,
-  AlertTriangle
-} from "lucide-react";
-import React, { useState, useEffect } from "react";
-import { extractDataFromUploadedFile, importDatasetFromUrl } from "@/api/integrations";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Database, Tag, Search, Filter, Plus } from "lucide-react";
+import { Database, Tag, Search, Filter, Plus, AlertTriangle } from "lucide-react";
 
 import FileUploadZone from "../components/datasources/FileUploadZone";
 import LinkImportForm from "../components/datasources/LinkImportForm";
@@ -130,7 +122,6 @@ export default function DataSources() {
   const [showImportPreview, setShowImportPreview] = useState(false);
   const [pendingDataset, setPendingDataset] = useState(null);
   const [facets, setFacets] = useState({ tags: [], types: [], owners: [] });
-  const [selectedTags, setSelectedTags] = useState([]);
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [selectedOwners, setSelectedOwners] = useState([]);
   const [searchError, setSearchError] = useState(null);
@@ -581,59 +572,54 @@ export default function DataSources() {
 
       <LinkImportForm onImport={handleImportFromLink} isImporting={isImporting} />
 
-      {/* Search and Filters */}
-      <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-lg">
-        <CardContent className="space-y-4 p-6">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="relative w-full md:max-w-lg">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-slate-400" />
-        <CardContent className="space-y-6 p-6">
-          <div className="flex flex-col lg:flex-row gap-4 lg:items-center">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-              <Input
-                placeholder={t('datasets.searchPlaceholder')}
-                value={searchTerm}
-                onChange={(event) => handleSearchChange(event.target.value)}
-                className="bg-white/50 pl-10"
-              />
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleClearFilters}
-              disabled={!hasActiveFilters}
-            >
-              <Filter className="mr-2 h-4 w-4" />
-              {t('datasets.clearFilters')}
-            </Button>
-          </div>
-
-          {availableFilters.tags.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-muted-foreground">
-                {t('datasets.filterTags')}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {availableFilters.tags.map((tag) => {
-                  const isActive = selectedTags.includes(tag);
-                  return (
-                    <Button
-                      key={tag}
-                      size="sm"
-                      variant={isActive ? 'default' : 'outline'}
-                      onClick={() => handleToggleTag(tag)}
-                    >
-                      <Tag className="mr-2 h-4 w-4" />
-                      {tag}
-                    </Button>
-                  );
-                })}
+        {/* Search and Filters */}
+        <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-lg">
+          <CardContent className="space-y-4 p-6">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="relative w-full md:max-w-lg">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-slate-400" />
+                <Input
+                  placeholder={t('datasets.searchPlaceholder')}
+                  value={searchTerm}
+                  onChange={(event) => handleSearchChange(event.target.value)}
+                  className="bg-white/50 pl-10"
+                />
               </div>
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 border-slate-200 focus:border-blue-500 bg-white/60"
-              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearFilters}
+                disabled={!hasActiveFilters}
+              >
+                <Filter className="mr-2 h-4 w-4" />
+                {t('datasets.clearFilters')}
+              </Button>
             </div>
+
+            {availableFilters.tags.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">
+                  {t('datasets.filterTags')}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {availableFilters.tags.map((tag) => {
+                    const isActive = selectedTags.includes(tag);
+                    return (
+                      <Button
+                        key={tag}
+                        size="sm"
+                        variant={isActive ? 'default' : 'outline'}
+                        onClick={() => handleToggleTag(tag)}
+                      >
+                        <Tag className="mr-2 h-4 w-4" />
+                        {tag}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-2 items-center">
               <Badge variant="secondary" className="bg-blue-50 text-blue-600">
                 Найдено {searchMeta.total}
@@ -644,23 +630,22 @@ export default function DataSources() {
                 </Button>
               )}
             </div>
-          )}
 
-          <div className="flex justify-end">
-            <SavedViewsManager
-              entity="dataset"
-              state={savedViewState}
-              onApplyView={handleApplyView}
-            />
-          </div>
+            <div className="flex justify-end">
+              <SavedViewsManager
+                entity="dataset"
+                state={savedViewState}
+                onApplyView={handleApplyView}
+              />
+            </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {renderFacetGroup('Теги', facets.tags, selectedTags, (value) => toggleFacetValue(value, selectedTags, setSelectedTags))}
-            {renderFacetGroup('Типы наборов', facets.types, selectedTypes, (value) => toggleFacetValue(value, selectedTypes, setSelectedTypes))}
-            {renderFacetGroup('Владельцы', facets.owners, selectedOwners, (value) => toggleFacetValue(value, selectedOwners, setSelectedOwners))}
-          </div>
-        </CardContent>
-      </Card>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {renderFacetGroup('Теги', facets.tags, selectedTags, (value) => toggleFacetValue(value, selectedTags, setSelectedTags))}
+              {renderFacetGroup('Типы наборов', facets.types, selectedTypes, (value) => toggleFacetValue(value, selectedTypes, setSelectedTypes))}
+              {renderFacetGroup('Владельцы', facets.owners, selectedOwners, (value) => toggleFacetValue(value, selectedOwners, setSelectedOwners))}
+            </div>
+          </CardContent>
+        </Card>
 
       {searchError && (
         <Alert variant="destructive" className="border-red-200 bg-red-50">
