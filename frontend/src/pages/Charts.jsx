@@ -14,7 +14,6 @@ import {
   Search,
   Tag
 } from "lucide-react";
-import { BarChart3, LineChart, ScatterChart, TrendingUp, Plus } from "lucide-react";
 import PageContainer from "@/components/layout/PageContainer";
 import PaginationControls from "@/components/common/PaginationControls";
 import SavedViewsManager from "@/components/common/SavedViewsManager";
@@ -240,86 +239,89 @@ export default function Charts() {
         )}
 
         {!showBuilder && (
-          <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-lg">
-            <CardContent className="space-y-4 p-6">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="relative w-full md:max-w-lg">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-slate-400" />
-                  <Input
-                    placeholder={t('charts.searchPlaceholder')}
-                    value={vizSearch}
-                    onChange={(event) => handleVisualizationSearch(event.target.value)}
-                    className="bg-white/50 pl-10"
+          <div className="space-y-6">
+            <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-lg">
+              <CardContent className="space-y-4 p-6">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="relative w-full md:max-w-lg">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-slate-400" />
+                    <Input
+                      placeholder={t('charts.searchPlaceholder')}
+                      value={vizSearch}
+                      onChange={(event) => handleVisualizationSearch(event.target.value)}
+                      className="bg-white/50 pl-10"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleResetVisualizationFilters}
+                    disabled={!hasVisualizationFilters}
+                  >
+                    <Filter className="mr-2 h-4 w-4" />
+                    {t('charts.clearFilters')}
+                  </Button>
+                </div>
+
+                {visualizationMeta.availableFilters.tags.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      {t('charts.filterTags')}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {visualizationMeta.availableFilters.tags.map((tag) => {
+                        const isActive = vizTags.includes(tag);
+                        return (
+                          <Button
+                            key={tag}
+                            size="sm"
+                            variant={isActive ? 'default' : 'outline'}
+                            onClick={() => handleTagToggle(tag)}
+                          >
+                            <Tag className="mr-2 h-4 w-4" />
+                            {tag}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {visualizationMeta.availableFilters.types.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      {t('charts.filterTypes')}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {visualizationMeta.availableFilters.types.map((type) => {
+                        const isActive = vizTypes.includes(type);
+                        return (
+                          <Button
+                            key={type}
+                            size="sm"
+                            variant={isActive ? 'default' : 'outline'}
+                            onClick={() => handleTypeToggle(type)}
+                          >
+                            {type}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end">
+                  <SavedViewsManager
+                    entity="visualization"
+                    state={visualizationViewState}
+                    onApplyView={handleApplyVisualizationView}
                   />
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleResetVisualizationFilters}
-                  disabled={!hasVisualizationFilters}
-                >
-                  <Filter className="mr-2 h-4 w-4" />
-                  {t('charts.clearFilters')}
-                </Button>
-              </div>
+              </CardContent>
+            </Card>
 
-              {visualizationMeta.availableFilters.tags.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-muted-foreground">
-                    {t('charts.filterTags')}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {visualizationMeta.availableFilters.tags.map((tag) => {
-                      const isActive = vizTags.includes(tag);
-                      return (
-                        <Button
-                          key={tag}
-                          size="sm"
-                          variant={isActive ? 'default' : 'outline'}
-                          onClick={() => handleTagToggle(tag)}
-                        >
-                          <Tag className="mr-2 h-4 w-4" />
-                          {tag}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {visualizationMeta.availableFilters.types.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-muted-foreground">
-                    {t('charts.filterTypes')}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {visualizationMeta.availableFilters.types.map((type) => {
-                      const isActive = vizTypes.includes(type);
-                      return (
-                        <Button
-                          key={type}
-                          size="sm"
-                          variant={isActive ? 'default' : 'outline'}
-                          onClick={() => handleTypeToggle(type)}
-                        >
-                          {type}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end">
-                <SavedViewsManager
-                  entity="visualization"
-                  state={visualizationViewState}
-                  onApplyView={handleApplyVisualizationView}
-                />
-              </div>
-            </CardContent>
-          </Card>
-          <ChartTemplateLibrary onApplyTemplate={handleApplyTemplate} />
+            <ChartTemplateLibrary onApplyTemplate={handleApplyTemplate} />
+          </div>
         )}
 
         {/* Chart Builder */}
@@ -357,12 +359,12 @@ export default function Charts() {
         
         {/* Chart Viewer Modal */}
         {viewingViz && (
-            <ChartViewer
-                visualization={viewingViz}
-                datasets={datasets}
-                onClose={() => setViewingViz(null)}
-            />
+          <ChartViewer
+            visualization={viewingViz}
+            datasets={datasets}
+            onClose={() => setViewingViz(null)}
+          />
         )}
-    </PageContainer>
-  );
+      </PageContainer>
+    );
 }
