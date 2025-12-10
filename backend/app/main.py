@@ -1392,7 +1392,6 @@ def api_extract_async(
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
-            preview_payload = _synthetic_preview(
             preview_payload = _fallback_preview_payload(
                 req.file_url,
                 page=page,
@@ -1402,8 +1401,6 @@ def api_extract_async(
                 seed=seed,
             )
         return DatasetPreviewResponse.model_validate(preview_payload)
-        validated = DatasetPreviewResponse.model_validate(preview_payload)
-        return JSONResponse(content=validated.model_dump())
 
     # Ensure the file exists before enqueuing to fail fast for invalid identifiers.
     resolve_file_path(req.file_url)
@@ -1744,7 +1741,6 @@ def api_dataset_preview(
     except HTTPException as exc:
         if exc.status_code != 404:
             raise
-        payload = _synthetic_preview(
         payload = _fallback_preview_payload(
             file_id,
             page=page,
