@@ -83,6 +83,9 @@ uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 # PYTHONPATH=backend python -m backend.app.ai_compute.main
 ```
 
+Для пользователей Windows, которые поднимают только фронтенд и бэкенд без devcontainer/`make`,
+подробная пошаговая инструкция находится в [docs/windows_local_run.md](docs/windows_local_run.md).
+
 ### Политика загрузки и документация API
 
 - `POST /api/v1/upload` принимает файлы с расширениями, перечисленными в переменной окружения
