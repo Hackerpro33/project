@@ -1415,8 +1415,6 @@ def api_extract_async(
                 seed=seed,
             )
         return DatasetPreviewResponse.model_validate(preview_payload)
-        validated = DatasetPreviewResponse.model_validate(preview_payload)
-        return JSONResponse(content=validated.model_dump())
 
     # Ensure the file exists before enqueuing to fail fast for invalid identifiers.
     resolve_file_path(req.file_url)
