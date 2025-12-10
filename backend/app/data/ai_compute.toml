@@ -1,0 +1,30 @@
+[general]
+redis_url = "redis://redis:6379/0"
+stream_name = "ai:jobs"
+consumer_group = "ai-compute"
+max_gpu_workers = 2
+max_cpu_workers = 4
+safety_factor = 1.15
+metrics_port = 9101
+scheduler_tick_interval_s = 0.5
+gpu_poll_interval_s = 10.0
+max_gpu_retries = 3
+
+[profiling]
+sample_rate = 10
+nsight_enabled = false
+output_dir = "backend/app/uploads/profiler"
+
+[models."forecast-v2"]
+baseline_vram_mb = 2048
+peak_vram_mb = 4096
+priority_weight = 2.0
+estimated_duration_s = 45.0
+cpu_variant = "forecast-v2-int8"
+
+[models."segmenter-lite"]
+baseline_vram_mb = 1024
+peak_vram_mb = 1536
+priority_weight = 1.2
+estimated_duration_s = 30.0
+cpu_variant = "segmenter-lite-int8"
