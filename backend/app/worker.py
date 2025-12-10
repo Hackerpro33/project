@@ -5,8 +5,8 @@ from redis import Redis
 from rq import Worker
 from rq.connections import Connection
 
-from .config import get_settings
-from .tasks import process_extraction_job  # noqa: F401  # ensure task import side-effect
+from app.core.config import get_settings
+from app.tasks import process_extraction_job  # noqa: F401  # ensure task import side-effect
 
 
 def main() -> None:

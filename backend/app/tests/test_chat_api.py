@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from .. import chat_api
+from app.api.routes import chat as chat_api
 from .. import main
 from ..utils import dictionaries as dictionary_store
 

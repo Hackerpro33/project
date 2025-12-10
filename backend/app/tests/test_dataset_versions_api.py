@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import datasets_api, dataset_versions_api
+from app.api.routes import dataset_versions as dataset_versions_api
+from app.api.routes import datasets as datasets_api
 from app.main import app
 
 HEADERS = {"host": "localhost"}

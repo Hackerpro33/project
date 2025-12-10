@@ -14,8 +14,8 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from .. import datasets_api
-from .. import visualizations_api
+from app.api.routes import datasets as datasets_api
+from app.api.routes import visualizations as visualizations_api
 from .. import main
 from ..services import extraction
 from ..utils.batch_progress import (
@@ -89,7 +89,7 @@ def client():
 
 
 def test_upload_and_extract_roundtrip(client):
-    csv_bytes = b"city,population\nParis,2148327\nBerlin,3769495\n"
+    csv_bytes = "city,population\nМосква,12615882\nКазань,1257341\n".encode("utf-8")
     response = client.post(
         f"{API_PREFIX}/upload",
         files={"file": ("cities.csv", csv_bytes, "text/csv")},
@@ -111,7 +111,7 @@ def test_upload_and_extract_roundtrip(client):
     assert extract_response.status_code == 200
     extracted = extract_response.json()
     assert extracted["output"]["row_count"] == 2
-    assert extracted["output"]["sample_data"][0]["city"] == "Paris"
+    assert extracted["output"]["sample_data"][0]["city"] == "Москва"
 
 
 def test_batch_upload_multiple_files(client):
@@ -710,7 +710,7 @@ def _make_wide_csv(rows: int, columns: int) -> bytes:
 
 
 def _criminogenic_factors_csv() -> bytes:
-    data_path = Path(__file__).resolve().parent / "data" / "chicago_crime_trends.csv"
+    data_path = Path(__file__).resolve().parent / "data" / "moscow_crime_trends.csv"
     return data_path.read_bytes()
 
 
@@ -940,8 +940,8 @@ def test_crime_factor_dataset_workflow(client):
     dataset_response = client.post(
         f"{API_PREFIX}/dataset/create",
         json={
-            "name": "Chicago Crime Trends 2020-2023",
-            "description": "Агрегированные годовые показатели преступности по данным портала City of Chicago.",
+            "name": "Показатели преступности Москвы 2020-2023",
+            "description": "Сводные годовые данные ГУ МВД по Москве.",
             "tags": ["crime-analysis", "trend"],
             "columns": extract_payload["columns"],
             "row_count": extract_payload["row_count"],
@@ -972,13 +972,13 @@ def test_crime_factor_dataset_workflow(client):
     )
     assert dataset_get_response.status_code == 200
     dataset_payload = dataset_get_response.json()
-    assert "City of Chicago" in dataset_payload["description"]
+    assert "ГУ МВД по Москве" in dataset_payload["description"]
     assert len(dataset_payload["sample_data"]) == 4
 
     update_response = client.put(
         f"{API_PREFIX}/dataset/{dataset_id}",
         json={
-            "description": "Обновлено свежими сводками Chicago Data Portal",
+            "description": "Обновлено оперативной сводкой столичного управления МВД",
             "tags": ["crime-analysis", "hotspot"],
         },
         headers=HEADERS,
@@ -989,7 +989,7 @@ def test_crime_factor_dataset_workflow(client):
     viz_response = client.post(
         f"{API_PREFIX}/visualization/create",
         json={
-            "title": "Chicago Crime Trend Comparison",
+            "title": "Динамика преступности Москвы",
             "type": "line",
             "dataset_id": dataset_id,
             "config": {"x": "year", "y": ["crime_incidents", "theft_incidents"]},
@@ -1016,13 +1016,13 @@ def test_crime_factor_dataset_workflow(client):
     )
     assert viz_get_response.status_code == 200
     viz_payload = viz_get_response.json()
-    assert viz_payload["title"] == "Chicago Crime Trend Comparison"
+    assert viz_payload["title"] == "Динамика преступности Москвы"
 
     viz_update_response = client.put(
         f"{API_PREFIX}/visualization/{viz_id}",
         json={
-            "title": "Chicago Crime Trend Comparison (Updated)",
-            "summary": {"crime_incidents": {"latest": 263134, "trend": "rising"}},
+            "title": "Динамика преступности Москвы (обновлено)",
+            "summary": {"crime_incidents": {"latest": 172360, "trend": "rising"}},
             "tags": ["crime-analysis", "report"],
         },
         headers=HEADERS,

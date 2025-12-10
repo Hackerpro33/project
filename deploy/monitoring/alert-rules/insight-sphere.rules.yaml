@@ -1,0 +1,92 @@
+# Prometheus recording and alerting rules for Insight Sphere
+# See docs/runbooks/alerts.md for detailed triage steps.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: insight-sphere
+  labels:
+    app.kubernetes.io/name: insight-sphere
+    app.kubernetes.io/part-of: insight-sphere
+    role: alert-rules
+spec:
+  groups:
+    - name: insight-sphere.application
+      rules:
+        - alert: BackendReadinessDegraded
+          expr: probe_success{job="insight-sphere-readiness", environment=~"stage|prod"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            service: backend
+          annotations:
+            summary: "Backend readiness degraded"
+            description: "Проба /readiness возвращает degraded или недоступна более 2 минут."
+            runbook_url: https://git.example.com/insight-sphere/docs/runbooks/alerts.md
+        - alert: UploadPipelineStalled
+          expr: increase(insight_upload_total{environment=~"stage|prod"}[30m]) == 0
+          for: 5m
+          labels:
+            severity: high
+            service: backend
+          annotations:
+            summary: "Нет успешных загрузок данных"
+            description: "За последние 30 минут не было ни одной успешной загрузки файлов."
+            runbook_url: https://git.example.com/insight-sphere/docs/runbooks/alerts.md
+        - alert: UploadSizeSpike
+          expr: |
+            (rate(insight_upload_size_bytes_sum{environment=~"stage|prod"}[10m])
+             /
+              rate(insight_upload_size_bytes_count{environment=~"stage|prod"}[10m]))
+              > 2.5e8
+          for: 10m
+          labels:
+            severity: medium
+            service: backend
+          annotations:
+            summary: "Средний размер загружаемых файлов превысил 250 МБ"
+            description: "Проверьте, что пользователи не загружают неподдерживаемые массивы данных."
+            runbook_url: https://git.example.com/insight-sphere/docs/runbooks/alerts.md
+        - alert: BackendMemoryGrowth
+          expr: process_resident_memory_bytes{job="insight-sphere", environment="prod"} > 1.5e9
+          for: 10m
+          labels:
+            severity: medium
+            service: backend
+          annotations:
+            summary: "Рост потребления памяти бэкендом"
+            description: "process_resident_memory_bytes > 1.5 ГБ более 10 минут."
+            runbook_url: https://git.example.com/insight-sphere/docs/runbooks/alerts.md
+    - name: insight-sphere.frontend
+      rules:
+        - alert: FrontendCrashFreeRateDrop
+          expr: (1 - (sentry_sessions_crashed_total{project="insight-sphere-frontend",environment="prod"}
+            /
+            sentry_sessions_started_total{project="insight-sphere-frontend",environment="prod"})) < 0.98
+          for: 15m
+          labels:
+            severity: high
+            service: frontend
+          annotations:
+            summary: "Crash-free rate упал ниже 98%"
+            description: "Количество крашей в фронтенд-сессиях превышает целевой порог."
+            runbook_url: https://git.example.com/insight-sphere/docs/runbooks/alerts.md
+        - alert: FrontendExceptionSpike
+          expr: increase(sentry_errors_total{project="insight-sphere-frontend",level="error",environment=~"stage|prod"}[10m]) > 30
+          for: 0m
+          labels:
+            severity: medium
+            service: frontend
+          annotations:
+            summary: "Всплеск необработанных исключений во фронтенде"
+            description: "Количество ошибок в браузере превысило порог 30 за 10 минут."
+            runbook_url: https://git.example.com/insight-sphere/docs/runbooks/alerts.md
+        - alert: BackendExceptionSpike
+          expr: increase(sentry_errors_total{project="insight-sphere-backend",level="error",environment=~"stage|prod",http_status=~"5.."}[5m]) > 20
+          for: 0m
+          labels:
+            severity: high
+            service: backend
+          annotations:
+            summary: "Всплеск ошибок 5xx на API"
+            description: "Количество 5xx исключений бэкенда превысило порог 20 за 5 минут."
+            runbook_url: https://git.example.com/insight-sphere/docs/runbooks/alerts.md

@@ -48,7 +48,7 @@ export default function ChartViewer({ visualization, datasets, onClose }) {
                         {visualization.title}
                     </DialogTitle>
                     <DialogDescription>
-                        Просмотр графика: {visualization.x_axis} × {visualization.y_axis} на основе набора данных "{dataset?.name}"
+                        Просмотр графика: {visualization.x_axis} × {visualization.y_axis} на основе набора данных «{dataset?.name}»
                     </DialogDescription>
                 </DialogHeader>
                 <div className="flex-grow min-h-0 py-4">

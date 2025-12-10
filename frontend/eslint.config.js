@@ -29,10 +29,27 @@ export default [
       ...react.configs['jsx-runtime'].rules,
       ...reactHooks.configs.recommended.rules,
       'react/jsx-no-target-blank': 'off',
+      'react/prop-types': 'off',
+      'no-unused-vars': [
+        'warn',
+        { args: 'none', ignoreRestSiblings: true, varsIgnorePattern: '^React$' },
+      ],
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },
       ],
+    },
+  },
+  {
+    files: ['**/*.test.{js,jsx,ts,tsx}'],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: { ...globals.browser, ...globals.node, global: true },
+      parserOptions: {
+        ecmaVersion: 'latest',
+        ecmaFeatures: { jsx: true },
+        sourceType: 'module',
+      },
     },
   },
 ]

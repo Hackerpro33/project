@@ -36,6 +36,7 @@ async def _run_service() -> None:
             exc,
         )
         raise SystemExit(1)
+    await service.run()
 
 
 def main() -> None:

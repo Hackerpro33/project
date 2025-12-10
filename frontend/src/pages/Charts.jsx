@@ -1,368 +1,308 @@
-import React, { useState, useEffect } from "react";
-import { useTranslation } from "react-i18next";
-import { Dataset, Visualization } from "@/api/entities";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import React, { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
-  BarChart3,
-  LineChart,
-  ScatterChart,
-  TrendingUp,
-  Plus,
-  Filter,
-  Search,
-  Tag
-} from "lucide-react";
-import { BarChart3, LineChart, ScatterChart, TrendingUp, Plus } from "lucide-react";
-import PageContainer from "@/components/layout/PageContainer";
-import PaginationControls from "@/components/common/PaginationControls";
-import SavedViewsManager from "@/components/common/SavedViewsManager";
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Line,
+  LineChart as RechartsLineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
+import { BarChart3, Filter, LineChart, PieChartIcon, TrendingUp } from 'lucide-react'
 
-import ChartBuilder from "../components/charts/ChartBuilder";
-import ChartGallery from "../components/charts/ChartGallery";
-import ChartTypeSelector from "../components/charts/ChartTypeSelector";
-import ChartViewer from "../components/charts/ChartViewer";
-import AdvancedChartInsights from "../components/charts/AdvancedChartInsights";
-import ChartTemplateLibrary from "../components/charts/ChartTemplateLibrary";
+import PageContainer from '@/components/layout/PageContainer'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Separator } from '@/components/ui/separator'
 
-export default function Charts() {
-  const { t } = useTranslation();
-  const [datasets, setDatasets] = useState([]);
-  const [visualizations, setVisualizations] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [showBuilder, setShowBuilder] = useState(false);
-  const [selectedChartType, setSelectedChartType] = useState('line');
-  const [editingViz, setEditingViz] = useState(null);
-  const [viewingViz, setViewingViz] = useState(null);
-  const [activeSegment, setActiveSegment] = useState(null);
-  const [visualizationMeta, setVisualizationMeta] = useState({
-    totalPages: 0,
-    availableFilters: { tags: [], types: [] },
-  });
-  const [vizSearch, setVizSearch] = useState('');
-  const [vizTags, setVizTags] = useState([]);
-  const [vizTypes, setVizTypes] = useState([]);
-  const [vizPagination, setVizPagination] = useState({ page: 1, pageSize: 9 });
-  const [activeTemplate, setActiveTemplate] = useState(null);
+const TIME_RANGES = [
+  { value: '7d', label: '7 дней' },
+  { value: '30d', label: '30 дней' },
+  { value: '90d', label: '90 дней' },
+]
 
-  useEffect(() => {
-    loadInitialData();
-  }, []);
+const SEGMENTS = ['Все сегменты', 'EMEA', 'APAC', 'Америка']
 
-  const loadInitialData = async () => {
-    setIsLoading(true);
-    try {
-      const [datasetsData, visualizationsData] = await Promise.all([
-        Dataset.list({ orderBy: '-created_date', pageSize: 100 }),
-        Visualization.list({
-          orderBy: '-created_date',
-          page: vizPagination.page,
-          pageSize: vizPagination.pageSize,
-          search: vizSearch || undefined,
-          tags: vizTags.length ? vizTags : undefined,
-          types: vizTypes.length ? vizTypes : undefined,
-        }),
-        Dataset.list("-created_at"),
-        Visualization.list("-created_at"),
-      ]);
-      setDatasets(Array.isArray(datasetsData.items) ? datasetsData.items : datasetsData);
-      setVisualizations(Array.isArray(visualizationsData.items) ? visualizationsData.items : []);
-      setVisualizationMeta({
-        totalPages: visualizationsData.total_pages ?? 0,
-        availableFilters: visualizationsData.available_filters ?? { tags: [], types: [] },
-      });
-      setVizPagination({
-        page: visualizationsData.page ?? vizPagination.page,
-        pageSize: visualizationsData.page_size ?? vizPagination.pageSize,
-      });
-    } catch (error) {
-      console.error('Ошибка загрузки данных:', error);
-      setVisualizations([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+const LINE_DATA = [
+  { date: '01.02', revenue: 420, forecast: 400 },
+  { date: '02.02', revenue: 460, forecast: 430 },
+  { date: '03.02', revenue: 512, forecast: 445 },
+  { date: '04.02', revenue: 498, forecast: 452 },
+  { date: '05.02', revenue: 545, forecast: 470 },
+  { date: '06.02', revenue: 568, forecast: 490 },
+  { date: '07.02', revenue: 590, forecast: 505 },
+]
 
-  const loadVisualizations = async ({ page, pageSize, search, tags, types } = {}) => {
-    const nextPage = page ?? vizPagination.page;
-    const nextPageSize = pageSize ?? vizPagination.pageSize;
-    const nextSearch = search ?? vizSearch;
-    const nextTags = tags ?? vizTags;
-    const nextTypes = types ?? vizTypes;
-    setIsLoading(true);
-    try {
-      const response = await Visualization.list({
-        orderBy: '-created_date',
-        page: nextPage,
-        pageSize: nextPageSize,
-        search: nextSearch || undefined,
-        tags: nextTags.length ? nextTags : undefined,
-        types: nextTypes.length ? nextTypes : undefined,
-      });
-      setVisualizations(Array.isArray(response.items) ? response.items : []);
-      setVisualizationMeta({
-        totalPages: response.total_pages ?? 0,
-        availableFilters: response.available_filters ?? { tags: [], types: [] },
-      });
-      setVizPagination({
-        page: response.page ?? nextPage,
-        pageSize: response.page_size ?? nextPageSize,
-      });
-    } catch (error) {
-      console.error('Ошибка загрузки визуализаций:', error);
-      setVisualizations([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+const AREA_DATA = [
+  { date: 'Янв', adoption: 45, churn: 7 },
+  { date: 'Фев', adoption: 52, churn: 6 },
+  { date: 'Мар', adoption: 58, churn: 6 },
+  { date: 'Апр', adoption: 63, churn: 5 },
+  { date: 'Май', adoption: 67, churn: 5 },
+  { date: 'Июн', adoption: 70, churn: 4 },
+]
 
-  const handleVisualizationSearch = (value) => {
-    setVizSearch(value);
-    setVizPagination((prev) => ({ ...prev, page: 1 }));
-    loadVisualizations({ page: 1, search: value });
-  };
+const INSIGHTS = [
+  'Конверсия в оплату выросла на 4.6% после запуска нового онбординга.',
+  'Самая высокая выручка — в сегменте EMEA, +18% к прошлому месяцу.',
+  'APAC демонстрирует стабильный рост NPS, удержание +3.2 п.п. за месяц.',
+]
 
-  const handleTagToggle = (tag) => {
-    setVizTags((prev) => {
-      const exists = prev.includes(tag);
-      const next = exists ? prev.filter((item) => item !== tag) : [...prev, tag];
-      setVizPagination((state) => ({ ...state, page: 1 }));
-      loadVisualizations({ page: 1, tags: next });
-      return next;
-    });
-  };
-
-  const handleTypeToggle = (type) => {
-    setVizTypes((prev) => {
-      const exists = prev.includes(type);
-      const next = exists ? prev.filter((item) => item !== type) : [...prev, type];
-      setVizPagination((state) => ({ ...state, page: 1 }));
-      loadVisualizations({ page: 1, types: next });
-      return next;
-    });
-  };
-
-  const handleVisualizationsPageChange = (page) => {
-    setVizPagination((prev) => ({ ...prev, page }));
-    loadVisualizations({ page });
-  };
-
-  const handleApplyVisualizationView = (view) => {
-    const nextTags = view?.filters?.tags ?? [];
-    const nextTypes = view?.filters?.types ?? [];
-    const nextSearch = view?.search ?? '';
-    const nextPageSize = view?.page_size ?? vizPagination.pageSize;
-    setVizSearch(nextSearch);
-    setVizTags(nextTags);
-    setVizTypes(nextTypes);
-    setVizPagination({ page: 1, pageSize: nextPageSize });
-    loadVisualizations({
-      page: 1,
-      pageSize: nextPageSize,
-      search: nextSearch,
-      tags: nextTags,
-      types: nextTypes,
-    });
-  };
-
-  const handleResetVisualizationFilters = () => {
-    setVizSearch('');
-    setVizTags([]);
-    setVizTypes([]);
-    setVizPagination((prev) => ({ ...prev, page: 1 }));
-    loadVisualizations({ page: 1, search: '', tags: [], types: [] });
-  };
-
-  const handleCreateChart = (chartType) => {
-    setEditingViz(null);
-    setActiveTemplate(null);
-    setSelectedChartType(chartType);
-    setShowBuilder(true);
-  };
-  
-  const handleEditChart = (viz) => {
-    setEditingViz(viz);
-    setActiveTemplate(null);
-    setSelectedChartType(viz.type);
-    setShowBuilder(true);
-  }
-
-  const handleCloseBuilder = () => {
-    setShowBuilder(false);
-    setEditingViz(null);
-    setActiveTemplate(null);
-  }
-
-  const visualizationViewState = {
-    search: vizSearch,
-    filters: { tags: vizTags, types: vizTypes },
-    orderBy: '-created_date',
-    pageSize: vizPagination.pageSize,
-  };
-
-  const hasVisualizationFilters =
-    Boolean(vizSearch) || vizTags.length > 0 || vizTypes.length > 0;
-
-  const handleApplyTemplate = (template) => {
-    setEditingViz(null);
-    setActiveTemplate(template);
-    setSelectedChartType(template.chartType);
-    setShowBuilder(true);
-  };
+function MetricCard({ icon: Icon, label, value, delta, tone = 'neutral' }) {
+  const deltaClass =
+    tone === 'positive'
+      ? 'text-emerald-500'
+      : tone === 'negative'
+        ? 'text-rose-500'
+        : 'text-slate-500'
 
   return (
-    <PageContainer className="space-y-8">
-      {/* Header */}
-      <div className="text-center space-y-4">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
-            {t('charts.title')}
-          </h1>
-          <p className="text-slate-600 text-lg max-w-2xl mx-auto">
-            {t('charts.subtitle')}
-          </p>
+    <Card className="border-none bg-white/70 p-5 shadow-sm backdrop-blur dark:bg-slate-900/60">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">{label}</p>
+          <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{value}</p>
         </div>
+        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+          <Icon className="h-5 w-5" aria-hidden />
+        </span>
+      </div>
+      {delta ? <p className={`mt-3 text-sm font-medium ${deltaClass}`}>{delta}</p> : null}
+    </Card>
+  )
+}
 
-        {/* Advanced Insights */}
-        {!showBuilder && (
-          <AdvancedChartInsights
-            onSegmentChange={setActiveSegment}
-            activeSegment={activeSegment}
-          />
-        )}
+export default function Charts() {
+  const { t } = useTranslation()
+  const [timeRange, setTimeRange] = useState(TIME_RANGES[1].value)
+  const [segment, setSegment] = useState(SEGMENTS[0])
 
-        {/* Chart Type Selector */}
-        {!showBuilder && (
-          <ChartTypeSelector
-            onSelectType={handleCreateChart}
-            datasets={datasets}
-          />
-        )}
+  const filteredLineData = useMemo(() => {
+    if (timeRange === '7d') {
+      return LINE_DATA.slice(-7)
+    }
+    if (timeRange === '30d') {
+      return [...LINE_DATA, ...LINE_DATA, ...LINE_DATA, ...LINE_DATA.slice(0, 2)].map((item, index) => ({
+        ...item,
+        date: `${index + 1}`.padStart(2, '0'),
+      }))
+    }
+    return [...LINE_DATA, ...LINE_DATA, ...LINE_DATA, ...LINE_DATA].map((item, index) => ({
+      ...item,
+      date: `${index + 1}`.padStart(2, '0'),
+    }))
+  }, [timeRange])
 
-        {!showBuilder && (
-          <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-lg">
-            <CardContent className="space-y-4 p-6">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="relative w-full md:max-w-lg">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-slate-400" />
-                  <Input
-                    placeholder={t('charts.searchPlaceholder')}
-                    value={vizSearch}
-                    onChange={(event) => handleVisualizationSearch(event.target.value)}
-                    className="bg-white/50 pl-10"
-                  />
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleResetVisualizationFilters}
-                  disabled={!hasVisualizationFilters}
-                >
-                  <Filter className="mr-2 h-4 w-4" />
-                  {t('charts.clearFilters')}
-                </Button>
+  return (
+    <PageContainer>
+      <div className="space-y-8">
+        <header className="flex flex-col gap-6 rounded-3xl bg-gradient-to-br from-indigo-600 via-slate-900 to-slate-950 p-8 text-white shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="max-w-2xl space-y-2">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1 text-xs uppercase tracking-wide">
+                <TrendingUp className="h-4 w-4" aria-hidden />
+                {t('navigation.charts')}
               </div>
+              <h1 className="text-3xl font-semibold leading-tight">
+                Интерактивные дашборды и автоматические инсайты по ключевым метрикам
+              </h1>
+              <p className="text-sm text-slate-200">
+                Сравнивайте сценарии, переключайтесь между сегментами и экспортируйте графики для презентаций.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {TIME_RANGES.map((option) => (
+                <Button
+                  key={option.value}
+                  variant={timeRange === option.value ? 'default' : 'secondary'}
+                  onClick={() => setTimeRange(option.value)}
+                  size="sm"
+                  className={
+                    timeRange === option.value
+                      ? 'bg-white text-slate-900 hover:bg-slate-100'
+                      : 'bg-white/10 text-white hover:bg-white/20'
+                  }
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          </div>
 
-              {visualizationMeta.availableFilters.tags.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-muted-foreground">
-                    {t('charts.filterTags')}
+          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-100">
+            <Filter className="h-4 w-4" aria-hidden />
+            <span>Активный сегмент:</span>
+            <div className="flex flex-wrap gap-2">
+              {SEGMENTS.map((item) => (
+                <Badge
+                  key={item}
+                  onClick={() => setSegment(item)}
+                  className={`cursor-pointer rounded-full border border-white/40 px-3 py-1 text-xs transition ${
+                    segment === item ? 'bg-white text-slate-900' : 'bg-white/10 text-white'
+                  }`}
+                >
+                  {item}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </header>
+
+        <section className="grid gap-4 md:grid-cols-3">
+          <MetricCard icon={BarChart3} label="Выручка" value="₽ 18.4M" delta="▲ 12.8% за период" tone="positive" />
+          <MetricCard icon={LineChart} label="Конверсия" value="6.2%" delta="▲ 0.4 п.п." tone="positive" />
+          <MetricCard icon={PieChartIcon} label="Отток" value="3.1%" delta="▼ 0.7 п.п." tone="negative" />
+        </section>
+
+        <Tabs defaultValue="performance" className="space-y-4">
+          <TabsList className="w-full justify-start rounded-2xl bg-white/70 p-1 backdrop-blur dark:bg-slate-900/60">
+            <TabsTrigger value="performance" className="rounded-xl px-4 py-2 data-[state=active]:bg-slate-900 data-[state=active]:text-white">
+              Производительность
+            </TabsTrigger>
+            <TabsTrigger value="product" className="rounded-xl px-4 py-2 data-[state=active]:bg-slate-900 data-[state=active]:text-white">
+              Продуктовая аналитика
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="performance" className="space-y-6">
+            <Card className="border-none bg-white/80 p-0 shadow-sm dark:bg-slate-900/60">
+              <CardHeader className="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
+                <div>
+                  <CardTitle className="text-lg font-semibold text-slate-900 dark:text-white">
+                    Динамика выручки и прогноз сегмента {segment}
+                  </CardTitle>
+                  <p className="text-sm text-slate-500 dark:text-slate-300">
+                    Серая линия — прогноз, синяя — фактические значения за выбранный период
                   </p>
-                  <div className="flex flex-wrap gap-2">
-                    {visualizationMeta.availableFilters.tags.map((tag) => {
-                      const isActive = vizTags.includes(tag);
-                      return (
-                        <Button
-                          key={tag}
-                          size="sm"
-                          variant={isActive ? 'default' : 'outline'}
-                          onClick={() => handleTagToggle(tag)}
-                        >
-                          <Tag className="mr-2 h-4 w-4" />
-                          {tag}
-                        </Button>
-                      );
-                    })}
-                  </div>
                 </div>
-              )}
+                <Badge variant="secondary" className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200">
+                  {timeRange === '7d' ? 'Последние 7 дней' : timeRange === '30d' ? 'Последние 30 дней' : 'Последние 90 дней'}
+                </Badge>
+              </CardHeader>
+              <CardContent className="h-80 px-2 pb-6">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RechartsLineChart data={filteredLineData} margin={{ top: 10, right: 30, left: 10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="4 8" stroke="rgba(148, 163, 184, 0.3)" />
+                    <XAxis dataKey="date" stroke="rgba(100,116,139,0.8)" />
+                    <YAxis stroke="rgba(100,116,139,0.8)" />
+                    <Tooltip cursor={{ stroke: 'rgba(79,70,229,0.2)', strokeWidth: 2 }} />
+                    <Line type="monotone" dataKey="revenue" stroke="#312e81" strokeWidth={3} dot={{ r: 5 }} activeDot={{ r: 7 }} />
+                    <Line type="monotone" dataKey="forecast" stroke="#94a3b8" strokeDasharray="6 6" strokeWidth={2} dot={false} />
+                  </RechartsLineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
 
-              {visualizationMeta.availableFilters.types.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-muted-foreground">
-                    {t('charts.filterTypes')}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {visualizationMeta.availableFilters.types.map((type) => {
-                      const isActive = vizTypes.includes(type);
-                      return (
-                        <Button
-                          key={type}
-                          size="sm"
-                          variant={isActive ? 'default' : 'outline'}
-                          onClick={() => handleTypeToggle(type)}
-                        >
-                          {type}
-                        </Button>
-                      );
-                    })}
-                  </div>
+            <Card className="border-none bg-white/80 p-0 shadow-sm dark:bg-slate-900/60">
+              <CardHeader className="px-6 py-5">
+                <CardTitle className="text-lg font-semibold text-slate-900 dark:text-white">
+                  Удержание пользователей и скорость внедрения функций
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="h-72 px-2 pb-6">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={AREA_DATA} margin={{ top: 10, right: 30, left: 10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorAdoption" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.05} />
+                      </linearGradient>
+                      <linearGradient id="colorChurn" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#f97316" stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="4 8" stroke="rgba(148, 163, 184, 0.3)" />
+                    <XAxis dataKey="date" stroke="rgba(100,116,139,0.8)" />
+                    <YAxis stroke="rgba(100,116,139,0.8)" />
+                    <Tooltip />
+                    <Area type="monotone" dataKey="adoption" stroke="#4338ca" fill="url(#colorAdoption)" strokeWidth={3} />
+                    <Area type="monotone" dataKey="churn" stroke="#ea580c" fill="url(#colorChurn)" strokeWidth={3} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="product">
+            <Card className="border-none bg-white/80 p-0 shadow-sm dark:bg-slate-900/60">
+              <CardHeader className="px-6 py-5">
+                <CardTitle className="text-lg font-semibold text-slate-900 dark:text-white">
+                  Воронка активации и вовлечённости по сегментам
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 px-6 py-5 text-sm text-slate-600 dark:text-slate-300">
+                <p>
+                  72% новых пользователей проходят ключевую активацию в первый день. Пользователи, завершившие обучение,
+                  совершают первую покупку в среднем через 18 часов. Самый быстрый путь — сегмент APAC.
+                </p>
+                <Separator className="bg-slate-200/70 dark:bg-slate-800" />
+                <div className="grid gap-3 md:grid-cols-2">
+                  {SEGMENTS.map((item) => (
+                    <div key={item} className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/70">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{item}</h3>
+                        <Badge variant="outline" className="border-indigo-200 text-indigo-600 dark:border-indigo-500 dark:text-indigo-200">
+                          34% вовлечённость
+                        </Badge>
+                      </div>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Конверсия в повторные действия выше среднего на 6.3 п.п.
+                      </p>
+                    </div>
+                  ))}
                 </div>
-              )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
-              <div className="flex justify-end">
-                <SavedViewsManager
-                  entity="visualization"
-                  state={visualizationViewState}
-                  onApplyView={handleApplyVisualizationView}
-                />
+        <section className="grid gap-4 lg:grid-cols-2">
+          <Card className="border-none bg-white/70 p-0 shadow-sm dark:bg-slate-900/60">
+            <CardHeader className="px-6 py-5">
+              <CardTitle className="text-lg font-semibold text-slate-900 dark:text-white">
+                Автоматические инсайты
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 px-6 pb-6">
+              {INSIGHTS.map((insight, index) => (
+                <div
+                  key={insight}
+                  className="flex items-start gap-3 rounded-2xl bg-indigo-50/80 p-4 text-sm text-slate-700 dark:bg-indigo-950/40 dark:text-slate-200"
+                >
+                  <span className="mt-1 flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white">
+                    {index + 1}
+                  </span>
+                  <p>{insight}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card className="border-none bg-white/70 p-0 shadow-sm dark:bg-slate-900/60">
+            <CardHeader className="px-6 py-5">
+              <CardTitle className="text-lg font-semibold text-slate-900 dark:text-white">
+                Следующие шаги команды
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 px-6 pb-6 text-sm text-slate-600 dark:text-slate-300">
+              <div className="rounded-2xl border border-slate-200/70 p-4 dark:border-slate-800">
+                <p className="font-medium text-slate-800 dark:text-slate-100">Эксперимент с персонализированными офферами</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Старт 15 февраля • Ответственный: команда роста</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200/70 p-4 dark:border-slate-800">
+                <p className="font-medium text-slate-800 dark:text-slate-100">Запуск новой витрины аналитики для EMEA</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Пилот на группу клиентов с ARPA &gt; 1.2M</p>
               </div>
             </CardContent>
           </Card>
-          <ChartTemplateLibrary onApplyTemplate={handleApplyTemplate} />
-        )}
-
-        {/* Chart Builder */}
-        {showBuilder && (
-          <ChartBuilder
-            chartType={selectedChartType}
-            datasets={datasets}
-            onClose={handleCloseBuilder}
-            onSave={() => loadVisualizations({ page: 1 })}
-            existingViz={editingViz}
-            templatePreset={activeTemplate}
-          />
-        )}
-
-        {/* Chart Gallery */}
-        {!showBuilder && (
-          <ChartGallery
-            visualizations={visualizations}
-            datasets={datasets}
-            isLoading={isLoading}
-            onEdit={handleEditChart}
-            onView={(viz) => setViewingViz(viz)}
-            activeSegment={activeSegment}
-          />
-        )}
-
-        {!showBuilder && visualizationMeta.totalPages > 1 && (
-          <PaginationControls
-            page={vizPagination.page}
-            totalPages={visualizationMeta.totalPages}
-            onPageChange={handleVisualizationsPageChange}
-            isDisabled={isLoading}
-          />
-        )}
-        
-        {/* Chart Viewer Modal */}
-        {viewingViz && (
-            <ChartViewer
-                visualization={viewingViz}
-                datasets={datasets}
-                onClose={() => setViewingViz(null)}
-            />
-        )}
+        </section>
+      </div>
     </PageContainer>
-  );
+  )
 }

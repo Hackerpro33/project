@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 export default defineConfig({
   plugins: [react()],
@@ -24,6 +28,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
+    exclude: ['node_modules', 'dist', 'tests/e2e/**', 'tests/storybook/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
