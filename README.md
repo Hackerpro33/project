@@ -171,6 +171,17 @@ cd backend
 pip install -r app/requirements.txt
 uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 # если uvicorn не найден в PATH (например, в Windows), запустите его как модуль Python:
+# python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# Windows: убедитесь, что Redis запущен (например, `docker run -p 6379:6379 redis`).
+# Для воркера и AI-провайдера теперь можно вызывать модули прямо из корня репозитория —
+# шима `app/` хватает, чтобы добавить `backend` в PYTHONPATH:
+# python -m app.worker
+# python -m app.ai_compute.main
+```
+
+Для пользователей Windows, которые поднимают только фронтенд и бэкенд без devcontainer/`make`,
+подробная пошаговая инструкция находится в [docs/windows_local_run.md](docs/windows_local_run.md).
 # python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 
 # Windows: убедитесь, что Redis запущен (например, `docker run -p 6379:6379 redis`).

@@ -36,6 +36,11 @@ docker compose up -d db redis unleash
 ## 3. Запуск бэкенда
 
 ```bash
+# можно выполнять из корня репозитория — шим добавит backend в PYTHONPATH автоматически
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+> Если модуль `uvicorn` не найден, убедитесь, что виртуальное окружение активировано (`.venv\Scripts\activate`), либо вызывайте `python -m uvicorn ...`, как показано выше.
 cd backend
 python -m uvicorn app.main:app --app-dir backend --reload --host 0.0.0.0 --port 8000
 ```
@@ -61,6 +66,13 @@ npm run dev -- --host
 
 ## 5. Фоновые задачи (по желанию)
 
+Для очередей Redis (воркер и AI compute provider) достаточно выполнить команды из корня репозитория — шим сам добавит `backend` в `PYTHONPATH`:
+
+```bash
+# RQ-воркер
+python -m app.worker
+
+# AI compute provider
 Для очередей Redis (воркер и AI compute provider) запускайте из каталога `backend` или с `PYTHONPATH=backend`:
 
 ```bash
@@ -84,6 +96,7 @@ docker compose down
 
 ## Частые проблемы
 
+- **`ModuleNotFoundError: No module named 'app'`** — убедитесь, что запускаете команды из корня клонa репозитория (там лежит папка `app/`-шим); она автоматически добавляет `backend` в `PYTHONPATH`.
 - **`ModuleNotFoundError: No module named 'app'`** — запускайте команды из каталога `backend` или задайте `PYTHONPATH=backend`.
 - **`getaddrinfo failed` при старте AI-провайдера** — Redis не запущен или недоступен по `redis://localhost:6379`.
 - **Браузер пишет «Не удалось установить соединение»** — проверьте, что `uvicorn` слушает порт 8000 и переменная `VITE_API_BASE` указывает на правильный URL.
