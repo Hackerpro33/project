@@ -10,10 +10,10 @@ from rq import Queue, get_current_job
 from rq.exceptions import NoSuchJobError
 from rq.job import Job
 
-from .config import get_settings
-from .services.extraction import build_extraction
-from .utils.files import load_dataframe_from_identifier
-from .utils.task_history import get_task_history_store
+from app.core.config import get_settings
+from app.services.extraction import build_extraction
+from app.utils.files import load_dataframe_from_identifier
+from app.utils.task_history import get_task_history_store
 
 
 class TaskQueueUnavailable(RuntimeError):

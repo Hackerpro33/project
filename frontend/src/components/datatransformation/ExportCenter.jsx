@@ -270,7 +270,7 @@ export default function ExportCenter({ datasets, supportedFormats, isLoading }) 
             <Database className="w-16 h-16 mx-auto text-slate-400 mb-4" />
             <h3 className="text-lg font-semibold text-slate-700 mb-2">Нет доступных наборов данных</h3>
             <p className="text-slate-500 mb-4">
-              Загрузите данные во вкладке "Источники данных" для экспорта
+              Загрузите данные во вкладке «Источники данных» для экспорта
             </p>
           </CardContent>
         </Card>

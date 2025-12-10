@@ -9,11 +9,19 @@ import QuickActions from "../components/dashboard/QuickActions";
 import RecentActivity from "../components/dashboard/RecentActivity";
 import TrendingCharts from "../components/dashboard/TrendingCharts";
 import PageContainer from "@/components/layout/PageContainer";
+import ProductOnboarding from "@/components/onboarding/ProductOnboarding.jsx";
+import InterfaceTourDialog from "@/components/onboarding/InterfaceTourDialog.jsx";
+import { demoDatasets, demoVisualizations } from "@/components/onboarding/demoProjectData.js";
 
 export default function Dashboard() {
   const [datasets, setDatasets] = useState([]);
   const [visualizations, setVisualizations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDemoLoaded, setIsDemoLoaded] = useState(false);
+  const [isDemoLoading, setIsDemoLoading] = useState(false);
+  const [isTourOpen, setIsTourOpen] = useState(false);
+  const [isOnboardingDismissed, setIsOnboardingDismissed] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   const formatNumber = (value, options = {}) => {
     if (value === null || value === undefined || Number.isNaN(value)) {
@@ -25,6 +33,31 @@ export default function Dashboard() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const dismissed = window.localStorage.getItem('dashboard:onboarding-dismissed') === 'true';
+    const demoStored = window.localStorage.getItem('dashboard:demo-loaded') === 'true';
+    setIsOnboardingDismissed(dismissed);
+    setIsDemoLoaded(demoStored);
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated || typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem('dashboard:onboarding-dismissed', isOnboardingDismissed ? 'true' : 'false');
+  }, [isHydrated, isOnboardingDismissed]);
+
+  useEffect(() => {
+    if (!isHydrated || typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem('dashboard:demo-loaded', isDemoLoaded ? 'true' : 'false');
+  }, [isHydrated, isDemoLoaded]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -40,6 +73,43 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (!isHydrated || !isDemoLoaded) {
+      return;
+    }
+    if (isLoading) {
+      return;
+    }
+    if (datasets.length === 0 && visualizations.length === 0) {
+      setDatasets(demoDatasets.map((item) => ({ ...item })));
+      setVisualizations(demoVisualizations.map((item) => ({ ...item })));
+    }
+  }, [datasets, visualizations, isDemoLoaded, isHydrated, isLoading]);
+
+  const handleLoadDemoProject = () => {
+    if (isDemoLoaded || isDemoLoading) {
+      return;
+    }
+    setIsDemoLoading(true);
+    setTimeout(() => {
+      setDatasets(demoDatasets.map((item) => ({ ...item })));
+      setVisualizations(demoVisualizations.map((item) => ({ ...item })));
+      setIsDemoLoaded(true);
+      setIsOnboardingDismissed(true);
+      setIsDemoLoading(false);
+      setIsLoading(false);
+    }, 400);
+  };
+
+  const handleStartTour = () => {
+    setIsTourOpen(true);
+    setIsOnboardingDismissed(true);
+  };
+
+  const handleDismissOnboarding = () => {
+    setIsOnboardingDismissed(true);
   };
 
 
@@ -198,6 +268,9 @@ export default function Dashboard() {
     return prepared;
   }, [metrics.trendData]);
 
+  const hasContent = datasets.length > 0 || visualizations.length > 0;
+  const showOnboarding = isHydrated && !isLoading && !hasContent && !isOnboardingDismissed;
+
   const now = new Date();
   const datasetsWithDates = datasets
     .map((dataset) => {
@@ -253,6 +326,16 @@ export default function Dashboard() {
 
   return (
     <PageContainer className="space-y-8">
+      {showOnboarding && (
+        <ProductOnboarding
+          onLoadDemo={handleLoadDemoProject}
+          onStartTour={handleStartTour}
+          onDismiss={handleDismissOnboarding}
+          isDemoLoaded={isDemoLoaded}
+          isDemoLoading={isDemoLoading}
+        />
+      )}
+
       {/* Hero Section */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-purple-900 to-slate-900 p-8 text-white">
           <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 via-purple-600/20 to-pink-600/20" />
@@ -322,7 +405,12 @@ export default function Dashboard() {
       />
 
       {/* Quick Actions */}
-      <QuickActions />
+      <QuickActions
+        onLoadDemo={handleLoadDemoProject}
+        onStartTour={handleStartTour}
+        isDemoLoaded={isDemoLoaded}
+        isDemoLoading={isDemoLoading}
+      />
 
       <div className="grid lg:grid-cols-3 gap-8">
         {/* Recent Activity */}
@@ -343,6 +431,7 @@ export default function Dashboard() {
           />
         </div>
       </div>
+      <InterfaceTourDialog open={isTourOpen} onOpenChange={setIsTourOpen} />
     </PageContainer>
   );
 }

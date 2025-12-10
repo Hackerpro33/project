@@ -9,8 +9,8 @@ import math
 import time
 import uuid
 
-from .utils.files import load_dataframe_from_identifier
-from .utils import dictionaries as dictionary_store
+from app.utils.files import load_dataframe_from_identifier
+from app.utils import dictionaries as dictionary_store
 
 router = APIRouter()
 

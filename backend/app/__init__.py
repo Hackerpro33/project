@@ -1,4 +1,5 @@
 """Backend application package."""
-from .version import __version__
+
+from .core.version import __version__
 
 __all__ = ["__version__"]

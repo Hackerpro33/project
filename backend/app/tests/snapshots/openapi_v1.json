@@ -380,9 +380,20 @@
               "minimum": 1,
               "description": "Page number for the synchronous preview fallback",
               "default": 1,
-              "title": "Page"
+              "title": "Page",
+              "example": 2
             },
-            "description": "Page number for the synchronous preview fallback"
+            "description": "Page number for the synchronous preview fallback",
+            "examples": {
+              "next": {
+                "summary": "Следующая страница",
+                "value": 2
+              },
+              "first": {
+                "summary": "Первая страница",
+                "value": 1
+              }
+            }
           },
           {
             "name": "page_size",
@@ -394,9 +405,20 @@
               "minimum": 1,
               "description": "Number of rows to include when returning a synchronous preview",
               "default": 50,
-              "title": "Page Size"
+              "title": "Page Size",
+              "example": 50
             },
-            "description": "Number of rows to include when returning a synchronous preview"
+            "description": "Number of rows to include when returning a synchronous preview",
+            "examples": {
+              "default": {
+                "summary": "Стандартное значение",
+                "value": 20
+              },
+              "extended": {
+                "summary": "Больше объектов",
+                "value": 100
+              }
+            }
           },
           {
             "name": "mode",
@@ -525,7 +547,8 @@
                 }
               ],
               "description": "Comma separated list of statuses to filter by",
-              "title": "Status"
+              "title": "Status",
+              "example": "queued,running"
             },
             "description": "Comma separated list of statuses to filter by"
           },
@@ -543,7 +566,8 @@
                 }
               ],
               "description": "Comma separated list of task types",
-              "title": "Type"
+              "title": "Type",
+              "example": "ingest"
             },
             "description": "Comma separated list of task types"
           },
@@ -557,7 +581,8 @@
               "minimum": 1,
               "description": "Maximum number of items to return",
               "default": 50,
-              "title": "Limit"
+              "title": "Limit",
+              "example": 25
             },
             "description": "Maximum number of items to return"
           },
@@ -570,7 +595,8 @@
               "minimum": 0,
               "description": "Offset for pagination",
               "default": 0,
-              "title": "Offset"
+              "title": "Offset",
+              "example": 40
             },
             "description": "Offset for pagination"
           },
@@ -588,7 +614,8 @@
                 }
               ],
               "description": "Free text search across task metadata and logs",
-              "title": "Q"
+              "title": "Q",
+              "example": "delayed payments"
             },
             "description": "Free text search across task metadata and logs"
           },
@@ -958,9 +985,20 @@
               "minimum": 1,
               "description": "Page number for paginated preview",
               "default": 1,
-              "title": "Page"
+              "title": "Page",
+              "example": 2
             },
-            "description": "Page number for paginated preview"
+            "description": "Page number for paginated preview",
+            "examples": {
+              "next": {
+                "summary": "Следующая страница",
+                "value": 2
+              },
+              "first": {
+                "summary": "Первая страница",
+                "value": 1
+              }
+            }
           },
           {
             "name": "page_size",
@@ -972,9 +1010,20 @@
               "minimum": 1,
               "description": "Number of rows per page",
               "default": 50,
-              "title": "Page Size"
+              "title": "Page Size",
+              "example": 50
             },
-            "description": "Number of rows per page"
+            "description": "Number of rows per page",
+            "examples": {
+              "default": {
+                "summary": "Стандартное значение",
+                "value": 20
+              },
+              "extended": {
+                "summary": "Больше объектов",
+                "value": 100
+              }
+            }
           },
           {
             "name": "mode",
@@ -1148,7 +1197,7 @@
     "/api/v1/dataset/list": {
       "get": {
         "summary": "List Datasets Endpoint",
-        "operationId": "list_datasets_endpoint_api_v1_dataset_list_get",
+        "operationId": "list_datasets_api_v1_dataset_list_get",
         "parameters": [
           {
             "name": "order_by",
@@ -1178,9 +1227,20 @@
               "minimum": 1,
               "description": "Номер страницы",
               "default": 1,
-              "title": "Page"
+              "title": "Page",
+              "example": 2
             },
-            "description": "Номер страницы"
+            "description": "Номер страницы",
+            "examples": {
+              "next": {
+                "summary": "Следующая страница",
+                "value": 2
+              },
+              "first": {
+                "summary": "Первая страница",
+                "value": 1
+              }
+            }
           },
           {
             "name": "page_size",
@@ -1192,9 +1252,20 @@
               "minimum": 1,
               "description": "Количество элементов на странице",
               "default": 20,
-              "title": "Page Size"
+              "title": "Page Size",
+              "example": 50
             },
-            "description": "Количество элементов на странице"
+            "description": "Количество элементов на странице",
+            "examples": {
+              "default": {
+                "summary": "Стандартное значение",
+                "value": 20
+              },
+              "extended": {
+                "summary": "Больше объектов",
+                "value": 100
+              }
+            }
           },
           {
             "name": "search",
@@ -1210,7 +1281,8 @@
                 }
               ],
               "description": "Поисковый запрос",
-              "title": "Search"
+              "title": "Search",
+              "example": "sales quarterly"
             },
             "description": "Поисковый запрос"
           },
@@ -1233,7 +1305,22 @@
               "description": "Фильтр по тегам",
               "title": "Tags"
             },
-            "description": "Фильтр по тегам"
+            "description": "Фильтр по тегам",
+            "examples": {
+              "single": {
+                "summary": "Один тег",
+                "value": [
+                  "finance"
+                ]
+              },
+              "multi": {
+                "summary": "Несколько тегов",
+                "value": [
+                  "finance",
+                  "forecasting"
+                ]
+              }
+            }
           },
           {
             "name": "dataset_types",
@@ -1254,7 +1341,15 @@
               "description": "Фильтр по типам",
               "title": "Dataset Types"
             },
-            "description": "Фильтр по типам"
+            "description": "Фильтр по типам",
+            "examples": {
+              "table": {
+                "summary": "Табличный набор",
+                "value": [
+                  "table"
+                ]
+              }
+            }
           },
           {
             "name": "owners",
@@ -1275,7 +1370,15 @@
               "description": "Фильтр по владельцам",
               "title": "Owners"
             },
-            "description": "Фильтр по владельцам"
+            "description": "Фильтр по владельцам",
+            "examples": {
+              "team": {
+                "summary": "Команда-владелец",
+                "value": [
+                  "team-insights"
+                ]
+              }
+            }
           }
         ],
         "responses": {
@@ -1283,7 +1386,60 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {},
+                "examples": {
+                  "paginated": {
+                    "summary": "Пагинированный список наборов данных",
+                    "value": {
+                      "items": [
+                        {
+                          "id": "ds_sales_2023",
+                          "name": "Sales by Region 2023",
+                          "description": "Сводка продаж по регионам за 2023 год",
+                          "tags": [
+                            "sales",
+                            "finance"
+                          ],
+                          "dataset_type": "table",
+                          "owners": [
+                            "team-insights"
+                          ],
+                          "row_count": 12000,
+                          "created_at": "2023-12-01T08:30:00Z",
+                          "updated_at": "2023-12-15T10:05:00Z"
+                        }
+                      ],
+                      "page": 1,
+                      "page_size": 20,
+                      "total": 1,
+                      "total_pages": 1,
+                      "has_next": false,
+                      "has_previous": false,
+                      "available_filters": {
+                        "tags": [
+                          "finance",
+                          "sales"
+                        ],
+                        "types": [
+                          "table",
+                          "dashboard"
+                        ],
+                        "owners": [
+                          "team-insights"
+                        ]
+                      },
+                      "applied_filters": {
+                        "search": "sales",
+                        "tags": [
+                          "finance"
+                        ],
+                        "types": [],
+                        "owners": [],
+                        "order_by": "-created_at"
+                      }
+                    }
+                  }
+                }
               }
             }
           },
@@ -1297,7 +1453,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Возвращает список наборов данных с поддержкой пагинации, сортировки и фильтров."
       }
     },
     "/api/v1/dataset/refresh/schedules": {
@@ -1629,7 +1786,24 @@
                   "type": "null"
                 }
               ],
-              "title": "Tags"
+              "title": "Tags",
+              "description": "Фильтр по тегам"
+            },
+            "description": "Фильтр по тегам",
+            "examples": {
+              "single": {
+                "summary": "Один тег",
+                "value": [
+                  "finance"
+                ]
+              },
+              "multi": {
+                "summary": "Несколько тегов",
+                "value": [
+                  "finance",
+                  "forecasting"
+                ]
+              }
             }
           },
           {
@@ -1648,7 +1822,17 @@
                   "type": "null"
                 }
               ],
-              "title": "Dataset Types"
+              "title": "Dataset Types",
+              "description": "Фильтр по типу набора данных"
+            },
+            "description": "Фильтр по типу набора данных",
+            "examples": {
+              "table": {
+                "summary": "Табличный набор",
+                "value": [
+                  "table"
+                ]
+              }
             }
           },
           {
@@ -1667,7 +1851,17 @@
                   "type": "null"
                 }
               ],
-              "title": "Owners"
+              "title": "Owners",
+              "description": "Фильтр по владельцам"
+            },
+            "description": "Фильтр по владельцам",
+            "examples": {
+              "team": {
+                "summary": "Команда-владелец",
+                "value": [
+                  "team-insights"
+                ]
+              }
             }
           },
           {
@@ -1679,8 +1873,11 @@
               "maximum": 500,
               "minimum": 1,
               "default": 50,
-              "title": "Limit"
-            }
+              "title": "Limit",
+              "description": "Максимальное количество элементов в ответе",
+              "example": 25
+            },
+            "description": "Максимальное количество элементов в ответе"
           },
           {
             "name": "order_by",
@@ -1744,8 +1941,11 @@
               "maximum": 20,
               "minimum": 1,
               "default": 5,
-              "title": "Limit"
-            }
+              "title": "Limit",
+              "description": "Максимальное количество элементов в ответе",
+              "example": 25
+            },
+            "description": "Максимальное количество элементов в ответе"
           }
         ],
         "responses": {
@@ -2122,7 +2322,8 @@
               "minLength": 1,
               "maxLength": 200,
               "description": "Поисковый запрос по словарям",
-              "title": "Q"
+              "title": "Q",
+              "example": "delayed payments"
             },
             "description": "Поисковый запрос по словарям"
           },
@@ -2172,7 +2373,8 @@
               "minimum": 1,
               "description": "Максимальное количество совпадений",
               "default": 20,
-              "title": "Limit"
+              "title": "Limit",
+              "example": 25
             },
             "description": "Максимальное количество совпадений"
           }
@@ -2383,9 +2585,20 @@
               "minimum": 1,
               "description": "Номер страницы",
               "default": 1,
-              "title": "Page"
+              "title": "Page",
+              "example": 2
             },
-            "description": "Номер страницы"
+            "description": "Номер страницы",
+            "examples": {
+              "next": {
+                "summary": "Следующая страница",
+                "value": 2
+              },
+              "first": {
+                "summary": "Первая страница",
+                "value": 1
+              }
+            }
           },
           {
             "name": "page_size",
@@ -2397,9 +2610,20 @@
               "minimum": 1,
               "description": "Количество элементов на странице",
               "default": 20,
-              "title": "Page Size"
+              "title": "Page Size",
+              "example": 50
             },
-            "description": "Количество элементов на странице"
+            "description": "Количество элементов на странице",
+            "examples": {
+              "default": {
+                "summary": "Стандартное значение",
+                "value": 20
+              },
+              "extended": {
+                "summary": "Больше объектов",
+                "value": 100
+              }
+            }
           },
           {
             "name": "search",
@@ -2415,7 +2639,8 @@
                 }
               ],
               "description": "Поиск по названию, описанию и тегам",
-              "title": "Search"
+              "title": "Search",
+              "example": "sales quarterly"
             },
             "description": "Поиск по названию, описанию и тегам"
           },
@@ -2438,7 +2663,22 @@
               "description": "Фильтр по тегам",
               "title": "Tags"
             },
-            "description": "Фильтр по тегам"
+            "description": "Фильтр по тегам",
+            "examples": {
+              "single": {
+                "summary": "Один тег",
+                "value": [
+                  "finance"
+                ]
+              },
+              "multi": {
+                "summary": "Несколько тегов",
+                "value": [
+                  "finance",
+                  "forecasting"
+                ]
+              }
+            }
           },
           {
             "name": "types",
@@ -2459,7 +2699,15 @@
               "description": "Фильтр по типу визуализации",
               "title": "Types"
             },
-            "description": "Фильтр по типу визуализации"
+            "description": "Фильтр по типу визуализации",
+            "examples": {
+              "chart": {
+                "summary": "Тип визуализации",
+                "value": [
+                  "chart"
+                ]
+              }
+            }
           }
         ],
         "responses": {
@@ -3446,7 +3694,7 @@
     "/api/dataset/list": {
       "get": {
         "summary": "List Datasets Endpoint",
-        "operationId": "list_datasets_endpoint_api_dataset_list_get",
+        "operationId": "list_datasets_api_dataset_list_get",
         "parameters": [
           {
             "name": "order_by",
@@ -3476,9 +3724,20 @@
               "minimum": 1,
               "description": "Номер страницы",
               "default": 1,
-              "title": "Page"
+              "title": "Page",
+              "example": 2
             },
-            "description": "Номер страницы"
+            "description": "Номер страницы",
+            "examples": {
+              "next": {
+                "summary": "Следующая страница",
+                "value": 2
+              },
+              "first": {
+                "summary": "Первая страница",
+                "value": 1
+              }
+            }
           },
           {
             "name": "page_size",
@@ -3490,9 +3749,20 @@
               "minimum": 1,
               "description": "Количество элементов на странице",
               "default": 20,
-              "title": "Page Size"
+              "title": "Page Size",
+              "example": 50
             },
-            "description": "Количество элементов на странице"
+            "description": "Количество элементов на странице",
+            "examples": {
+              "default": {
+                "summary": "Стандартное значение",
+                "value": 20
+              },
+              "extended": {
+                "summary": "Больше объектов",
+                "value": 100
+              }
+            }
           },
           {
             "name": "search",
@@ -3508,7 +3778,8 @@
                 }
               ],
               "description": "Поисковый запрос",
-              "title": "Search"
+              "title": "Search",
+              "example": "sales quarterly"
             },
             "description": "Поисковый запрос"
           },
@@ -3531,7 +3802,22 @@
               "description": "Фильтр по тегам",
               "title": "Tags"
             },
-            "description": "Фильтр по тегам"
+            "description": "Фильтр по тегам",
+            "examples": {
+              "single": {
+                "summary": "Один тег",
+                "value": [
+                  "finance"
+                ]
+              },
+              "multi": {
+                "summary": "Несколько тегов",
+                "value": [
+                  "finance",
+                  "forecasting"
+                ]
+              }
+            }
           },
           {
             "name": "dataset_types",
@@ -3552,7 +3838,15 @@
               "description": "Фильтр по типам",
               "title": "Dataset Types"
             },
-            "description": "Фильтр по типам"
+            "description": "Фильтр по типам",
+            "examples": {
+              "table": {
+                "summary": "Табличный набор",
+                "value": [
+                  "table"
+                ]
+              }
+            }
           },
           {
             "name": "owners",
@@ -3573,7 +3867,15 @@
               "description": "Фильтр по владельцам",
               "title": "Owners"
             },
-            "description": "Фильтр по владельцам"
+            "description": "Фильтр по владельцам",
+            "examples": {
+              "team": {
+                "summary": "Команда-владелец",
+                "value": [
+                  "team-insights"
+                ]
+              }
+            }
           }
         ],
         "responses": {
@@ -3581,7 +3883,60 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {},
+                "examples": {
+                  "paginated": {
+                    "summary": "Пагинированный список наборов данных",
+                    "value": {
+                      "items": [
+                        {
+                          "id": "ds_sales_2023",
+                          "name": "Sales by Region 2023",
+                          "description": "Сводка продаж по регионам за 2023 год",
+                          "tags": [
+                            "sales",
+                            "finance"
+                          ],
+                          "dataset_type": "table",
+                          "owners": [
+                            "team-insights"
+                          ],
+                          "row_count": 12000,
+                          "created_at": "2023-12-01T08:30:00Z",
+                          "updated_at": "2023-12-15T10:05:00Z"
+                        }
+                      ],
+                      "page": 1,
+                      "page_size": 20,
+                      "total": 1,
+                      "total_pages": 1,
+                      "has_next": false,
+                      "has_previous": false,
+                      "available_filters": {
+                        "tags": [
+                          "finance",
+                          "sales"
+                        ],
+                        "types": [
+                          "table",
+                          "dashboard"
+                        ],
+                        "owners": [
+                          "team-insights"
+                        ]
+                      },
+                      "applied_filters": {
+                        "search": "sales",
+                        "tags": [
+                          "finance"
+                        ],
+                        "types": [],
+                        "owners": [],
+                        "order_by": "-created_at"
+                      }
+                    }
+                  }
+                }
               }
             }
           },
@@ -3595,7 +3950,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Возвращает список наборов данных с поддержкой пагинации, сортировки и фильтров."
       }
     },
     "/api/dataset/refresh/schedules": {
@@ -3927,7 +4283,24 @@
                   "type": "null"
                 }
               ],
-              "title": "Tags"
+              "title": "Tags",
+              "description": "Фильтр по тегам"
+            },
+            "description": "Фильтр по тегам",
+            "examples": {
+              "single": {
+                "summary": "Один тег",
+                "value": [
+                  "finance"
+                ]
+              },
+              "multi": {
+                "summary": "Несколько тегов",
+                "value": [
+                  "finance",
+                  "forecasting"
+                ]
+              }
             }
           },
           {
@@ -3946,7 +4319,17 @@
                   "type": "null"
                 }
               ],
-              "title": "Dataset Types"
+              "title": "Dataset Types",
+              "description": "Фильтр по типу набора данных"
+            },
+            "description": "Фильтр по типу набора данных",
+            "examples": {
+              "table": {
+                "summary": "Табличный набор",
+                "value": [
+                  "table"
+                ]
+              }
             }
           },
           {
@@ -3965,7 +4348,17 @@
                   "type": "null"
                 }
               ],
-              "title": "Owners"
+              "title": "Owners",
+              "description": "Фильтр по владельцам"
+            },
+            "description": "Фильтр по владельцам",
+            "examples": {
+              "team": {
+                "summary": "Команда-владелец",
+                "value": [
+                  "team-insights"
+                ]
+              }
             }
           },
           {
@@ -3977,8 +4370,11 @@
               "maximum": 500,
               "minimum": 1,
               "default": 50,
-              "title": "Limit"
-            }
+              "title": "Limit",
+              "description": "Максимальное количество элементов в ответе",
+              "example": 25
+            },
+            "description": "Максимальное количество элементов в ответе"
           },
           {
             "name": "order_by",
@@ -4042,8 +4438,11 @@
               "maximum": 20,
               "minimum": 1,
               "default": 5,
-              "title": "Limit"
-            }
+              "title": "Limit",
+              "description": "Максимальное количество элементов в ответе",
+              "example": 25
+            },
+            "description": "Максимальное количество элементов в ответе"
           }
         ],
         "responses": {
@@ -4663,7 +5062,8 @@
               "minLength": 1,
               "maxLength": 200,
               "description": "Поисковый запрос по словарям",
-              "title": "Q"
+              "title": "Q",
+              "example": "delayed payments"
             },
             "description": "Поисковый запрос по словарям"
           },
@@ -4713,7 +5113,8 @@
               "minimum": 1,
               "description": "Максимальное количество совпадений",
               "default": 20,
-              "title": "Limit"
+              "title": "Limit",
+              "example": 25
             },
             "description": "Максимальное количество совпадений"
           }
@@ -4924,9 +5325,20 @@
               "minimum": 1,
               "description": "Номер страницы",
               "default": 1,
-              "title": "Page"
+              "title": "Page",
+              "example": 2
             },
-            "description": "Номер страницы"
+            "description": "Номер страницы",
+            "examples": {
+              "next": {
+                "summary": "Следующая страница",
+                "value": 2
+              },
+              "first": {
+                "summary": "Первая страница",
+                "value": 1
+              }
+            }
           },
           {
             "name": "page_size",
@@ -4938,9 +5350,20 @@
               "minimum": 1,
               "description": "Количество элементов на странице",
               "default": 20,
-              "title": "Page Size"
+              "title": "Page Size",
+              "example": 50
             },
-            "description": "Количество элементов на странице"
+            "description": "Количество элементов на странице",
+            "examples": {
+              "default": {
+                "summary": "Стандартное значение",
+                "value": 20
+              },
+              "extended": {
+                "summary": "Больше объектов",
+                "value": 100
+              }
+            }
           },
           {
             "name": "search",
@@ -4956,7 +5379,8 @@
                 }
               ],
               "description": "Поиск по названию, описанию и тегам",
-              "title": "Search"
+              "title": "Search",
+              "example": "sales quarterly"
             },
             "description": "Поиск по названию, описанию и тегам"
           },
@@ -4979,7 +5403,22 @@
               "description": "Фильтр по тегам",
               "title": "Tags"
             },
-            "description": "Фильтр по тегам"
+            "description": "Фильтр по тегам",
+            "examples": {
+              "single": {
+                "summary": "Один тег",
+                "value": [
+                  "finance"
+                ]
+              },
+              "multi": {
+                "summary": "Несколько тегов",
+                "value": [
+                  "finance",
+                  "forecasting"
+                ]
+              }
+            }
           },
           {
             "name": "types",
@@ -5000,7 +5439,15 @@
               "description": "Фильтр по типу визуализации",
               "title": "Types"
             },
-            "description": "Фильтр по типу визуализации"
+            "description": "Фильтр по типу визуализации",
+            "examples": {
+              "chart": {
+                "summary": "Тип визуализации",
+                "value": [
+                  "chart"
+                ]
+              }
+            }
           }
         ],
         "responses": {
@@ -6463,8 +6910,11 @@
               "maximum": 500,
               "minimum": 1,
               "default": 100,
-              "title": "Limit"
-            }
+              "title": "Limit",
+              "description": "Максимальное количество элементов в ответе",
+              "example": 25
+            },
+            "description": "Максимальное количество элементов в ответе"
           }
         ],
         "responses": {
@@ -7709,73 +8159,6 @@
             ],
             "title": "Has More",
             "description": "Whether more rows are available when ``mode`` is 'page'"
-          },
-          "preview_type": {
-            "type": "string",
-            "enum": [
-              "table",
-              "pdf",
-              "image",
-              "binary"
-            ],
-            "title": "Preview Type",
-            "description": "Detected preview type allowing the frontend to choose a renderer",
-            "default": "table"
-          },
-          "content_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content Type",
-            "description": "Best-effort MIME type associated with the previewed file"
-          },
-          "pages": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": "array",
-            "title": "Pages",
-            "description": "Structured representation of document pages when applicable (e.g. PDF)"
-          },
-          "thumbnails": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Thumbnails",
-            "description": "Base64 encoded thumbnails for binary assets like images"
-          },
-          "text_preview": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text Preview",
-            "description": "Optional extracted textual preview for binary formats"
-          },
-          "metadata": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Metadata",
-            "description": "Additional metadata such as dimensions or total pages"
-          },
-          "warnings": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Warnings",
-            "description": "Non-fatal preview warnings"
           }
         },
         "type": "object",

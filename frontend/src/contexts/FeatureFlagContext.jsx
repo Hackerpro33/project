@@ -5,7 +5,7 @@ import { jsonRequest } from '@/api/http.js'
 export const FeatureFlagContext = createContext({ flags: {}, loading: true, error: null })
 
 async function fetchFeatureFlags(signal) {
-  const payload = await jsonRequest('/feature-flags', { signal })
+  const payload = await jsonRequest('/api/feature-flags', { signal })
   return payload.flags || {}
 }
 

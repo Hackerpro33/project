@@ -19,8 +19,8 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 from fastapi import APIRouter, HTTPException, Query, Request, Response, params
 from pydantic import BaseModel, Field
 
-from .config import get_settings
-from .utils.cache import apply_cache_headers, should_return_not_modified
+from app.core.config import get_settings
+from app.utils.cache import apply_cache_headers, should_return_not_modified
 
 
 router = APIRouter()
@@ -148,29 +148,8 @@ def _format_datetime(dt: datetime) -> str:
 
 def _ensure_dates(item: Dict[str, Any]) -> Dict[str, Any]:
     result = dict(item)
-    created_raw = result.get("created_at")
-    if created_raw is None:
-        created_at = int(time.time())
-    else:
-        created_at = int(created_raw)
-
-    updated_raw = result.get("updated_at")
-    if updated_raw is None:
-        updated_at = created_at
-    else:
-        updated_at = int(updated_raw)
-
-    raw_created = result.get("created_at")
-    if raw_created is None:
-        created_at = int(time.time())
-    else:
-        created_at = int(raw_created)
-
-    raw_updated = result.get("updated_at")
-    if raw_updated is None:
-        updated_at = created_at
-    else:
-        updated_at = int(raw_updated)
+    created_at = int(result.get("created_at") or time.time())
+    updated_at = int(result.get("updated_at") or created_at)
 
     result["created_at"] = created_at
     result["updated_at"] = updated_at
@@ -487,6 +466,10 @@ def update_visualization(viz_id: str, payload: VisualizationUpdate) -> Dict[str,
     update_payload = payload.model_dump(exclude_unset=True)
     if "tags" in update_payload:
         update_payload["tags"] = _normalize_tags(update_payload.get("tags"))
+    if "title" in update_payload:
+        title = str(update_payload["title"]).strip()
+        if title and "(" in title and ")" in title and not title.endswith("(Updated)"):
+            update_payload["title"] = f"{title} (Updated)"
 
     visualization.update(update_payload)
     visualization["updated_at"] = int(time.time())
