@@ -6,7 +6,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app import collaboration_api
+from app.api.routes import collaboration as collaboration_api
 from app.main import app
 
 DEFAULT_HEADERS = {"host": "localhost"}

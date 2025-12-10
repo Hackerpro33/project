@@ -41,13 +41,13 @@ omit = [
   "backend/app/services/*",
   "backend/app/utils/preview.py",
   "backend/app/utils/task_history.py",
-  "backend/app/audit_api.py",
-  "backend/app/collaboration_api.py",
-  "backend/app/datasets_api.py",
-  "backend/app/dictionary_api.py",
-  "backend/app/views_api.py",
-  "backend/app/visualizations_api.py",
-  "backend/app/tasks.py",
+  "backend/app/api/routes/audit.py",
+  "backend/app/api/routes/collaboration.py",
+  "backend/app/api/routes/datasets.py",
+  "backend/app/api/routes/dictionary.py",
+  "backend/app/api/routes/views.py",
+  "backend/app/api/routes/visualizations.py",
+  "backend/app/tasks/queue.py",
 ]
 
 [tool.coverage.report]

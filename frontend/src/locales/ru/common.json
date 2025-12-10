@@ -15,11 +15,16 @@
     "forecasting": "Прогнозирование",
     "networks": "Графы связей",
     "constructor": "Конструктор",
-    "settings": "Настройки"
+    "settings": "Настройки",
+    "versions": "Версии наборов",
+    "collaboration": "Совместная работа",
+    "history": "История задач",
+    "toggleSidebar": "Открыть меню"
   },
   "language": {
     "en": "Английский",
-    "ru": "Русский"
+    "ru": "Русский",
+    "label": "Язык интерфейса"
   },
   "pagination": {
     "previous": "Назад",
@@ -158,5 +163,29 @@
     "clearFilters": "Сбросить фильтры",
     "filterTags": "Фильтр по тегам",
     "filterTypes": "Фильтр по типам"
+  },
+  "theme": {
+    "switchToLight": "Переключить на светлую тему",
+    "switchToDark": "Переключить на тёмную тему",
+    "toggleLabel": "Тема",
+    "toggleAria": "Переключить тему оформления"
+  },
+  "hotkeys": {
+    "title": "Горячие клавиши",
+    "subtitle": "Используйте сочетания для быстрых действий.",
+    "openPalette": "Открыть командное меню",
+    "commandButton": "Командное меню",
+    "paletteLabel": "Быстрый поиск команд",
+    "palettePlaceholder": "Введите команду или страницу...",
+    "noResults": "Ничего не найдено",
+    "navigationGroup": "Перейти на страницу",
+    "helpGroup": "Сочетания",
+    "theme": "Переключить тему",
+    "themeShortcut": "Ctrl / ⌘ ⇧ T",
+    "language": "Сменить язык",
+    "languageShortcut": "Ctrl / ⌘ ⇧ L"
+  },
+  "a11y": {
+    "skipToContent": "Перейти к основному содержимому"
   }
 }

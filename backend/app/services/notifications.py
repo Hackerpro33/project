@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from ..config import Settings, get_settings
+from ..core.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 

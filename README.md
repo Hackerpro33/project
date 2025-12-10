@@ -1,10 +1,97 @@
 ## Обзор
 
 Проект собирает экспериментальную витрину данных с веб-интерфейсом на React и API на FastAPI.
-Этот документ описывает локальный запуск, а также инфраструктурные практики, которые мы
-используем для обеспечения качества и стабильности.
+Этот документ дополняет инструкции по запуску обзором архитектуры, ключевых возможностей,
+планами развития и руководством для контрибьюторов.
 
 ![Coverage badge](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/OWNER/REPO/gh-pages/coverage/coverage.json)
+
+### Кратко о системе
+
+- **Назначение.** Импорт табличных данных, быстрые инсайты и углублённая аналитика на базе
+  фоновых задач.
+- **Стек.** Frontend на React/Vite, Backend на FastAPI + SQLModel, очередь Redis/RQ, Postgres и
+  объектное хранилище для файлов.
+- **Контракты.** OpenAPI схема, Pact-тесты и снапшоты обеспечивают предсказуемость интеграций.
+
+## Архитектура
+
+Система построена вокруг SPA на React, которое общается с FastAPI через REST `/api/v1`. Backend
+валидирует и сохраняет файлы, ставит задачи в Redis/RQ и обновляет метаданные в Postgres.
+Подробные диаграммы и ADR доступны в [docs/architecture.md](docs/architecture.md).
+
+```mermaid
+C4Container
+    title Insight Sphere — контейнеры (сводка)
+    Person(user, "Аналитик")
+    System_Boundary(system, "Insight Sphere") {
+        Container(ui, "React SPA", "Vite", "UI, визуализации, управление загрузками")
+        Container(api, "FastAPI", "Python", "Проверка файлов, REST API, профили")
+        Container(worker, "RQ worker", "Python", "Асинхронная обработка и отчёты")
+    }
+    ContainerDb(db, "Postgres", "SQLModel", "Метаданные и профили")
+    Container(files, "Object Storage", "S3 совместимое", "Загруженные файлы")
+    Container(redis, "Redis", "Queue/Cache", "Очередь задач и кеш статусов")
+    Rel(user, ui, "HTTP(S)")
+    Rel(ui, api, "REST /api/v1")
+    Rel(api, files, "PUT/GET")
+    Rel(api, db, "SQL")
+    Rel(api, redis, "enqueue / poll")
+    Rel(worker, files, "Читает данные")
+    Rel(worker, db, "Обновляет результаты")
+    Rel(worker, redis, "Статусы задач")
+```
+
+**Потоки данных**
+
+1. Пользователь загружает CSV/XLSX, backend валидирует расширение, размер и (опционально) сканирует
+   ClamAV.
+2. Файл сохраняется в объектном хранилище, метаданные фиксируются в Postgres.
+3. «Быстрый» анализ возвращается синхронно, углублённые расчёты ставятся в очередь Redis/RQ.
+4. Воркеры подхватывают задачи, читают файлы и обновляют профили, UI опрашивает `/api/v1/tasks/{id}`.
+
+## Матрица возможностей
+
+| Направление | Поддерживаемые возможности | Статус | Комментарии |
+| --- | --- | --- | --- |
+| Загрузка данных | CSV/TSV/XLS(X), лимиты размера, ClamAV, идемпотентность | ✅ Стабильно | Ограничивается `MAX_UPLOAD_SIZE_MB`, расширяемый whitelist форматов |
+| Профилирование | Быстрый анализ (схемы, типы, статистики), асинхронные отчёты | ✅ Стабильно | Расширяемые задачи RQ с хранением в Postgres |
+| Управление наборами | CRUD, версионирование метаданных, экспорт | 🟡 Beta | Переход на SQLModel/Postgres в Q2 2025 |
+| Аналитика UI | Панели «Продвинутая аналитика», графы знаний, симуляции | 🟡 Beta | См. [docs/predictive_analytics_overview.md](docs/predictive_analytics_overview.md) |
+| Дашборды и визуализации | Конструктор, шаблоны, сравнение версий | 🔜 В планах | Требования — [docs/dashboard_feature_specs.md](docs/dashboard_feature_specs.md) |
+| Поиск и рекомендации | Фасетный и семантический поиск, теги, рекомендации | 🔜 В планах | Запланировано в Q4 2025+ |
+| Безопасность и соответствие | RBAC, аудит, секреты, лимиты | 🛠️ В разработке | Требования см. в `docs/secrets.md`, чек-лист — [docs/security_backlog.md](docs/security_backlog.md) |
+
+Легенда: ✅ — доступно в продакшене, 🟡 — ограниченная beta, 🔜 — запланировано, 🛠️ — активно
+разрабатывается.
+
+## Дорожная карта (сводка)
+
+Детальная дорожная карта ведётся в [ROADMAP.md](ROADMAP.md) и GitHub Projects. Ключевые инициативы:
+
+- **Now (Q1 2025).** Усиление инженерных практик, тестов и автоматизации релизов, настройка CI и
+  повышение покрытия.
+- **Next (Q2 2025).** Миграция на Postgres, внедрение Redis для кэша/очереди, укрепление безопасности
+  API, ограничение загрузок и наблюдаемость.
+- **Later (Q3–Q4 2025).** DevOps excellence, совместная работа (шаринг, уведомления), расширенная
+  аналитика, фасетный поиск, мониторинг аномалий и дашборды.
+- **Backlog.** Расширенные сценарии импорта, автогенерация описаний, безкодовые трансформации и
+  глубокая аналитика.
+
+Регулярные апдейты происходят на ежеквартальных review; предложить инициативы можно через issue
+шаблоны.
+
+## Как внести вклад
+
+1. Ознакомьтесь с [CONTRIBUTING.md](CONTRIBUTING.md) и [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+2. Форкните репозиторий, создайте ветку `feature/<topic>` и установите зависимости (`pip install -r
+   requirements.txt`, `./scripts/install_frontend_deps.sh`).
+3. Активируйте `pre-commit`, запустите `make dev` или `docker compose up` для окружения разработки.
+4. Перед отправкой PR выполните чек-лист качества: линтеры, тесты, типизация, покрытие ≥80%.
+5. Коммиты оформляйте в стиле Conventional Commits, PR сопровождать описанием, ссылками на issue и
+   скриншотами UI-изменений.
+6. Обновляйте документацию, CHANGELOG и roadmap при добавлении значимых функций, фиксируйте решения в
+   `docs/adr`.
 
 ## Управление релизами
 
@@ -58,10 +145,24 @@ make ci          # билд всего стека в режиме CI с пере
 # установка зависимостей, не покидая корень репозитория
 ./scripts/install_frontend_deps.sh
 
-# запуск Vite dev-сервера
+# либо вручную из каталога frontend
 cd frontend
+npm install
+
+# запуск Vite dev-сервера
 npm run dev
+
+# проверка уязвимостей (выполняйте из каталога фронтенда или
+# передайте --prefix, чтобы npm нашёл package-lock.json)
+npm audit --prefix frontend
 ```
+
+> Если при запуске появляется сообщение `vite: not found`, это означает, что
+> зависимости ещё не установлены. Повторный запуск `npm run dev` теперь
+> автоматически подтянет их (скрипт `predev` вызывает `npm install`, если не
+> найден локальный бинарник Vite). При необходимости вы можете вручную вызвать
+> `npm install` или `./scripts/install_frontend_deps.sh`, а затем повторить
+> команду `npm run dev`.
 
 ## Запуск бэкенда
 
@@ -81,6 +182,32 @@ uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 
 Для пользователей Windows, которые поднимают только фронтенд и бэкенд без devcontainer/`make`,
 подробная пошаговая инструкция находится в [docs/windows_local_run.md](docs/windows_local_run.md).
+# python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
+
+# Windows: убедитесь, что Redis запущен (например, `docker run -p 6379:6379 redis`).
+# Для воркера и AI-провайдера используйте модульный вызов из каталога `backend`
+# (или задайте `PYTHONPATH=backend`, если запускаете из корня репозитория), чтобы
+# избежать ошибки `No module named 'app'`, когда `rq`/`python` не в PATH:
+# cd backend && python -m app.worker
+# cd backend && python -m app.ai_compute.main
+# # либо из корня:
+# PYTHONPATH=backend python -m backend.app.worker
+# PYTHONPATH=backend python -m backend.app.ai_compute.main
+```
+
+Для пользователей Windows, которые поднимают только фронтенд и бэкенд без devcontainer/`make`,
+подробная пошаговая инструкция находится в [docs/windows_local_run.md](docs/windows_local_run.md).
+
+# установка зависимостей
+../scripts/install_backend_deps.sh
+
+# запуск API
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+> Скрипт `install_backend_deps.sh` гарантирует, что используется корректный
+> путь `app/requirements.txt`. При необходимости его можно заменить на ручной
+> вызов `python -m pip install -r app/requirements.txt`.
 
 ### Политика загрузки и документация API
 
@@ -201,6 +328,12 @@ npm run build
 Проект поставляется с эндпоинтами `/metrics`, `/healthz` и `/readiness` для интеграции с
 Prometheus и оркестраторами. Логи формируются в формате JSON и включают trace-id для связывания
 с трассировками OpenTelemetry. Для отслеживания исключений используется Sentry.
+
+Правила срабатывания алёртов по ошибкам и деградациям описаны в runbook
+[docs/runbooks/alerts.md](docs/runbooks/alerts.md).
+
+Готовые манифесты для Prometheus Rule и Alertmanager располагаются в каталоге
+`deploy/monitoring` и могут применяться напрямую (`kubectl apply -f ...`).
 
 Helm-чарт (`deploy/helm/insight-sphere`) и kustomize-оверлеи (`deploy/kustomize/overlays`) содержат
 готовые Deployment/Service/ServiceMonitor-манифесты. В чарте настроены лимиты ресурсов, пробки

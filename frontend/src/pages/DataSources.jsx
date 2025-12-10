@@ -1,746 +1,451 @@
-import { Dataset } from "@/api/entities";
-import React, { useState, useEffect } from "react";
-import { useTranslation } from "react-i18next";
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { extractDataFromUploadedFile, uploadFile } from "@/api/integrations";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  Database,
-  Search,
-  Plus,
-  AlertTriangle
-} from "lucide-react";
-import React, { useState, useEffect } from "react";
-import { extractDataFromUploadedFile, importDatasetFromUrl } from "@/api/integrations";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Database, Tag, Search, Filter, Plus } from "lucide-react";
+import React, { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Database, Filter, RefreshCw, Search } from 'lucide-react'
 
-import FileUploadZone from "../components/datasources/FileUploadZone";
-import LinkImportForm from "../components/datasources/LinkImportForm";
-import DatasetCard from "../components/datasources/DatasetCard";
-import DatasetPreview from "../components/datasources/DatasetPreview";
-import DataImportPreview from "../components/datasources/DataImportPreview";
-import PageContainer from "@/components/layout/PageContainer";
-import PaginationControls from "@/components/common/PaginationControls";
-import SavedViewsManager from "@/components/common/SavedViewsManager";
-import TaskEventLog from "@/components/tasks/TaskEventLog";
-import { resumableUpload } from "@/lib/resumableUpload";
+import PageContainer from '@/components/layout/PageContainer'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Dataset } from '@/api/entities'
 
-const MAX_FILE_SIZE_MB = 25;
-const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-const EXTRACTION_SCHEMA = {
-  type: 'object',
-  properties: {
-    columns: {
-      type: 'array',
-      description:
-        'Массив объектов столбцов, каждый с именем и определенным типом данных (например, string, number, date).',
-      items: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          type: { type: 'string' },
-        },
-        required: ['name', 'type'],
-      },
-    },
-    row_count: {
-      type: 'number',
-      description: 'Общее количество строк в наборе данных.',
-    },
-    sample_data: {
-      type: 'array',
-      description:
-        'Массив объектов, представляющих первые несколько строк данных. Каждый объект — это пара ключ-значение, где ключ — это имя столбца.',
-      items: {
-        type: 'object',
-        additionalProperties: true,
-      },
-    },
+import DatasetPreview from '../components/datasources/DatasetPreview'
+
+const FALLBACK_DATASETS = [
+  {
+    id: 'sales-performance',
+    name: 'Продажи за 2024 год',
+    owner: 'Отдел аналитики',
+    type: 'table',
+    tags: ['финансы', 'crm', 'продажи'],
+    rows: 24560,
+    columns: [
+      { name: 'date', type: 'date', description: 'Дата сделки' },
+      { name: 'region', type: 'string', description: 'Регион продаж' },
+      { name: 'manager', type: 'string', description: 'Ответственный менеджер' },
+      { name: 'amount', type: 'number', description: 'Сумма сделки' },
+      { name: 'probability', type: 'number', description: 'Вероятность закрытия' },
+    ],
+    updatedAt: '2024-02-12T09:45:00Z',
+    description:
+      'Объединённый набор данных по продажам с детализацией по регионам, менеджерам и стадиям воронки.',
+    sample: [
+      { date: '2024-02-10', region: 'Санкт-Петербург', manager: 'Ирина Козлова', amount: 180000, probability: 0.72 },
+      { date: '2024-02-11', region: 'Новосибирск', manager: 'Денис Михайлов', amount: 265000, probability: 0.64 },
+    ],
+    freshness: 'Ежечасно',
   },
-  required: ['columns', 'row_count', 'sample_data'],
-};
+  {
+    id: 'logistics-delivery',
+    name: 'Логистика и доставка',
+    owner: 'Операционный отдел',
+    type: 'events',
+    tags: ['логистика', 'iot'],
+    rows: 8034,
+    columns: [
+      { name: 'shipment_id', type: 'string', description: 'Уникальный идентификатор отправления' },
+      { name: 'status', type: 'string', description: 'Текущий статус доставки' },
+      { name: 'eta', type: 'datetime', description: 'Ожидаемое время доставки' },
+      { name: 'hub', type: 'string', description: 'Промежуточный узел' },
+    ],
+    updatedAt: '2024-02-11T21:10:00Z',
+    description: 'Оперативные данные о доставках и SLA по направлениям.',
+    sample: [
+      { shipment_id: 'RU-102144', status: 'В пути', eta: '2024-02-13T11:30:00Z', hub: 'Москва' },
+      { shipment_id: 'RU-102301', status: 'Ожидает подтверждения', eta: '2024-02-14T08:15:00Z', hub: 'Казань' },
+    ],
+    freshness: 'Каждые 15 минут',
+  },
+  {
+    id: 'support-center',
+    name: 'Обращения в поддержку',
+    owner: 'Служба поддержки',
+    type: 'tickets',
+    tags: ['поддержка', 'nps'],
+    rows: 15230,
+    columns: [
+      { name: 'ticket_id', type: 'string', description: 'Номер обращения' },
+      { name: 'channel', type: 'string', description: 'Канал связи' },
+      { name: 'created_at', type: 'datetime', description: 'Дата и время создания' },
+      { name: 'status', type: 'string', description: 'Текущий статус' },
+      { name: 'nps', type: 'number', description: 'Оценка удовлетворенности' },
+    ],
+    updatedAt: '2024-02-12T06:30:00Z',
+    description: 'История обращений клиентов с оценками NPS и SLA.',
+    sample: [
+      { ticket_id: 'SR-2451', channel: 'Чат', created_at: '2024-02-11T15:05:00Z', status: 'Закрыто', nps: 9 },
+      { ticket_id: 'SR-2462', channel: 'Email', created_at: '2024-02-11T16:30:00Z', status: 'В работе', nps: 7 },
+    ],
+    freshness: 'Каждые 30 минут',
+  },
+]
 
-const createFallbackDatasetName = () => `dataset-${Date.now()}`;
+const FALLBACK_MESSAGE =
+  'Мы показали демонстрационные данные, потому что не удалось получить ответ от сервера. '
+  + 'Проверьте подключение или попробуйте позже.'
 
-const normalizeFileName = (value) => {
-  if (!value) {
-    return '';
+function buildFacets(datasets) {
+  const tags = new Set()
+  const types = new Set()
+  const owners = new Set()
+
+  datasets.forEach((dataset) => {
+    dataset.tags?.forEach((tag) => tags.add(tag))
+    if (dataset.type) types.add(dataset.type)
+    if (dataset.owner) owners.add(dataset.owner)
+  })
+
+  return {
+    tags: Array.from(tags).sort(),
+    types: Array.from(types).sort(),
+    owners: Array.from(owners).sort(),
   }
-  const withoutQuery = value.split('?')[0].split('#')[0];
-  const sanitized = withoutQuery.replace(/[\\/:*?"<>|]+/g, '_').trim();
-  return sanitized;
-};
-
-const ensureFileName = (candidate) => {
-  const normalized = normalizeFileName(candidate);
-  return normalized || createFallbackDatasetName();
-};
-
-const extractErrorMessage = (error, fallback) => {
-  const rawMessage = error?.message || error?.detail || '';
-  if (!rawMessage) {
-    return fallback;
-  }
-
-  const trimmed = rawMessage.trim();
-  if (!trimmed) {
-    return fallback;
-  }
-
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (typeof parsed === 'string') {
-      return parsed;
-    }
-    if (parsed && typeof parsed === 'object') {
-      if (typeof parsed.detail === 'string') {
-        return parsed.detail;
-      }
-      if (typeof parsed.message === 'string') {
-        return parsed.message;
-      }
-    }
-  } catch (errorParsing) {
-    // not JSON - fall back to string below
-  }
-
-  return trimmed;
-};
+}
 
 export default function DataSources() {
-  const { t } = useTranslation();
-  const [datasets, setDatasets] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isUploading, setIsUploading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [availableFilters, setAvailableFilters] = useState({ tags: [] });
-  const [selectedTags, setSelectedTags] = useState([]);
-  const [pagination, setPagination] = useState({ page: 1, pageSize: 12 });
-  const [totalPages, setTotalPages] = useState(0);
-  const [selectedDataset, setSelectedDataset] = useState(null);
-  const [showPreview, setShowPreview] = useState(false);
-  const [showImportPreview, setShowImportPreview] = useState(false);
-  const [pendingDataset, setPendingDataset] = useState(null);
-  const [facets, setFacets] = useState({ tags: [], types: [], owners: [] });
-  const [selectedTags, setSelectedTags] = useState([]);
-  const [selectedTypes, setSelectedTypes] = useState([]);
-  const [selectedOwners, setSelectedOwners] = useState([]);
-  const [searchError, setSearchError] = useState(null);
-  const [searchMeta, setSearchMeta] = useState({ total: 0, applied_filters: {} });
-  const [refreshToken, setRefreshToken] = useState(0);
-  const activeRequestRef = useRef(0);
-  const [uploadProgress, setUploadProgress] = useState(null);
-  const [isImporting, setIsImporting] = useState(false);
+  const { t } = useTranslation()
+  const [datasets, setDatasets] = useState(FALLBACK_DATASETS)
+  const [isLoading, setIsLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [activeTags, setActiveTags] = useState([])
+  const [activeType, setActiveType] = useState('all')
+  const [activeOwner, setActiveOwner] = useState('all')
+  const [errorMessage, setErrorMessage] = useState('')
+  const [previewDataset, setPreviewDataset] = useState(null)
 
-  const normalizedFilters = useMemo(
-    () => ({
-      query: searchTerm.trim(),
-      tags: selectedTags,
-      types: selectedTypes,
-      owners: selectedOwners,
-    }),
-    [searchTerm, selectedTags, selectedTypes, selectedOwners],
-  );
-
-  const loadDatasets = async ({ page, pageSize, search, tags } = {}) => {
-    const nextPage = page ?? pagination.page;
-    const nextPageSize = pageSize ?? pagination.pageSize;
-    const nextSearch = search ?? searchTerm;
-    const nextTags = tags ?? selectedTags;
-    setIsLoading(true);
-    try {
-      const response = await Dataset.list({
-        orderBy: '-created_at',
-        page: nextPage,
-        pageSize: nextPageSize,
-        search: nextSearch || undefined,
-        tags: nextTags.length ? nextTags : undefined,
-      });
-      setDatasets(Array.isArray(response.items) ? response.items : []);
-      setAvailableFilters(response.available_filters ?? { tags: [] });
-      setPagination({
-        page: response.page ?? nextPage,
-        pageSize: response.page_size ?? nextPageSize,
-      });
-      setTotalPages(response.total_pages ?? 0);
-    } catch (err) {
-      console.error('Failed to load datasets:', err);
-      setDatasets([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSearchChange = (value) => {
-    setSearchTerm(value);
-    setPagination((prev) => ({ ...prev, page: 1 }));
-    loadDatasets({ page: 1, search: value });
-  };
-
-  const handleToggleTag = (tag) => {
-    setSelectedTags((prev) => {
-      const exists = prev.includes(tag);
-      const next = exists ? prev.filter((item) => item !== tag) : [...prev, tag];
-      setPagination((state) => ({ ...state, page: 1 }));
-      loadDatasets({ page: 1, tags: next });
-      return next;
-    });
-  };
-
-  const handleClearFilters = () => {
-    setSearchTerm("");
-    setSelectedTags([]);
-    setPagination((prev) => ({ ...prev, page: 1 }));
-    loadDatasets({ page: 1, search: "", tags: [] });
-  };
-
-  const handlePageChange = (page) => {
-    setPagination((prev) => ({ ...prev, page }));
-    loadDatasets({ page });
-  };
-
-  const handleApplyView = (view) => {
-    const nextTags = view?.filters?.tags ?? [];
-    const nextSearch = view?.search ?? "";
-    const nextPageSize = view?.page_size ?? pagination.pageSize;
-    setSearchTerm(nextSearch);
-    setSelectedTags(nextTags);
-    setPagination({ page: 1, pageSize: nextPageSize });
-    loadDatasets({ page: 1, pageSize: nextPageSize, search: nextSearch, tags: nextTags });
-  };
-
-  const handleFileUpload = async (file) => {
-    setIsUploading(true);
   useEffect(() => {
-    let cancelled = false;
-    const requestId = activeRequestRef.current + 1;
-    activeRequestRef.current = requestId;
-    setIsLoading(true);
-    setSearchError(null);
+    let isMounted = true
 
-    const timer = setTimeout(async () => {
+    async function loadDatasets() {
+      setIsLoading(true)
       try {
-        const response = await Dataset.search({
-          query: normalizedFilters.query || undefined,
-          tags: normalizedFilters.tags,
-          types: normalizedFilters.types,
-          owners: normalizedFilters.owners,
-          limit: 60,
-          orderBy: '-created_at',
-        });
-        if (cancelled || activeRequestRef.current !== requestId) {
-          return;
+        const response = await Dataset.search({ limit: 50 })
+        if (!isMounted) return
+
+        if (Array.isArray(response?.items) && response.items.length > 0) {
+          setDatasets(response.items)
+          setErrorMessage('')
+        } else {
+          setDatasets(FALLBACK_DATASETS)
+          setErrorMessage(FALLBACK_MESSAGE)
         }
-        const items = Array.isArray(response?.items) ? response.items : [];
-        setDatasets(items);
-        setFacets({
-          tags: response?.facets?.tags ?? [],
-          types: response?.facets?.types ?? [],
-          owners: response?.facets?.owners ?? [],
-        });
-        setSearchMeta({
-          total: response?.total ?? items.length,
-          applied_filters: response?.applied_filters ?? {},
-        });
       } catch (error) {
-        if (cancelled || activeRequestRef.current !== requestId) {
-          return;
-        }
-        console.error('Failed to load datasets:', error);
-        setDatasets([]);
-        setSearchError('Не удалось загрузить данные. Попробуйте обновить страницу позже.');
+        console.error('Failed to load datasets', error)
+        if (!isMounted) return
+        setDatasets(FALLBACK_DATASETS)
+        setErrorMessage(FALLBACK_MESSAGE)
       } finally {
-        if (!cancelled && activeRequestRef.current === requestId) {
-          setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false)
         }
       }
-    }, 250);
+    }
+
+    loadDatasets()
 
     return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [normalizedFilters, refreshToken]);
+      isMounted = false
+    }
+  }, [])
 
-  const toggleFacetValue = (value, selectedValues, setValues) => {
-    if (!value) return;
-    setValues((prev) => {
-      const exists = prev.includes(value);
-      if (exists) {
-        return prev.filter((item) => item !== value);
-      }
-      return [...prev, value];
-    });
-  };
+  const facets = useMemo(() => buildFacets(datasets), [datasets])
+
+  const filteredDatasets = useMemo(() => {
+    return datasets.filter((dataset) => {
+      const matchesSearch = searchTerm
+        ? dataset.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          dataset.description?.toLowerCase().includes(searchTerm.toLowerCase())
+        : true
+
+      const matchesTags = activeTags.length
+        ? activeTags.every((tag) => dataset.tags?.includes(tag))
+        : true
+
+      const matchesType = activeType === 'all' ? true : dataset.type === activeType
+      const matchesOwner = activeOwner === 'all' ? true : dataset.owner === activeOwner
+
+      return matchesSearch && matchesTags && matchesType && matchesOwner
+    })
+  }, [datasets, searchTerm, activeTags, activeOwner, activeType])
+
+  const totalRows = useMemo(
+    () => filteredDatasets.reduce((sum, item) => sum + (item.rows || 0), 0),
+    [filteredDatasets],
+  )
+
+  const toggleTag = (tag) => {
+    setActiveTags((prev) => (prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]))
+  }
 
   const resetFilters = () => {
-    setSelectedTags([]);
-    setSelectedTypes([]);
-    setSelectedOwners([]);
-    setSearchTerm('');
-  };
-
-  const deriveFileNameFromUrl = (value) => {
-    if (!value) {
-      return ''
-    }
-    try {
-      const parsed = new URL(value)
-      const segments = parsed.pathname?.split('/')?.filter(Boolean) ?? []
-      const lastSegment = segments[segments.length - 1] ?? ''
-      const decoded = decodeURIComponent(lastSegment)
-      return normalizeFileName(decoded)
-    } catch (error) {
-      return ''
-    }
+    setSearchTerm('')
+    setActiveTags([])
+    setActiveType('all')
+    setActiveOwner('all')
   }
-
-  const buildFallbackDataset = (rawFileName, fileUrl) => {
-    const safeName = ensureFileName(rawFileName)
-    const fileName = safeName.toLowerCase()
-    const fileExtension = safeName.includes('.') ? safeName.split('.').pop().toLowerCase() : ''
-    let estimatedColumns = [];
-    let sampleData = []; // Данные в резервном режиме всегда пустые
-
-    // Определяем структуру на основе имени файла
-    if (fileName.includes('employ') || fileName.includes('сотрудник') || fileName.includes('staff')) {
-      estimatedColumns = [
-        { name: "Employee_ID", type: "string" },
-        { name: "Full_Name", type: "string" },
-        { name: "Department", type: "string" },
-        { name: "Position", type: "string" },
-        { name: "Hire_Date", type: "date" },
-        { name: "Salary", type: "number" },
-        { name: "Status", type: "string" }
-      ];
-    } else if (fileName.includes('crime') || fileName.includes('преступ') || fileName.includes('регион')) {
-      estimatedColumns = [
-        { name: "region", type: "string" },
-        { name: "crime_type", type: "string" },
-        { name: "cases_count", type: "number" },
-        { name: "latitude", type: "number" },
-        { name: "longitude", type: "number" }
-      ];
-    } else if (fileName.includes('safety') || fileName.includes('mta') || fileName.includes('безопасность')) {
-      estimatedColumns = [
-        { name: "Date", type: "date" },
-        { name: "Agency", type: "string" },
-        { name: "Location", type: "string" },
-        { name: "Incident_Type", type: "string" },
-        { name: "Severity", type: "string" },
-        { name: "Count", type: "number" },
-        { name: "Latitude", type: "number" },
-        { name: "Longitude", type: "number" }
-      ];
-    } else if (fileName.includes('sales') || fileName.includes('продажи') || fileName.includes('revenue')) {
-      estimatedColumns = [
-        { name: "Date", type: "date" },
-        { name: "Product_Name", type: "string" },
-        { name: "Category", type: "string" },
-        { name: "Quantity", type: "number" },
-        { name: "Unit_Price", type: "number" },
-        { name: "Total_Amount", type: "number" },
-        { name: "Region", type: "string" },
-        { name: "Customer_ID", type: "string" }
-      ];
-    } else {
-      // Универсальная структура для неизвестных файлов
-      estimatedColumns = [
-        { name: "column1", type: "string" },
-        { name: "column2", type: "number" },
-        { name: "column3", type: "string" },
-        { name: "column4", type: "number" },
-        { name: "column5", type: "date" }
-      ];
-    }
-
-    // Добавляем информацию о типе файла в описание
-    const fileTypeDescription = fileExtension === 'xlsx' || fileExtension === 'xls' ? 'Excel файла' :
-                               fileExtension === 'csv' ? 'CSV файла' :
-                               (fileExtension ? `${fileExtension.toUpperCase()} файла` : 'загруженного файла');
-
-    const baseName = safeName.replace(/\.[^/.]+$/, '')
-    const datasetName = baseName || ensureFileName()
-
-    return {
-      name: datasetName,
-      description: `Загруженный набор данных из ${fileTypeDescription} (требуется ручная настройка столбцов)`,
-      file_url: fileUrl,
-      columns: estimatedColumns,
-      row_count: 0,
-      sample_data: sampleData,
-    }
-  };
-
-  const processUploadResponse = async ({ fileName, uploadResponse }) => {
-    const normalizedFileName = ensureFileName(fileName)
-    const uploadedFileUrl = uploadResponse?.file_url
-    if (!uploadedFileUrl) {
-      throw new Error('Не удалось получить ссылку на загруженный файл')
-    }
-
-    const quickExtraction = uploadResponse?.quick_extraction
-
-    if (quickExtraction?.columns?.length) {
-      const normalizedColumns = quickExtraction.columns.map((column) => ({
-        name: column.name,
-        type: column.type || 'string',
-      }))
-
-      setPendingDataset({
-        name: normalizedFileName.replace(/\.[^/.]+$/, ''),
-        description: `Автоматически распознанный набор данных из ${normalizedFileName}`,
-        file_url: uploadedFileUrl,
-        columns: normalizedColumns,
-        row_count: quickExtraction.row_count || 0,
-        sample_data: quickExtraction.sample_data || [],
-        insights: quickExtraction.insights || [],
-      })
-      setShowImportPreview(true)
-      return
-    }
-
-    try {
-      const result = await extractDataFromUploadedFile({
-        file_url: uploadedFileUrl,
-        json_schema: EXTRACTION_SCHEMA,
-      })
-
-      if (result.status === 'success' && result.output?.columns?.length) {
-        setPendingDataset({
-          name: normalizedFileName.replace(/\.[^/.]+$/, ''),
-          description: `Загруженный набор данных из ${normalizedFileName}`,
-          file_url: uploadedFileUrl,
-          columns: result.output.columns || [],
-          row_count: result.output.row_count || 0,
-          sample_data: result.output.sample_data || [],
-        })
-        setShowImportPreview(true)
-        return
-      }
-    } catch (error) {
-      console.warn('Автоматическое извлечение данных не удалось, используем резервный режим', error)
-    }
-
-    const fallbackDataset = buildFallbackDataset(normalizedFileName, uploadedFileUrl)
-    setPendingDataset(fallbackDataset)
-    setShowImportPreview(true)
-  }
-
-  const handleFileUpload = async (file) => {
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      alert(`Ошибка: Файл слишком большой. Максимальный размер файла — ${MAX_FILE_SIZE_MB} МБ.`)
-      return
-    }
-
-    setIsUploading(true)
-    setUploadProgress({
-      uploadedBytes: 0,
-      totalBytes: file.size,
-      percentage: 0,
-      phase: 'uploading',
-      etaSeconds: null,
-    })
-
-    try {
-      const { response } = await resumableUpload(file, {
-        onProgress: (progress) => setUploadProgress(progress),
-      })
-
-      await processUploadResponse({ fileName: file.name, uploadResponse: response })
-    } catch (error) {
-      console.error('Ошибка обработки файла:', error)
-      const fallbackMessage = 'Не удалось загрузить файл. Проверьте соединение и попробуйте снова.'
-      alert(extractErrorMessage(error, fallbackMessage))
-    } finally {
-      setIsUploading(false)
-      setUploadProgress(null)
-    }
-  }
-
-  const handleImportFromLink = async ({ sourceType, url, filename, headers }) => {
-    setIsImporting(true)
-    try {
-      const response = await importDatasetFromUrl({
-        source_type: sourceType,
-        url,
-        filename,
-        headers,
-      })
-
-      const remoteFileName = filename || response?.filename || deriveFileNameFromUrl(url)
-      const inferredName = ensureFileName(remoteFileName)
-      await processUploadResponse({ fileName: inferredName, uploadResponse: response })
-      return true
-    } catch (error) {
-      console.error('Ошибка импорта по ссылке:', error)
-      const fallbackMessage = 'Не удалось импортировать файл по ссылке. Убедитесь, что ссылка доступна и попробуйте снова.'
-      const friendlyMessage = extractErrorMessage(error, fallbackMessage)
-      alert(friendlyMessage)
-      return false
-    } finally {
-      setIsImporting(false)
-    }
-  }
-
-  const handleConfirmImport = async (importConfig) => {
-    if (!pendingDataset) {
-      alert('Нет данных для импорта. Повторите загрузку файла.')
-      return
-    }
-    try {
-      const datasetData = {
-        name: importConfig.name,
-        description: importConfig.description,
-        file_url: pendingDataset.file_url,
-        columns: importConfig.columns,
-        row_count: pendingDataset.row_count,
-        tags: importConfig.tags,
-        sample_data: pendingDataset.sample_data,
-        dataset_type: importConfig.dataset_type,
-        owners: importConfig.owners,
-      };
-      await Dataset.create(datasetData);
-    } catch (error) {
-      console.error("Ошибка импорта набора данных:", error);
-      alert("Не удалось импортировать набор данных.");
-    } finally {
-      setShowImportPreview(false);
-      setPendingDataset(null);
-      setRefreshToken((token) => token + 1);
-    }
-  };
-
-  const handlePreview = (dataset) => {
-    setSelectedDataset(dataset);
-    setShowPreview(true);
-  };
-
-  const savedViewState = {
-    search: searchTerm,
-    filters: { tags: selectedTags },
-    orderBy: '-created_at',
-    pageSize: pagination.pageSize,
-  };
-
-  const hasActiveFilters = searchTerm || selectedTags.length > 0;
-  const renderFacetGroup = (label, items, selectedValues, onToggle) => (
-    <div className="space-y-2">
-      <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</div>
-      <div className="flex flex-wrap gap-2">
-        {items.length === 0 && (
-          <span className="text-xs text-slate-400">Нет доступных значений</span>
-        )}
-        {items.map((item) => {
-          const isActive = selectedValues.includes(item.value);
-          return (
-            <Button
-              key={`${label}-${item.value}`}
-              variant={isActive ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => onToggle(item.value)}
-              className={`flex items-center gap-2 rounded-full ${isActive ? 'bg-blue-600 text-white hover:bg-blue-600' : 'border-slate-200 hover:border-blue-200 hover:text-blue-600'}`}
-            >
-              <span>{item.value}</span>
-              <span className={`text-[10px] font-medium ${isActive ? 'text-blue-100' : 'text-slate-400'}`}>
-                {item.count}
-              </span>
-            </Button>
-          );
-        })}
-      </div>
-    </div>
-  );
 
   return (
-    <PageContainer className="space-y-8">
-      {/* Header */}
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
-          {t('datasets.title')}
-        </h1>
-        <p className="text-slate-600 text-lg max-w-2xl mx-auto">
-          {t('datasets.subtitle')}
-        </p>
-      </div>
-
-      {/* Upload Section */}
-      <FileUploadZone
-        onFileUpload={handleFileUpload}
-        isUploading={isUploading}
-        progress={uploadProgress}
-      />
-
-      <LinkImportForm onImport={handleImportFromLink} isImporting={isImporting} />
-
-      {/* Search and Filters */}
-      <Card className="border-0 bg-white/70 backdrop-blur-xl shadow-lg">
-        <CardContent className="space-y-4 p-6">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="relative w-full md:max-w-lg">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-slate-400" />
-        <CardContent className="space-y-6 p-6">
-          <div className="flex flex-col lg:flex-row gap-4 lg:items-center">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-              <Input
-                placeholder={t('datasets.searchPlaceholder')}
-                value={searchTerm}
-                onChange={(event) => handleSearchChange(event.target.value)}
-                className="bg-white/50 pl-10"
-              />
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleClearFilters}
-              disabled={!hasActiveFilters}
-            >
-              <Filter className="mr-2 h-4 w-4" />
-              {t('datasets.clearFilters')}
-            </Button>
-          </div>
-
-          {availableFilters.tags.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-muted-foreground">
-                {t('datasets.filterTags')}
+    <PageContainer>
+      <div className="space-y-8">
+        <header className="flex flex-col gap-6 rounded-3xl bg-white/70 p-6 shadow-sm backdrop-blur dark:bg-slate-900/60 dark:text-slate-100">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-500 text-white shadow-lg">
+              <Database className="h-6 w-6" aria-hidden />
+            </span>
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">{t('navigation.sources')}</h1>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Управляйте источниками данных, следите за обновлениями и открывайте превью с метаданными.
               </p>
-              <div className="flex flex-wrap gap-2">
-                {availableFilters.tags.map((tag) => {
-                  const isActive = selectedTags.includes(tag);
-                  return (
-                    <Button
-                      key={tag}
-                      size="sm"
-                      variant={isActive ? 'default' : 'outline'}
-                      onClick={() => handleToggleTag(tag)}
-                    >
-                      <Tag className="mr-2 h-4 w-4" />
-                      {tag}
-                    </Button>
-                  );
-                })}
-              </div>
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 border-slate-200 focus:border-blue-500 bg-white/60"
-              />
             </div>
-            <div className="flex flex-wrap gap-2 items-center">
-              <Badge variant="secondary" className="bg-blue-50 text-blue-600">
-                Найдено {searchMeta.total}
-              </Badge>
-              {(normalizedFilters.tags.length > 0 || normalizedFilters.types.length > 0 || normalizedFilters.owners.length > 0 || normalizedFilters.query) && (
-                <Button variant="ghost" size="sm" onClick={resetFilters} className="text-slate-500 hover:text-blue-600">
-                  Сбросить фильтры
-                </Button>
-              )}
-            </div>
-          )}
-
-          <div className="flex justify-end">
-            <SavedViewsManager
-              entity="dataset"
-              state={savedViewState}
-              onApplyView={handleApplyView}
-            />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {renderFacetGroup('Теги', facets.tags, selectedTags, (value) => toggleFacetValue(value, selectedTags, setSelectedTags))}
-            {renderFacetGroup('Типы наборов', facets.types, selectedTypes, (value) => toggleFacetValue(value, selectedTypes, setSelectedTypes))}
-            {renderFacetGroup('Владельцы', facets.owners, selectedOwners, (value) => toggleFacetValue(value, selectedOwners, setSelectedOwners))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {searchError && (
-        <Alert variant="destructive" className="border-red-200 bg-red-50">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>{searchError}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Datasets Grid */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {isLoading ? (
-          Array(6).fill(0).map((_, i) => (
-            <Card key={i} className="border-0 bg-white/50 backdrop-blur-xl shadow-lg animate-pulse">
-              <CardContent className="p-6 space-y-4">
-                <div className="h-6 bg-slate-200 rounded"></div>
-                <div className="h-4 bg-slate-200 rounded w-3/4"></div>
-                <div className="h-16 bg-slate-200 rounded"></div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="border-none bg-gradient-to-br from-sky-50 to-indigo-50 dark:from-slate-800 dark:to-slate-900">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                  Всего датасетов
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold text-slate-900 dark:text-white">{filteredDatasets.length}</p>
               </CardContent>
             </Card>
-          ))
-        ) : (
-          datasets.map(dataset => (
-            <DatasetCard
-              key={dataset.id}
-              dataset={dataset}
-              onPreview={handlePreview}
-            />
-          ))
-        )}
+
+            <Card className="border-none bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/30 dark:to-emerald-900/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                  Количество строк
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold text-slate-900 dark:text-white">
+                  {new Intl.NumberFormat('ru-RU').format(totalRows)}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-none bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/30 dark:to-orange-900/30">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                  Тегов в каталоге
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold text-slate-900 dark:text-white">{facets.tags.length}</p>
+              </CardContent>
+            </Card>
+          </div>
+        </header>
+
+        <section className="space-y-4">
+          <Card className="border-none bg-white/70 backdrop-blur dark:bg-slate-900/50">
+            <CardContent className="space-y-4 p-6">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
+                  <Input
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    placeholder="Поиск по названию или описанию"
+                    className="pl-9"
+                    aria-label="Поиск по датасетам"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" className="gap-2" onClick={resetFilters}>
+                    <RefreshCw className="h-4 w-4" aria-hidden />
+                    Сбросить
+                  </Button>
+                  <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-300">
+                    <Filter className="h-4 w-4" aria-hidden />
+                    <span>Фильтры</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-2">
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
+                    Тип
+                  </h2>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge
+                      onClick={() => setActiveType('all')}
+                      className={`cursor-pointer px-3 py-1 text-sm transition ${
+                        activeType === 'all'
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200'
+                      }`}
+                    >
+                      Все типы
+                    </Badge>
+                    {facets.types.map((type) => (
+                      <Badge
+                        key={type}
+                        onClick={() => setActiveType(type)}
+                        className={`cursor-pointer px-3 py-1 text-sm transition ${
+                          activeType === type
+                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200'
+                        }`}
+                      >
+                        {type}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
+                    Владельцы
+                  </h2>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge
+                      onClick={() => setActiveOwner('all')}
+                      className={`cursor-pointer px-3 py-1 text-sm transition ${
+                        activeOwner === 'all'
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200'
+                      }`}
+                    >
+                      Все
+                    </Badge>
+                    {facets.owners.map((owner) => (
+                      <Badge
+                        key={owner}
+                        onClick={() => setActiveOwner(owner)}
+                        className={`cursor-pointer px-3 py-1 text-sm transition ${
+                          activeOwner === owner
+                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200'
+                        }`}
+                      >
+                        {owner}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
+                    Теги
+                  </h2>
+                  <div className="flex flex-wrap gap-2">
+                    {facets.tags.map((tag) => (
+                      <Badge
+                        key={tag}
+                        onClick={() => toggleTag(tag)}
+                        className={`cursor-pointer px-3 py-1 text-sm transition ${
+                          activeTags.includes(tag)
+                            ? 'bg-indigo-500 text-white shadow-sm dark:bg-indigo-400'
+                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200'
+                        }`}
+                      >
+                        #{tag}
+                      </Badge>
+                    ))}
+                    {facets.tags.length === 0 ? (
+                      <span className="text-sm text-slate-400">Тегов пока нет</span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {errorMessage ? (
+            <Alert variant="warning">
+              <AlertDescription>{errorMessage}</AlertDescription>
+            </Alert>
+          ) : null}
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          {isLoading ? (
+            Array.from({ length: 6 }).map((_, index) => (
+              <div
+                key={index}
+                className="h-48 animate-pulse rounded-3xl bg-white/50 shadow-inner dark:bg-slate-800/50"
+              />
+            ))
+          ) : filteredDatasets.length === 0 ? (
+            <Card className="col-span-full border-dashed bg-white/60 p-8 text-center dark:bg-slate-900/40">
+              <CardHeader>
+                <CardTitle className="text-lg font-medium text-slate-700 dark:text-slate-200">
+                  По заданным условиям ничего не найдено
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 text-sm text-slate-500 dark:text-slate-300">
+                <p>Смените фильтры или попробуйте другой поисковый запрос.</p>
+                <Button variant="outline" onClick={resetFilters} className="gap-2">
+                  <RefreshCw className="h-4 w-4" aria-hidden />
+                  Сбросить фильтры
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            filteredDatasets.map((dataset) => (
+              <Card
+                key={dataset.id ?? dataset.name}
+                className="flex h-full flex-col justify-between gap-4 rounded-3xl border-none bg-white/70 p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-xl dark:bg-slate-900/60"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                        {dataset.name}
+                      </h3>
+                      <p className="text-sm text-slate-500 dark:text-slate-300">
+                        {dataset.owner || 'Не указан владелец'}
+                      </p>
+                    </div>
+                    <Badge className="bg-indigo-500/10 text-indigo-500 dark:bg-indigo-400/20 dark:text-indigo-200">
+                      {dataset.type || 'dataset'}
+                    </Badge>
+                  </div>
+                  <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                    {dataset.description || 'Описание пока не добавлено.'}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">
+                      {new Intl.NumberFormat('ru-RU').format(dataset.rows || 0)} строк
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">
+                      {dataset.columns?.length || 0} колонок
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-800">
+                      Обновлено: {dataset.updatedAt ? new Date(dataset.updatedAt).toLocaleString('ru-RU') : '—'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    {dataset.tags?.slice(0, 4).map((tag) => (
+                      <Badge key={tag} variant="secondary" className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200">
+                        #{tag}
+                      </Badge>
+                    ))}
+                    {dataset.tags?.length > 4 ? (
+                      <Badge variant="secondary" className="bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                        +{dataset.tags.length - 4}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <Button onClick={() => setPreviewDataset(dataset)} size="sm" className="gap-2">
+                    <Database className="h-4 w-4" aria-hidden />
+                    Просмотр
+                  </Button>
+                </div>
+              </Card>
+            ))
+          )}
+        </section>
       </div>
 
-      {!isLoading && datasets.length === 0 && (
-        <Card className="border-0 bg-white/50 backdrop-blur-xl shadow-lg">
-          <CardContent className="text-center py-12">
-            <Database className="w-16 h-16 mx-auto text-slate-400 mb-4" />
-            <h3 className="text-lg font-semibold text-slate-700 mb-2">{t('datasets.emptyTitle')}</h3>
-            <p className="text-slate-500 mb-6">
-              {searchTerm
-                ? t('datasets.emptySearch')
-                : t('datasets.emptyGeneral')}
-            </p>
-            <Button className="gap-2 bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700">
-              <Plus className="w-4 h-4" />
-              {t('datasets.uploadCta')}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {totalPages > 1 && (
-        <PaginationControls
-          page={pagination.page}
-          totalPages={totalPages}
-          onPageChange={handlePageChange}
-          isDisabled={isLoading}
-        />
-      )}
-
-      <TaskEventLog />
-
-      {/* Dataset Preview Modal */}
-      {showPreview && (
-        <DatasetPreview
-          dataset={selectedDataset}
-          onClose={() => setShowPreview(false)}
-        />
-      )}
-
-      {/* Data Import Preview Modal */}
-      {showImportPreview && (
-        <DataImportPreview
-          datasetInfo={pendingDataset}
-          onConfirmImport={handleConfirmImport}
-          onCancel={() => {
-            setShowImportPreview(false);
-            setPendingDataset(null);
-            setRefreshToken((token) => token + 1);
-          }}
-        />
-      )}
+      <DatasetPreview dataset={previewDataset} onClose={() => setPreviewDataset(null)} />
     </PageContainer>
-  );
+  )
 }

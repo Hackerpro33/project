@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from app import datasets_api
+from app.api.routes import datasets as datasets_api
 from app.services.scheduler import ScheduleConfig, TaskScheduler
 
 

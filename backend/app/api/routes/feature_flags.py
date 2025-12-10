@@ -6,7 +6,7 @@ from typing import Dict
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from .services.feature_flags import fetch_flags
+from app.services.feature_flags import fetch_flags
 
 router = APIRouter()
 

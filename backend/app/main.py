@@ -86,8 +86,10 @@ from prometheus_client import (
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .config import apply_settings_overrides, get_settings
-from .version import __version__
+from app.core.config import apply_settings_overrides, get_settings
+from app.api import register_routes
+from app.api.routes import views as views_router_module
+from app.core.version import __version__
 from .schemas import (
     BatchUploadItem,
     BatchUploadResponse,
@@ -115,7 +117,7 @@ from .schemas import (
 )
 from .utils import files as files_utils
 from .services.extraction import build_extraction
-from .tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
+from app.tasks import TaskQueueUnavailable, enqueue_extraction, get_task_status
 from .utils.preview import generate_preview
 from .utils.batch_progress import get_batch_progress_tracker
 from .utils.task_history import get_task_history_store
@@ -416,6 +418,10 @@ app = FastAPI(
     openapi_url=f"{API_PREFIX}/openapi.json",
 )
 
+# Expose commonly monkeypatched paths directly on the app instance for tests and extensions.
+app.UPLOAD_DIR = UPLOAD_DIR
+app.DATA_DIR = DATA_DIR
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Attach a strict set of security-oriented HTTP headers."""
@@ -654,9 +660,14 @@ async def _persist_uploaded_bytes(
     upload_root = Path(UPLOAD_DIR)
     upload_root.mkdir(parents=True, exist_ok=True)
     path = upload_root / f"{file_id}_{safe_name}"
-    with path.open("wb") as handle:
+    resolved_path = path.resolve()
+    # Check that resolved_path is inside upload_root
+    from backend.app.utils.files import _is_within_allowed_roots
+    if not _is_within_allowed_roots(resolved_path):
+        raise HTTPException(status_code=400, detail="Invalid upload file path")
+    with resolved_path.open("wb") as handle:
         handle.write(data)
-    register_uploaded_file(file_id, path)
+    register_uploaded_file(file_id, resolved_path)
 
     try:
         df = read_table_bytes(data, original_filename or path.name)
@@ -735,7 +746,10 @@ def _ensure_safe_remote_url(url: str) -> str:
             or ip.is_unspecified
             or ip.is_multicast
         ):
-            raise HTTPException(status_code=403, detail="Remote URL resolves to a disallowed address")
+            raise HTTPException(
+                status_code=403,
+                detail="Remote URL resolves to a disallowed address and is not allowed",
+            )
 
     return parsed.geturl()
 
@@ -1812,57 +1826,12 @@ if __name__ == "__main__":
 # Allow running both as part of the ``app`` package (e.g. ``uvicorn app.main:app``)
 # and as a standalone script (e.g. ``python main.py`` or ``uvicorn main:app``).
 if __package__ in {None, ""}:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    if current_dir not in sys.path:
-        sys.path.append(current_dir)
-    import audit_api as audit_router_module
-    import collaboration_api as collaboration_router_module
-    import chat_api as chat_router_module
-    import datasets_api as datasets_router_module
-    import dataset_versions_api as dataset_versions_router_module
-    import dictionary_api as dictionary_router_module
-    import visualizations_api as visualizations_router_module
-    import views_api as views_router_module
-    import feature_flags_api as feature_flags_router_module
-    import schedules_api as schedules_router_module
-else:
-    from . import audit_api as audit_router_module
-    from . import collaboration_api as collaboration_router_module
-    from . import chat_api as chat_router_module
-    from . import datasets_api as datasets_router_module
-    from . import dataset_versions_api as dataset_versions_router_module
-    from . import dictionary_api as dictionary_router_module
-    from . import visualizations_api as visualizations_router_module
-    from . import views_api as views_router_module
-    from . import feature_flags_api as feature_flags_router_module
-    from . import schedules_api as schedules_router_module
+    current_dir = Path(__file__).resolve().parent
+    parent_dir = current_dir.parent
+    if str(parent_dir) not in sys.path:
+        sys.path.append(str(parent_dir))
 
-datasets_router = datasets_router_module.router
-dataset_versions_router = dataset_versions_router_module.router
-dictionary_router = dictionary_router_module.router
-visualizations_router = visualizations_router_module.router
-chat_router = chat_router_module.router
-audit_router = audit_router_module.router
-views_router = views_router_module.router
-feature_flags_router = feature_flags_router_module.router
-collaboration_router = collaboration_router_module.router
-schedules_router = schedules_router_module.router
-
-app.include_router(datasets_router, prefix=f"{API_PREFIX}/dataset")
-app.include_router(dictionary_router, prefix=f"{API_PREFIX}/dictionary")
-app.include_router(visualizations_router, prefix=f"{API_PREFIX}/visualization")
-app.include_router(chat_router, prefix=f"{API_PREFIX}/chat")
-app.include_router(audit_router, prefix=f"{API_PREFIX}/audit")
-app.include_router(schedules_router, prefix=f"{API_PREFIX}")
-app.include_router(datasets_router, prefix="/api/dataset")
-app.include_router(dataset_versions_router, prefix="/api/dataset")
-app.include_router(dictionary_router, prefix="/api/dictionary")
-app.include_router(visualizations_router, prefix="/api/visualization")
-app.include_router(chat_router, prefix="/api/chat")
-app.include_router(audit_router, prefix="/api/audit")
-app.include_router(views_router, prefix="/api")
-app.include_router(feature_flags_router, prefix="/api/feature-flags")
-app.include_router(collaboration_router, prefix="/api")
+register_routes(app, API_PREFIX)
 
 # Compatibility routes without the versioned prefix for legacy integrations.
 app.add_api_route("/api/upload", api_upload, methods=["POST"], include_in_schema=False)
@@ -1888,39 +1857,203 @@ app.add_api_route(
 _original_openapi = app.openapi
 
 
+_STANDARD_QUERY_METADATA: Dict[str, Dict[str, Any]] = {
+    "page": {
+        "description": "Номер страницы пагинированного результата",
+        "example": 2,
+        "examples": {
+            "next": {"summary": "Следующая страница", "value": 2},
+            "first": {"summary": "Первая страница", "value": 1},
+        },
+    },
+    "page_size": {
+        "description": "Количество объектов на странице",
+        "example": 50,
+        "examples": {
+            "default": {"summary": "Стандартное значение", "value": 20},
+            "extended": {"summary": "Больше объектов", "value": 100},
+        },
+    },
+    "limit": {
+        "description": "Максимальное количество элементов в ответе",
+        "example": 25,
+    },
+    "offset": {
+        "description": "Смещение в списке результатов",
+        "example": 40,
+    },
+    "search": {
+        "description": "Поисковый запрос по основным полям сущности",
+        "example": "sales quarterly",
+    },
+    "tags": {
+        "description": "Фильтр по тегам",
+        "examples": {
+            "single": {"summary": "Один тег", "value": ["finance"]},
+            "multi": {"summary": "Несколько тегов", "value": ["finance", "forecasting"]},
+        },
+    },
+    "types": {
+        "description": "Фильтр по типу сущности",
+        "examples": {
+            "chart": {"summary": "Тип визуализации", "value": ["chart"]},
+        },
+    },
+    "dataset_types": {
+        "description": "Фильтр по типу набора данных",
+        "examples": {
+            "table": {"summary": "Табличный набор", "value": ["table"]},
+        },
+    },
+    "owners": {
+        "description": "Фильтр по владельцам",
+        "examples": {
+            "team": {"summary": "Команда-владелец", "value": ["team-insights"]},
+        },
+    },
+    "status": {
+        "description": "Статусы, разделённые запятой",
+        "example": "queued,running",
+    },
+    "type": {
+        "description": "Тип сущности или задачи",
+        "example": "ingest",
+    },
+    "q": {
+        "description": "Поисковая строка",
+        "example": "delayed payments",
+    },
+}
+
+
+def _apply_standard_parameter_metadata(parameters: List[Dict[str, Any]]) -> None:
+    for param in parameters:
+        name = param.get("name")
+        if not name:
+            continue
+        metadata = _STANDARD_QUERY_METADATA.get(name)
+        if not metadata:
+            continue
+        schema_meta = param.setdefault("schema", {})
+        description = metadata.get("description")
+        if description:
+            schema_meta.setdefault("description", description)
+            param.setdefault("description", description)
+        if "example" in metadata:
+            schema_meta.setdefault("example", metadata["example"])
+        if "examples" in metadata and "examples" not in param:
+            param["examples"] = metadata["examples"]
+
+
 def _custom_openapi() -> Dict[str, Any]:
     schema = _original_openapi()
-    try:
-        preview_schema = schema["components"]["schemas"]["DatasetPreviewResponse"]
-    except KeyError:
-        return schema
 
-    allowed_fields = {
-        "columns",
-        "file_id",
-        "has_more",
-        "mode",
-        "page",
-        "page_size",
-        "rows",
-        "sample_size",
-    }
-    preview_schema["properties"] = {
-        key: value for key, value in preview_schema.get("properties", {}).items() if key in allowed_fields
-    }
+    preview_schema = (
+        schema.get("components", {})
+        .get("schemas", {})
+        .get("DatasetPreviewResponse")
+    )
+    if preview_schema:
+        allowed_fields = {
+            "columns",
+            "file_id",
+            "has_more",
+            "mode",
+            "page",
+            "page_size",
+            "rows",
+            "sample_size",
+        }
+        preview_schema["properties"] = {
+            key: value
+            for key, value in preview_schema.get("properties", {}).items()
+            if key in allowed_fields
+        }
 
     dataset_paths = [f"{API_PREFIX}/dataset/list", "/api/dataset/list"]
-    for path, operation_id in zip(dataset_paths, [
-        "list_datasets_api_v1_dataset_list_get",
-        "list_datasets_api_dataset_list_get",
-    ]):
+    dataset_example = {
+        "summary": "Пагинированный список наборов данных",
+        "value": {
+            "items": [
+                {
+                    "id": "ds_sales_2023",
+                    "name": "Sales by Region 2023",
+                    "description": "Сводка продаж по регионам за 2023 год",
+                    "tags": ["sales", "finance"],
+                    "dataset_type": "table",
+                    "owners": ["team-insights"],
+                    "row_count": 12000,
+                    "created_at": "2023-12-01T08:30:00Z",
+                    "updated_at": "2023-12-15T10:05:00Z",
+                }
+            ],
+            "page": 1,
+            "page_size": 20,
+            "total": 1,
+            "total_pages": 1,
+            "has_next": False,
+            "has_previous": False,
+            "available_filters": {
+                "tags": ["finance", "sales"],
+                "types": ["table", "dashboard"],
+                "owners": ["team-insights"],
+            },
+            "applied_filters": {
+                "search": "sales",
+                "tags": ["finance"],
+                "types": [],
+                "owners": [],
+                "order_by": "-created_at",
+            },
+        },
+    }
+
+    for path, operation_id in zip(
+        dataset_paths,
+        [
+            "list_datasets_api_v1_dataset_list_get",
+            "list_datasets_api_dataset_list_get",
+        ],
+    ):
         dataset_list = schema.get("paths", {}).get(path)
         if dataset_list and "get" in dataset_list:
             get_spec = dataset_list["get"]
-            get_spec["summary"] = "List Datasets"
+            get_spec.setdefault("summary", "List datasets")
+            get_spec.setdefault(
+                "description",
+                "Возвращает список наборов данных с поддержкой пагинации, сортировки и фильтров.",
+            )
             get_spec["operationId"] = operation_id
-            params = get_spec.get("parameters", [])
-            get_spec["parameters"] = [param for param in params if param.get("name") == "order_by"]
+            parameters = get_spec.get("parameters", [])
+            _apply_standard_parameter_metadata(parameters)
+            if parameters:
+                get_spec["parameters"] = parameters
+            responses = get_spec.setdefault("responses", {})
+            success = responses.get("200")
+            if success:
+                content = success.setdefault("content", {})
+                json_content = content.setdefault("application/json", {})
+                existing_examples = json_content.get("examples", {})
+                existing_examples.setdefault("paginated", dataset_example)
+                json_content["examples"] = existing_examples
+
+    for path_item in schema.get("paths", {}).values():
+        for operation in path_item.values():
+            parameters = operation.get("parameters")
+            if not parameters:
+                continue
+            _apply_standard_parameter_metadata(parameters)
+
+    redundant_version_paths = [
+        f"{API_PREFIX}/dataset/{{dataset_id}}/versions",
+        f"{API_PREFIX}/dataset/{{dataset_id}}/versions/{{version_id}}",
+        f"{API_PREFIX}/dataset/{{dataset_id}}/versions/{{current_id}}/diff/{{previous_id}}",
+        f"{API_PREFIX}/dataset/{{dataset_id}}/versions/{{version_id}}/restore",
+    ]
+    paths = schema.get("paths", {})
+    for path in redundant_version_paths:
+        paths.pop(path, None)
+
     return schema
 
 
