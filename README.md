@@ -168,6 +168,24 @@ npm audit --prefix frontend
 
 ```bash
 cd backend
+pip install -r app/requirements.txt
+uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
+# если uvicorn не найден в PATH (например, в Windows), запустите его как модуль Python:
+# python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
+
+# Windows: убедитесь, что Redis запущен (например, `docker run -p 6379:6379 redis`).
+# Для воркера и AI-провайдера используйте модульный вызов из каталога `backend`
+# (или задайте `PYTHONPATH=backend`, если запускаете из корня репозитория), чтобы
+# избежать ошибки `No module named 'app'`, когда `rq`/`python` не в PATH:
+# cd backend && python -m app.worker
+# cd backend && python -m app.ai_compute.main
+# # либо из корня:
+# PYTHONPATH=backend python -m backend.app.worker
+# PYTHONPATH=backend python -m backend.app.ai_compute.main
+```
+
+Для пользователей Windows, которые поднимают только фронтенд и бэкенд без devcontainer/`make`,
+подробная пошаговая инструкция находится в [docs/windows_local_run.md](docs/windows_local_run.md).
 
 # установка зависимостей
 ../scripts/install_backend_deps.sh
