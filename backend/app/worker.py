@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from redis import Redis
-from rq import Connection, Worker
+from rq import Worker
+from rq.connections import Connection
 
 from .config import get_settings
 from .tasks import process_extraction_job  # noqa: F401  # ensure task import side-effect

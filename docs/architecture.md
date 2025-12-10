@@ -132,6 +132,17 @@ flowchart LR
 - `/api/v1/tasks/{task_id}` возвращает `queued|started|finished|failed` и итоговый payload.
 - Рабочие процессы запускаются командой `python -m app.worker`.
 
+## Провайдер вычислений для ИИ
+
+- Сервис AI Compute Provider поднимается отдельно и подписывается на поток `ai:jobs` в Redis
+  Streams.
+- Планировщик распределяет задачи между CPU- и GPU-очередями, контролируя доступную VRAM и
+  переключаясь на деградированный режим на CPU при нехватке ресурсов.
+- Метрики ожидания, загрузки GPU и профили PyTorch/Nsight публикуются в Prometheus и доступны
+  через API `/api/v1/ai/jobs/*`.
+- Детали реализации, конфигурации и профайлинга описаны в документе
+  [docs/ai_compute_provider.md](ai_compute_provider.md).
+
 ## Документация API и контрактные тесты
 
 - OpenAPI схема фиксируется снапшотом `backend/app/tests/snapshots/openapi_v1.json`.
