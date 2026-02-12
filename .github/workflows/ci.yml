@@ -148,7 +148,7 @@ jobs:
           publish_dir: coverage
           keep_files: true
       - name: Commit README badge link
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "docs: sync coverage badge URL"
           file_pattern: README.md
